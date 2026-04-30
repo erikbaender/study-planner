@@ -14,11 +14,15 @@ Create a clean, minimal interface. Stick closely to Apple's UX and UI design. Al
 Use React with Next.js, Typescript, Tailwind, and Ionic for the frontend. Use Convex and TypeScript for the backend. Use pnpm as the package manager. Use OAuth for authentication.
 
 # Reference Data
-To see some real data for a study plan, use GitHub access token provided as a secret in this repository. That gives you access to a large amount of issues reflecting a real study plan that was created using the Gantt chart view in GitHub's project feature.
+To see some real data for a study plan, use GitHub access token I provided as a Codespaces secret for this repository. That gives you access to a large amount of issues reflecting a real study plan that was created using the Gantt chart view in GitHub's project feature.
 
 # Implementation planning
 You need a good frontend design skill to accomplish the requirements. Research and decide what skill fits the task and your specific capabilities the best. You should also decide what agent settings offer the best chance at a good result.
 
 Do you consider yourself to be the most capable OpenAI model available for the task? And if so, what reasoning level would you choose for an autonomous implementation of the requirements? If not, what other model do you recommend?
 
-Make a detailed plan for the implementation. Consider potential issues you might run into along the way. Ask for all you need from me now. I will provide everything I can, but once you start implementation you need to be able to work on your own.
+Do you recommend running the implementation locally, in the Copilot CLI, or Cloud? What are the benefits and downsides for this task in particular?
+
+Is the current machine configured for this codespace sufficent, or would you benefit from a more powerful configuration?
+
+Make a detailed plan for the implementation. Consider potential issues you might run into along the way. Also consider your development environment and if you are able to get access to everything you need. Ask for all you need from me now. I will provide everything I can, but once you start implementation you need to be able to work on your own.
