@@ -114,9 +114,7 @@ function mapIssuesToImportPlan(owner: string, repo: string, issues: GitHubIssue[
     const courseName = issue.milestone?.title ?? issue.labels?.[0]?.name ?? repo;
     const course = ensureCourse(courses, courseName);
     const dueDate = issue.milestone?.due_on ? new Date(issue.milestone.due_on).toISOString().slice(0, 10) : undefined;
-    const parsedRange = extractDateRange(issue.body ?? issue.title);
-    const fallbackEnd = dueDate ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const fallbackStart = new Date(new Date(fallbackEnd).getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const parsedRange = extractDateRange(`${issue.title}\n${issue.body ?? ""}`);
 
     if (dueDate && !course.milestones.some((milestone) => milestone.name === courseName)) {
       course.milestones.push({ name: courseName, notes: "", start: dueDate });
@@ -127,7 +125,7 @@ function mapIssuesToImportPlan(owner: string, repo: string, issues: GitHubIssue[
       notes: issue.body?.trim() ?? "",
       color: course.color,
       dependencies: [],
-      ranges: [{ start: parsedRange?.start ?? fallbackStart, end: parsedRange?.end ?? fallbackEnd }],
+      ranges: parsedRange ? [{ start: parsedRange.start, end: parsedRange.end }] : [],
     });
   }
 
