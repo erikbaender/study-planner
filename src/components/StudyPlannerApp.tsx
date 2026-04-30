@@ -17,7 +17,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { IonButton, IonInput, IonModal, IonTextarea, setupIonicReact } from "@ionic/react";
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -34,7 +34,7 @@ import {
   type Plan,
   type Topic,
 } from "@/lib/planner-data";
-import { fetchGitHubIssues, mapGitHubIssuesToPlan, parsePlannerJson, serializePlans } from "@/lib/import-export";
+import { filterImportableGitHubIssues, fetchGitHubIssues, mapGitHubIssuesToPlan, parsePlannerJson, serializePlans } from "@/lib/import-export";
 
 setupIonicReact({ mode: "ios" });
 
@@ -72,6 +72,7 @@ type ModalMode =
 
 type GitHubImportPreview = {
   issueCount: number;
+  skippedSubissueCount?: number;
   planName: string;
   repository: string;
   courses: Array<{ name: string; topicCount: number; milestoneCount: number; rangeCount: number }>;
@@ -94,7 +95,6 @@ export function StudyPlannerApp() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [toast, setToast] = useState("Ready");
-  const seededSampleData = useRef(false);
 
   const convexAuth = useConvexAuth();
   const usingConvex = convexAuth.isAuthenticated && !signedIn;
@@ -128,28 +128,6 @@ export function StudyPlannerApp() {
   const selectedRange = selectedTopic?.ranges.find((range) => range.id === editingRangeId);
 
   const timeline = useMemo(() => buildTimeline(activePlan), [activePlan]);
-
-  useEffect(() => {
-    if (!usingConvex || remotePlanTrees === undefined || remotePlanTrees.length !== 0 || seededSampleData.current) {
-      return;
-    }
-
-    seededSampleData.current = true;
-    setToast("Creating starter plan");
-    void importPlanTreesMutation({ plans: toImportPlanInputs(samplePlans) })
-      .then((planIds) => {
-        const firstPlanId = String(planIds[0] ?? "");
-        if (firstPlanId) {
-          setActivePlanId(firstPlanId);
-          setSelection({ type: "plan", planId: firstPlanId });
-        }
-        setToast("Starter plan saved");
-      })
-      .catch((error) => {
-        seededSampleData.current = false;
-        setToast(error instanceof Error ? error.message : "Starter plan failed");
-      });
-  }, [importPlanTreesMutation, remotePlanTrees, usingConvex]);
 
   function updatePlans(updater: (plans: Plan[]) => Plan[]) {
     setLocalPlans((current) => updater(structuredClone(current)));
@@ -540,17 +518,18 @@ export function StudyPlannerApp() {
           setActivePlanId(planId);
           setSelection({ type: "plan", planId });
         }
-        setToast(`Imported ${result.issueCount} GitHub issues`);
+        setToast(formatGitHubImportToast(result.issueCount, result.skippedSubissueCount));
         setModalMode(null);
         return;
       }
 
-      const issues = await fetchGitHubIssues(owner, repo, token);
+      const rawIssues = await fetchGitHubIssues(owner, repo, token);
+      const { issues, skippedSubissueCount } = filterImportableGitHubIssues(rawIssues);
       const plan = mapGitHubIssuesToPlan(owner, repo, issues);
       updatePlans((current) => [...current, plan]);
       setActivePlanId(plan.id);
       setSelection({ type: "plan", planId: plan.id });
-      setToast(`Imported ${issues.length} GitHub issues`);
+      setToast(formatGitHubImportToast(issues.length, skippedSubissueCount));
       setModalMode(null);
     } catch (error) {
       setToast(error instanceof Error ? error.message : "GitHub import failed");
@@ -562,8 +541,9 @@ export function StudyPlannerApp() {
       return await previewGitHubIssuesAction({ owner, repo, token: token || undefined });
     }
 
-    const issues = await fetchGitHubIssues(owner, repo, token);
-    return summarizeGitHubImport(owner, repo, mapGitHubIssuesToPlan(owner, repo, issues), issues.length);
+    const rawIssues = await fetchGitHubIssues(owner, repo, token);
+    const { issues, skippedSubissueCount } = filterImportableGitHubIssues(rawIssues);
+    return summarizeGitHubImport(owner, repo, mapGitHubIssuesToPlan(owner, repo, issues), issues.length, skippedSubissueCount);
   }
 
   const isSignedIn = signedIn || convexAuth.isAuthenticated;
@@ -1373,6 +1353,9 @@ function PlannerModal({
                     </div>
                     <span className="rounded-[8px] bg-white px-2 py-1 text-xs font-semibold">{githubPreview.issueCount} issues</span>
                   </div>
+                  {githubPreview.skippedSubissueCount ? (
+                    <p className="mt-2 text-xs text-[var(--muted)]">Skipped {githubPreview.skippedSubissueCount} progress subissues.</p>
+                  ) : null}
                   <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
                     {githubPreview.courses.map((course) => (
                       <div key={course.name} className="rounded-[8px] bg-white px-3 py-2 text-sm">
@@ -1496,9 +1479,10 @@ function describeDeleteTarget(
   return null;
 }
 
-function summarizeGitHubImport(owner: string, repo: string, plan: Plan, issueCount: number): GitHubImportPreview {
+function summarizeGitHubImport(owner: string, repo: string, plan: Plan, issueCount: number, skippedSubissueCount: number): GitHubImportPreview {
   return {
     issueCount,
+    skippedSubissueCount,
     planName: plan.name,
     repository: `${owner}/${repo}`,
     courses: plan.courses.map((course) => ({
@@ -1508,6 +1492,12 @@ function summarizeGitHubImport(owner: string, repo: string, plan: Plan, issueCou
       rangeCount: course.topics.reduce((total, topic) => total + topic.ranges.length, 0),
     })),
   };
+}
+
+function formatGitHubImportToast(issueCount: number, skippedSubissueCount = 0) {
+  return skippedSubissueCount > 0
+    ? `Imported ${issueCount} GitHub issues; skipped ${skippedSubissueCount} subissues`
+    : `Imported ${issueCount} GitHub issues`;
 }
 
 function buildTimeline(plan?: Plan) {

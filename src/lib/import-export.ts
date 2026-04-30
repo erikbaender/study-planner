@@ -133,7 +133,7 @@ export function parsePlannerJson(contents: string): Plan[] {
   });
 }
 
-type GitHubIssue = {
+export type GitHubIssue = {
   number: number;
   title: string;
   state: "open" | "closed";
@@ -168,6 +168,15 @@ export async function fetchGitHubIssues(owner: string, repo: string, token: stri
   }
 
   return issues;
+}
+
+export function filterImportableGitHubIssues(issues: GitHubIssue[]) {
+  const importableIssues = issues.filter((issue) => !isProgressSubissue(issue));
+
+  return {
+    issues: importableIssues,
+    skippedSubissueCount: issues.length - importableIssues.length,
+  };
 }
 
 export function mapGitHubIssuesToPlan(owner: string, repo: string, issues: GitHubIssue[]): Plan {
@@ -215,6 +224,10 @@ export function mapGitHubIssuesToPlan(owner: string, repo: string, issues: GitHu
     notes: `${owner}/${repo}`,
     courses: [...courseMap.values()],
   };
+}
+
+function isProgressSubissue(issue: GitHubIssue) {
+  return /^Teil\s+\d+(?:\b|[:.)-])/i.test(issue.title.trim()) && extractDateRange(`${issue.title}\n${issue.body ?? ""}`) === undefined;
 }
 
 function ensureCourse(courseMap: Map<string, Course>, planId: string, courseName: string) {

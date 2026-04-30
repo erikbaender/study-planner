@@ -15,11 +15,13 @@ type GitHubIssue = {
 
 type ImportIssuesResult = {
   issueCount: number;
+  skippedSubissueCount: number;
   planIds: Id<"plans">[];
 };
 
 type GitHubImportPreview = {
   issueCount: number;
+  skippedSubissueCount: number;
   planName: string;
   repository: string;
   courses: Array<{ name: string; topicCount: number; milestoneCount: number; rangeCount: number }>;
@@ -35,12 +37,12 @@ export const importIssues = action({
   },
   handler: async (ctx, args): Promise<ImportIssuesResult> => {
     const token = getGitHubToken(args.token);
-    const issues = await fetchIssues(args.owner, args.repo, token);
+    const { issues, skippedSubissueCount } = await fetchIssues(args.owner, args.repo, token);
     const planIds: Id<"plans">[] = await ctx.runMutation(api.planner.importPlanTrees, {
       plans: [mapIssuesToImportPlan(args.owner, args.repo, issues)],
     });
 
-    return { issueCount: issues.length, planIds };
+    return { issueCount: issues.length, skippedSubissueCount, planIds };
   },
 });
 
@@ -52,8 +54,8 @@ export const previewIssues = action({
   },
   handler: async (_ctx, args): Promise<GitHubImportPreview> => {
     const token = getGitHubToken(args.token);
-    const issues = await fetchIssues(args.owner, args.repo, token);
-    return summarizeImportPlan(args.owner, args.repo, issues);
+    const { issues, skippedSubissueCount } = await fetchIssues(args.owner, args.repo, token);
+    return summarizeImportPlan(args.owner, args.repo, issues, skippedSubissueCount);
   },
 });
 
@@ -68,6 +70,7 @@ function getGitHubToken(token?: string) {
 
 async function fetchIssues(owner: string, repo: string, token: string) {
   const issues: GitHubIssue[] = [];
+  let skippedSubissueCount = 0;
 
   for (let page = 1; page <= 10; page += 1) {
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues?state=all&per_page=100&page=${page}`, {
@@ -83,14 +86,16 @@ async function fetchIssues(owner: string, repo: string, token: string) {
     }
 
     const pageIssues = ((await response.json()) as GitHubIssue[]).filter((issue) => !issue.pull_request);
-    issues.push(...pageIssues);
+    const importableIssues = pageIssues.filter((issue) => !isProgressSubissue(issue));
+    skippedSubissueCount += pageIssues.length - importableIssues.length;
+    issues.push(...importableIssues);
 
     if (pageIssues.length < 100) {
       break;
     }
   }
 
-  return issues;
+  return { issues, skippedSubissueCount };
 }
 
 function mapIssuesToImportPlan(owner: string, repo: string, issues: GitHubIssue[]) {
@@ -133,11 +138,12 @@ function mapIssuesToImportPlan(owner: string, repo: string, issues: GitHubIssue[
   };
 }
 
-function summarizeImportPlan(owner: string, repo: string, issues: GitHubIssue[]): GitHubImportPreview {
+function summarizeImportPlan(owner: string, repo: string, issues: GitHubIssue[], skippedSubissueCount: number): GitHubImportPreview {
   const plan = mapIssuesToImportPlan(owner, repo, issues);
 
   return {
     issueCount: issues.length,
+    skippedSubissueCount,
     planName: plan.name,
     repository: `${owner}/${repo}`,
     courses: plan.courses.map((course) => ({
@@ -147,6 +153,10 @@ function summarizeImportPlan(owner: string, repo: string, issues: GitHubIssue[])
       rangeCount: course.topics.reduce((total, topic) => total + topic.ranges.length, 0),
     })),
   };
+}
+
+function isProgressSubissue(issue: GitHubIssue) {
+  return /^Teil\s+\d+(?:\b|[:.)-])/i.test(issue.title.trim()) && extractDateRange(`${issue.title}\n${issue.body ?? ""}`) === undefined;
 }
 
 function ensureCourse(

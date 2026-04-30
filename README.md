@@ -17,7 +17,7 @@ The MVP implementation includes:
 - Delete confirmations and empty states for sparse or freshly reset accounts.
 - Server-side GitHub issue preview/import for reference repositories such as `erikbaender/mhh`.
 
-The development account has been populated with the full `erikbaender/mhh` GitHub sample import: 123 issues grouped into 7 source-language courses.
+The development account has been populated with the corrected `erikbaender/mhh` GitHub sample import: 89 dated issues grouped into 7 source-language courses, with 34 `Teil ...` progress subissues skipped.
 
 ## Development
 
@@ -79,6 +79,8 @@ pnpm exec convex env set GITHUB_IMPORT_TOKEN <github-issues-read-token>
 ```
 
 The importer preserves GitHub issue titles, milestones, labels, and body text as source data. German study-plan issue content should stay German; the app should not translate it during import.
+
+Progress subissues named like `Teil ...` are skipped when they do not contain a date range. They were used to track partial progress within real issues and should not become standalone study topics.
 
 The GitHub import modal previews issue counts and course grouping before creating a plan. In authenticated mode, preview and import both use the Convex-side token when the token field is left empty.
 
