@@ -4,10 +4,13 @@ import { addDays, differenceInCalendarDays, format, formatISO, isBefore, min, pa
 import {
   BookOpen,
   CalendarDays,
+  ChevronLeft,
   ChevronDown,
+  ChevronRight,
   GitBranch,
   Download,
   GripHorizontal,
+  GraduationCap,
   Link2,
   LogIn,
   Milestone,
@@ -53,6 +56,8 @@ type DragState = {
   originX: number;
   originStart: string;
   originEnd: string;
+  currentStart: string;
+  currentEnd: string;
 };
 
 type ModalMode =
@@ -94,6 +99,9 @@ export function StudyPlannerApp() {
   const [editingRangeId, setEditingRangeId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [collapsedCourseIds, setCollapsedCourseIds] = useState<Set<string>>(() => new Set());
+  const [leftPaneCollapsed, setLeftPaneCollapsed] = useState(false);
+  const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
   const [toast, setToast] = useState("Ready");
 
   const convexAuth = useConvexAuth();
@@ -467,14 +475,31 @@ export function StudyPlannerApp() {
       nextEnd = isBefore(addDays(originEnd, daysDelta), originStart) ? originStart : addDays(originEnd, daysDelta);
     }
 
-    void updateRange(
-      dragState.courseId,
-      dragState.topicId,
-      dragState.rangeId,
-      formatISO(nextStart, { representation: "date" }),
-      formatISO(nextEnd, { representation: "date" }),
-    ).catch((error) => {
+    const currentStart = formatISO(nextStart, { representation: "date" });
+    const currentEnd = formatISO(nextEnd, { representation: "date" });
+    if (currentStart !== dragState.currentStart || currentEnd !== dragState.currentEnd) {
+      setDragState({ ...dragState, currentStart, currentEnd });
+    }
+  }
+
+  function handlePointerEnd() {
+    if (!dragState) return;
+    const range = dragState;
+    setDragState(null);
+    void updateRange(range.courseId, range.topicId, range.rangeId, range.currentStart, range.currentEnd).catch((error) => {
       setToast(error instanceof Error ? error.message : "Range update failed");
+    });
+  }
+
+  function toggleCourse(courseId: string) {
+    setCollapsedCourseIds((current) => {
+      const next = new Set(current);
+      if (next.has(courseId)) {
+        next.delete(courseId);
+      } else {
+        next.add(courseId);
+      }
+      return next;
     });
   }
 
@@ -557,7 +582,7 @@ export function StudyPlannerApp() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[var(--app-bg)]">
+    <main className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)]">
       <header className="sticky top-0 z-30 border-b border-[var(--hairline)] bg-white/82 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
@@ -577,11 +602,21 @@ export function StudyPlannerApp() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1440px] gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <aside className="rounded-[8px] border border-[var(--hairline)] bg-white p-3 shadow-sm">
+      <div
+        className={clsx(
+          "planner-layout mx-auto grid w-full max-w-[1440px] flex-1 gap-4 overflow-hidden px-4 py-4 sm:px-6",
+          leftPaneCollapsed && "left-collapsed",
+          rightPaneCollapsed && "right-collapsed",
+        )}
+      >
+        {!leftPaneCollapsed ? (
+        <aside className="planner-pane rounded-[8px] border border-[var(--hairline)] bg-white p-3 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Plans</h2>
-            <IconButton label="Add plan" icon={<Plus size={16} />} onClick={() => setModalMode("plan")} />
+            <span className="flex items-center gap-1">
+              <IconButton label="Collapse navigation" icon={<ChevronLeft size={16} />} onClick={() => setLeftPaneCollapsed(true)} />
+              <IconButton label="Add plan" icon={<Plus size={16} />} onClick={() => setModalMode("plan")} />
+            </span>
           </div>
           <div className="space-y-2">
             {plans.length > 0 ? (
@@ -633,18 +668,21 @@ export function StudyPlannerApp() {
                 </button>
               ))
             ) : (
-              <EmptyState title="No courses" text={activePlan ? "Add a course to this plan." : "Select or create a plan first."} icon={<BookOpen size={18} />} />
+              <EmptyState title="No courses" text={activePlan ? "Add a course to this plan." : "Select or create a plan first."} icon={<GraduationCap size={18} />} />
             )}
           </div>
         </aside>
+        ) : null}
 
-        <section className="min-w-0 rounded-[8px] border border-[var(--hairline)] bg-white shadow-sm">
+        <section className="planner-main min-w-0 rounded-[8px] border border-[var(--hairline)] bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3">
             <div className="min-w-0">
               <h2 className="truncate text-lg font-semibold">{activePlan?.name ?? "No plan"}</h2>
               <p className="text-sm text-[var(--muted)]">{activePlan?.notes || "Create a course and begin scheduling topics."}</p>
             </div>
             <div className="flex gap-2">
+              {leftPaneCollapsed ? <IconButton label="Show navigation" icon={<ChevronRight size={16} />} onClick={() => setLeftPaneCollapsed(false)} /> : null}
+              {rightPaneCollapsed ? <IconButton label="Show inspector" icon={<ChevronLeft size={16} />} onClick={() => setRightPaneCollapsed(false)} /> : null}
               <button className="control-button" type="button" onClick={() => setModalMode("topic")} disabled={!selectedCourse}>
                 <BookOpen size={16} /> Topic
               </button>
@@ -664,9 +702,17 @@ export function StudyPlannerApp() {
             dragState={dragState}
             setDragState={setDragState}
             onPointerMove={handlePointerMove}
+            onPointerEnd={handlePointerEnd}
+            collapsedCourseIds={collapsedCourseIds}
+            onToggleCourse={toggleCourse}
           />
         </section>
 
+        {!rightPaneCollapsed ? (
+        <div className="planner-pane min-w-0">
+          <div className="mb-2 flex justify-end">
+            <IconButton label="Collapse inspector" icon={<ChevronRight size={16} />} onClick={() => setRightPaneCollapsed(true)} />
+          </div>
         <Inspector
           plan={activePlan}
           selection={selection}
@@ -682,6 +728,8 @@ export function StudyPlannerApp() {
           }}
           onDeleteRange={requestDeleteRange}
         />
+        </div>
+        ) : null}
       </div>
 
       <PlannerModal
@@ -814,6 +862,9 @@ function GanttChart({
   dragState,
   setDragState,
   onPointerMove,
+  onPointerEnd,
+  collapsedCourseIds,
+  onToggleCourse,
 }: {
   plan?: Plan;
   timeline: string[];
@@ -822,6 +873,9 @@ function GanttChart({
   dragState: DragState | null;
   setDragState: (state: DragState | null) => void;
   onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerEnd: () => void;
+  collapsedCourseIds: Set<string>;
+  onToggleCourse: (courseId: string) => void;
 }) {
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -842,7 +896,7 @@ function GanttChart({
       ref={chartRef}
       className="gantt-scroll"
       onPointerMove={onPointerMove}
-      onPointerUp={() => setDragState(null)}
+      onPointerUp={onPointerEnd}
       onPointerCancel={() => setDragState(null)}
     >
       <div className="gantt-grid" style={{ width: 220 + timeline.length * dayWidth, "--timeline-days": timeline.length } as CSSProperties}>
@@ -864,6 +918,8 @@ function GanttChart({
             setSelection={setSelection}
             dragState={dragState}
             setDragState={setDragState}
+            collapsed={collapsedCourseIds.has(course.id)}
+            onToggleCourse={onToggleCourse}
           />
         ))}
       </div>
@@ -879,6 +935,8 @@ function CourseRows({
   setSelection,
   dragState,
   setDragState,
+  collapsed,
+  onToggleCourse,
 }: {
   plan: Plan;
   course: Course;
@@ -887,16 +945,23 @@ function CourseRows({
   setSelection: (selection: Selection) => void;
   dragState: DragState | null;
   setDragState: (state: DragState | null) => void;
+  collapsed: boolean;
+  onToggleCourse: (courseId: string) => void;
 }) {
   return (
     <>
       <button
         type="button"
         className="course-row sticky left-0 z-10"
-        onClick={() => setSelection({ type: "course", planId: plan.id, courseId: course.id })}
+        aria-expanded={!collapsed}
+        onClick={() => {
+          setSelection({ type: "course", planId: plan.id, courseId: course.id });
+          onToggleCourse(course.id);
+        }}
       >
-        <span className="size-3 rounded-full" style={{ background: course.color }} />
-        {course.name}
+        <ChevronDown className={clsx("course-toggle", collapsed && "collapsed")} size={15} />
+        <span className="size-3 shrink-0 rounded-full" style={{ background: course.color }} />
+        <span className="truncate">{course.name}</span>
       </button>
       <div className="course-band" style={{ gridColumn: `span ${timeline.length}` }}>
         {course.milestones.map((milestone) => {
@@ -916,7 +981,7 @@ function CourseRows({
         })}
       </div>
 
-      {course.topics.map((topic) => (
+      {!collapsed && course.topics.map((topic) => (
         <TopicRow
           key={topic.id}
           plan={plan}
@@ -929,7 +994,7 @@ function CourseRows({
           setDragState={setDragState}
         />
       ))}
-      {course.topics.length === 0 ? (
+      {!collapsed && course.topics.length === 0 ? (
         <>
           <div className="topic-label sticky left-0 z-10 text-[var(--muted)]">No topics</div>
           <div className="topic-track" style={{ gridColumn: `span ${timeline.length}` }} />
@@ -970,14 +1035,16 @@ function TopicRow({
       </button>
       <div className="topic-track" style={{ gridColumn: `span ${timeline.length}` }}>
         {topic.ranges.map((range) => {
-          const startOffset = differenceInCalendarDays(parseISO(range.start), parseISO(timeline[0]));
-          const span = differenceInCalendarDays(parseISO(range.end), parseISO(range.start)) + 1;
+          const visibleRange = dragState?.rangeId === range.id ? { start: dragState.currentStart, end: dragState.currentEnd } : range;
+          const startOffset = differenceInCalendarDays(parseISO(visibleRange.start), parseISO(timeline[0]));
+          const span = differenceInCalendarDays(parseISO(visibleRange.end), parseISO(visibleRange.start)) + 1;
           if (startOffset + span < 0 || startOffset > timeline.length) return null;
           return (
             <div
               key={range.id}
               className={clsx("range-bar", dragState?.rangeId === range.id && "dragging")}
               style={{ left: startOffset * dayWidth + 5, width: Math.max(span * dayWidth - 10, 28), background: topic.color }}
+              title={`${course.name}: ${topic.name} (${visibleRange.start} to ${visibleRange.end})`}
               onPointerDown={(event) => {
                 event.currentTarget.setPointerCapture(event.pointerId);
                 setSelection({ type: "topic", planId: plan.id, courseId: course.id, topicId: topic.id });
@@ -990,6 +1057,8 @@ function TopicRow({
                   originX: event.clientX,
                   originStart: range.start,
                   originEnd: range.end,
+                  currentStart: range.start,
+                  currentEnd: range.end,
                 });
               }}
             >
@@ -1006,10 +1075,12 @@ function TopicRow({
                     originX: event.clientX,
                     originStart: range.start,
                     originEnd: range.end,
+                    currentStart: range.start,
+                    currentEnd: range.end,
                   });
                 }}
               />
-              <span className="range-title">{format(parseISO(range.start), "MMM d")} - {format(parseISO(range.end), "MMM d")}</span>
+              <span className="range-title">{course.name}</span>
               <span
                 className="range-handle right"
                 onPointerDown={(event) => {
@@ -1023,6 +1094,8 @@ function TopicRow({
                     originX: event.clientX,
                     originStart: range.start,
                     originEnd: range.end,
+                    currentStart: range.start,
+                    currentEnd: range.end,
                   });
                 }}
               />

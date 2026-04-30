@@ -1,4 +1,4 @@
-import { addDays, formatISO, parseISO, subDays } from "date-fns";
+import { formatISO, parseISO } from "date-fns";
 import { z } from "zod";
 import { applePalette, createId, type Course, type Milestone, type Plan, type Topic } from "./planner-data";
 
@@ -187,9 +187,7 @@ export function mapGitHubIssuesToPlan(owner: string, repo: string, issues: GitHu
     const courseName = issue.milestone?.title ?? issue.labels?.[0]?.name ?? "Imported topics";
     const course = ensureCourse(courseMap, planId, courseName);
     const dueDate = issue.milestone?.due_on ? formatISO(parseISO(issue.milestone.due_on), { representation: "date" }) : undefined;
-    const parsedRange = extractDateRange(issue.body ?? issue.title);
-    const fallbackEnd = dueDate ?? formatISO(addDays(new Date(), 7), { representation: "date" });
-    const fallbackStart = formatISO(subDays(parseISO(fallbackEnd), 6), { representation: "date" });
+    const parsedRange = extractDateRange(`${issue.title}\n${issue.body ?? ""}`);
 
     if (dueDate && !course.milestones.some((milestone) => milestone.name === courseName)) {
       course.milestones.push({
@@ -208,13 +206,7 @@ export function mapGitHubIssuesToPlan(owner: string, repo: string, issues: GitHu
       notes: issue.body?.trim() ?? "",
       color: course.color,
       dependencies: [],
-      ranges: [
-        {
-          id: createId("range"),
-          start: parsedRange?.start ?? fallbackStart,
-          end: parsedRange?.end ?? fallbackEnd,
-        },
-      ],
+      ranges: parsedRange ? [{ id: createId("range"), start: parsedRange.start, end: parsedRange.end }] : [],
     });
   }
 
