@@ -7,9 +7,30 @@
   --app-fg: #1d1d1f;
   --surface: #ffffff;
   --surface-elevated: rgba(255, 255, 255, 0.86);
+  --surface-muted: #f5f5f7;
+  --surface-hover: #eeeeef;
+  --surface-active: #e2f0ff;
+  --gridline: rgba(60, 60, 67, 0.12);
   --hairline: rgba(60, 60, 67, 0.18);
   --muted: #6e6e73;
   --accent: #007aff;
+}
+
+:root[data-theme="dark"],
+[data-theme="dark"] {
+  --background: #111113;
+  --foreground: #f5f5f7;
+  --app-bg: #111113;
+  --app-fg: #f5f5f7;
+  --surface: #1c1c1e;
+  --surface-elevated: rgba(28, 28, 30, 0.88);
+  --surface-muted: #2c2c2e;
+  --surface-hover: #3a3a3c;
+  --surface-active: rgba(10, 132, 255, 0.22);
+  --gridline: rgba(235, 235, 245, 0.13);
+  --hairline: rgba(235, 235, 245, 0.16);
+  --muted: #a1a1a6;
+  --accent: #0a84ff;
 }
 
 @theme inline {
@@ -52,13 +73,13 @@ textarea {
   justify-content: center;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: #ffffff;
-  color: #1d1d1f;
+  background: var(--surface);
+  color: var(--app-fg);
   transition: background 160ms ease, transform 160ms ease;
 }
 
 .icon-button:hover {
-  background: #f5f5f7;
+  background: var(--surface-muted);
 }
 
 .icon-button:disabled,
@@ -69,7 +90,7 @@ textarea {
 
 .icon-button:disabled:hover,
 .icon-button.disabled:hover {
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .icon-button:active {
@@ -83,16 +104,16 @@ textarea {
   gap: 6px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
   padding: 0 12px;
-  color: #1d1d1f;
+  color: var(--app-fg);
   font-size: 13px;
   font-weight: 520;
   transition: background 160ms ease, opacity 160ms ease;
 }
 
 .control-button:hover:not(:disabled) {
-  background: #f5f5f7;
+  background: var(--surface-muted);
 }
 
 .control-button:disabled {
@@ -161,13 +182,13 @@ textarea {
   justify-content: center;
   border-right: 1px solid var(--hairline);
   border-bottom: 1px solid var(--hairline);
-  background: #fbfbfd;
+  background: var(--surface-muted);
   color: var(--muted);
   font-size: 11px;
 }
 
 .gantt-header strong {
-  color: #1d1d1f;
+  color: var(--app-fg);
   font-size: 13px;
   font-weight: 600;
 }
@@ -180,13 +201,13 @@ textarea {
   gap: 8px;
   border-right: 1px solid var(--hairline);
   border-bottom: 1px solid var(--hairline);
-  background: #ffffff;
+  background: var(--surface);
   padding: 0 12px;
   text-align: left;
 }
 
 .course-row {
-  color: #1d1d1f;
+  color: var(--app-fg);
   font-size: 13px;
   font-weight: 650;
 }
@@ -201,12 +222,12 @@ textarea {
 }
 
 .topic-label {
-  color: #1d1d1f;
+  color: var(--app-fg);
   font-size: 13px;
 }
 
 .topic-label.selected {
-  background: #e2f0ff;
+  background: var(--surface-active);
 }
 
 .course-band,
@@ -214,16 +235,16 @@ textarea {
   position: relative;
   min-height: 44px;
   border-bottom: 1px solid var(--hairline);
-  background-image: linear-gradient(to right, rgba(60, 60, 67, 0.12) 1px, transparent 1px);
+  background-image: linear-gradient(to right, var(--gridline) 1px, transparent 1px);
   background-size: 42px 100%;
 }
 
 .course-band {
-  background-color: #fbfbfd;
+  background-color: var(--surface-muted);
 }
 
 .topic-track {
-  background-color: #ffffff;
+  background-color: var(--surface);
 }
 
 .milestone-marker {
@@ -237,8 +258,26 @@ textarea {
   transform: translateX(-50%);
   border: 1px solid rgba(0, 122, 255, 0.26);
   border-radius: 999px;
-  background: #e2f0ff;
-  color: #007aff;
+  background: var(--surface-active);
+  color: var(--accent);
+}
+
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-\[\#f5f5f7\] {
+  background-color: var(--surface) !important;
+}
+
+[data-theme="dark"] .hover\:bg-\[\#eeeeef\]:hover,
+[data-theme="dark"] .hover\:bg-\[\#f5f5f7\]:hover {
+  background-color: var(--surface-hover) !important;
+}
+
+[data-theme="dark"] .bg-\[\#e2f0ff\] {
+  background-color: var(--surface-active) !important;
+}
+
+[data-theme="dark"] .text-\[\#1d1d1f\] {
+  color: var(--app-fg) !important;
 }
 
 .range-bar {

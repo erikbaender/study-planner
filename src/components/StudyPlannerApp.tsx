@@ -14,13 +14,15 @@ import {
   Link2,
   LogIn,
   Milestone,
+  Moon,
   Pencil,
   Plus,
   Save,
+  Sun,
   Trash2,
   Upload,
 } from "lucide-react";
-import { useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { IonButton, IonInput, IonModal, IonTextarea, setupIonicReact } from "@ionic/react";
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -89,6 +91,16 @@ type DeleteTarget =
 
 const dayWidth = 42;
 const today = "2026-05-01";
+const themeStorageKey = "study-planner-theme";
+
+type Theme = "light" | "dark";
+
+function getInitialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  const storedTheme = window.localStorage.getItem(themeStorageKey);
+  if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 export function StudyPlannerApp() {
   const [signedIn, setSignedIn] = useState(false);
@@ -102,6 +114,7 @@ export function StudyPlannerApp() {
   const [collapsedCourseIds, setCollapsedCourseIds] = useState<Set<string>>(() => new Set());
   const [leftPaneCollapsed, setLeftPaneCollapsed] = useState(false);
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [toast, setToast] = useState("Ready");
 
   const convexAuth = useConvexAuth();
@@ -136,6 +149,12 @@ export function StudyPlannerApp() {
   const selectedRange = selectedTopic?.ranges.find((range) => range.id === editingRangeId);
 
   const timeline = useMemo(() => buildTimeline(activePlan), [activePlan]);
+
+  useEffect(() => {
+    window.localStorage.setItem(themeStorageKey, theme);
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
 
   function updatePlans(updater: (plans: Plan[]) => Plan[]) {
     setLocalPlans((current) => updater(structuredClone(current)));
@@ -582,19 +601,24 @@ export function StudyPlannerApp() {
   }
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)]">
-      <header className="sticky top-0 z-30 border-b border-[var(--hairline)] bg-white/82 backdrop-blur-xl">
+    <main className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)]" data-theme={theme}>
+      <header className="sticky top-0 z-30 border-b border-[var(--hairline)] bg-[var(--surface-elevated)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-[8px] bg-[#007aff] text-white">
               <CalendarDays size={20} />
             </div>
             <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold text-[#1d1d1f]">Study Planner</h1>
+              <h1 className="truncate text-base font-semibold text-[var(--app-fg)]">Study Planner</h1>
               <p className="truncate text-xs text-[var(--muted)]">{toast}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <IconButton
+              label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              icon={theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            />
             <IconButton label="Import JSON" icon={<Upload size={17} />} asFile onFile={importFile} />
             <IconButton label="Export JSON" icon={<Download size={17} />} onClick={exportPlans} disabled={plans.length === 0} />
             <IconButton label="GitHub import" icon={<GitBranch size={17} />} onClick={() => setModalMode("github")} />
