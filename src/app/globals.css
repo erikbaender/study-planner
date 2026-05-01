@@ -170,6 +170,7 @@ textarea {
   display: grid;
   grid-template-columns: 220px repeat(var(--timeline-days, 1), 42px);
   min-height: 100%;
+  align-content: start;
 }
 
 .gantt-header {
