@@ -78,9 +78,17 @@ Authenticated imports can use a Convex-side token so the browser does not need t
 pnpm exec convex env set GITHUB_IMPORT_TOKEN <github-issues-read-token>
 ```
 
+To import real Gantt ranges from GitHub Projects v2 fields, also configure a token that can read Projects v2 data:
+
+```bash
+pnpm exec convex env set GITHUB_PROJECTS_TOKEN <github-projects-read-token>
+```
+
 The importer preserves GitHub issue titles, milestones, labels, and body text as source data. German study-plan issue content should stay German; the app should not translate it during import.
 
 Progress subissues named like `Teil ...` are skipped when they do not contain a date range. They were used to track partial progress within real issues and should not become standalone study topics.
+
+When available, the importer reads GitHub Projects v2 `Start date` and `Target date` fields for topic study ranges. Milestone due dates are kept as course milestones and are not used as topic-range fallbacks.
 
 The GitHub import modal previews issue counts and course grouping before creating a plan. In authenticated mode, preview and import both use the Convex-side token when the token field is left empty.
 

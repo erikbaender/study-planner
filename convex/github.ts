@@ -11,6 +11,7 @@ type GitHubIssue = {
   labels?: Array<{ name: string; color?: string }>;
   milestone?: { title: string; due_on?: string | null } | null;
   pull_request?: unknown;
+  projectDateRange?: { start: string; end: string };
 };
 
 type ImportIssuesResult = {
@@ -37,7 +38,7 @@ export const importIssues = action({
   },
   handler: async (ctx, args): Promise<ImportIssuesResult> => {
     const token = getGitHubToken(args.token);
-    const { issues, skippedSubissueCount } = await fetchIssues(args.owner, args.repo, token);
+    const { issues, skippedSubissueCount } = await fetchIssues(args.owner, args.repo, token, getGitHubProjectToken(args.token, token));
     const planIds: Id<"plans">[] = await ctx.runMutation(api.planner.importPlanTrees, {
       plans: [mapIssuesToImportPlan(args.owner, args.repo, issues)],
     });
@@ -54,7 +55,7 @@ export const previewIssues = action({
   },
   handler: async (_ctx, args): Promise<GitHubImportPreview> => {
     const token = getGitHubToken(args.token);
-    const { issues, skippedSubissueCount } = await fetchIssues(args.owner, args.repo, token);
+    const { issues, skippedSubissueCount } = await fetchIssues(args.owner, args.repo, token, getGitHubProjectToken(args.token, token));
     return summarizeImportPlan(args.owner, args.repo, issues, skippedSubissueCount);
   },
 });
@@ -68,7 +69,11 @@ function getGitHubToken(token?: string) {
   return configuredToken;
 }
 
-async function fetchIssues(owner: string, repo: string, token: string) {
+function getGitHubProjectToken(token: string | undefined, issueToken: string) {
+  return token?.trim() || process.env.GITHUB_PROJECTS_TOKEN || process.env.PROJECTS_ACCESS || issueToken;
+}
+
+async function fetchIssues(owner: string, repo: string, token: string, projectToken: string) {
   const issues: GitHubIssue[] = [];
   let skippedSubissueCount = 0;
 
@@ -95,7 +100,12 @@ async function fetchIssues(owner: string, repo: string, token: string) {
     }
   }
 
-  return { issues, skippedSubissueCount };
+  const projectDateRanges = await fetchProjectDateRanges(owner, repo, projectToken);
+
+  return {
+    issues: issues.map((issue) => ({ ...issue, projectDateRange: projectDateRanges.get(issue.number) })),
+    skippedSubissueCount,
+  };
 }
 
 function mapIssuesToImportPlan(owner: string, repo: string, issues: GitHubIssue[]) {
@@ -114,7 +124,7 @@ function mapIssuesToImportPlan(owner: string, repo: string, issues: GitHubIssue[
     const courseName = issue.milestone?.title ?? issue.labels?.[0]?.name ?? repo;
     const course = ensureCourse(courses, courseName);
     const dueDate = issue.milestone?.due_on ? new Date(issue.milestone.due_on).toISOString().slice(0, 10) : undefined;
-    const parsedRange = extractDateRange(`${issue.title}\n${issue.body ?? ""}`);
+    const parsedRange = issue.projectDateRange ?? extractDateRange(`${issue.title}\n${issue.body ?? ""}`);
 
     if (dueDate && !course.milestones.some((milestone) => milestone.name === courseName)) {
       course.milestones.push({ name: courseName, notes: "", start: dueDate });
@@ -156,6 +166,106 @@ function summarizeImportPlan(owner: string, repo: string, issues: GitHubIssue[],
 function isProgressSubissue(issue: GitHubIssue) {
   return /^Teil\s+\d+(?:\b|[:.)-])/i.test(issue.title.trim()) && extractDateRange(`${issue.title}\n${issue.body ?? ""}`) === undefined;
 }
+
+async function fetchProjectDateRanges(owner: string, repo: string, token: string) {
+  const ranges = new Map<number, { start: string; end: string }>();
+  let cursor: string | null = null;
+
+  do {
+    const response = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `
+          query ProjectDates($owner: String!, $repo: String!, $cursor: String) {
+            repository(owner: $owner, name: $repo) {
+              projectsV2(first: 10) {
+                nodes {
+                  title
+                  closed
+                  items(first: 100, after: $cursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes {
+                      content { ... on Issue { number } }
+                      fieldValues(first: 30) {
+                        nodes {
+                          ... on ProjectV2ItemFieldDateValue {
+                            date
+                            field { ... on ProjectV2FieldCommon { name } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        variables: { owner, repo, cursor },
+      }),
+    });
+
+    if (!response.ok) {
+      return ranges;
+    }
+
+    const payload = (await response.json()) as ProjectDatesResponse;
+    const project = payload.data?.repository?.projectsV2.nodes.find((candidate) => candidate && !candidate.closed);
+    const items = project?.items;
+    if (!items) {
+      return ranges;
+    }
+
+    for (const item of items.nodes) {
+      const issueNumber = item.content?.number;
+      if (!issueNumber) continue;
+
+      let start: string | undefined;
+      let end: string | undefined;
+      for (const value of item.fieldValues.nodes) {
+        if (value.field?.name === "Start date") start = value.date;
+        if (value.field?.name === "Target date") end = value.date;
+      }
+
+      if (start) {
+        ranges.set(issueNumber, { start, end: end ?? start });
+      }
+    }
+
+    cursor = items.pageInfo.hasNextPage ? items.pageInfo.endCursor : null;
+  } while (cursor);
+
+  return ranges;
+}
+
+type ProjectDatesResponse = {
+  data?: {
+    repository?: {
+      projectsV2: {
+        nodes: Array<{
+          title: string;
+          closed: boolean;
+          items: {
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+            nodes: Array<{
+              content?: { number: number } | null;
+              fieldValues: {
+                nodes: Array<{
+                  date: string;
+                  field?: { name: string };
+                }>;
+              };
+            }>;
+          };
+        } | null>;
+      };
+    };
+  };
+};
 
 function ensureCourse(
   courses: Map<

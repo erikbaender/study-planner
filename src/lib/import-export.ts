@@ -141,6 +141,7 @@ export type GitHubIssue = {
   labels?: Array<{ name: string; color?: string }>;
   milestone?: { title: string; due_on?: string | null } | null;
   pull_request?: unknown;
+  projectDateRange?: { start: string; end: string };
 };
 
 export async function fetchGitHubIssues(owner: string, repo: string, token: string) {
@@ -167,7 +168,8 @@ export async function fetchGitHubIssues(owner: string, repo: string, token: stri
     }
   }
 
-  return issues;
+  const projectDateRanges = await fetchGitHubProjectDateRanges(owner, repo, token);
+  return issues.map((issue) => ({ ...issue, projectDateRange: projectDateRanges.get(issue.number) }));
 }
 
 export function filterImportableGitHubIssues(issues: GitHubIssue[]) {
@@ -187,7 +189,7 @@ export function mapGitHubIssuesToPlan(owner: string, repo: string, issues: GitHu
     const courseName = issue.milestone?.title ?? issue.labels?.[0]?.name ?? "Imported topics";
     const course = ensureCourse(courseMap, planId, courseName);
     const dueDate = issue.milestone?.due_on ? formatISO(parseISO(issue.milestone.due_on), { representation: "date" }) : undefined;
-    const parsedRange = extractDateRange(`${issue.title}\n${issue.body ?? ""}`);
+    const parsedRange = issue.projectDateRange ?? extractDateRange(`${issue.title}\n${issue.body ?? ""}`);
 
     if (dueDate && !course.milestones.some((milestone) => milestone.name === courseName)) {
       course.milestones.push({
@@ -217,6 +219,106 @@ export function mapGitHubIssuesToPlan(owner: string, repo: string, issues: GitHu
     courses: [...courseMap.values()],
   };
 }
+
+async function fetchGitHubProjectDateRanges(owner: string, repo: string, token: string) {
+  const ranges = new Map<number, { start: string; end: string }>();
+  let cursor: string | null = null;
+
+  do {
+    const response = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `
+          query ProjectDates($owner: String!, $repo: String!, $cursor: String) {
+            repository(owner: $owner, name: $repo) {
+              projectsV2(first: 10) {
+                nodes {
+                  title
+                  closed
+                  items(first: 100, after: $cursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes {
+                      content { ... on Issue { number } }
+                      fieldValues(first: 30) {
+                        nodes {
+                          ... on ProjectV2ItemFieldDateValue {
+                            date
+                            field { ... on ProjectV2FieldCommon { name } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        `,
+        variables: { owner, repo, cursor },
+      }),
+    });
+
+    if (!response.ok) {
+      return ranges;
+    }
+
+    const payload = (await response.json()) as ProjectDatesResponse;
+    const project = payload.data?.repository?.projectsV2.nodes.find((candidate) => candidate && !candidate.closed);
+    const items = project?.items;
+    if (!items) {
+      return ranges;
+    }
+
+    for (const item of items.nodes) {
+      const issueNumber = item.content?.number;
+      if (!issueNumber) continue;
+
+      let start: string | undefined;
+      let end: string | undefined;
+      for (const value of item.fieldValues.nodes) {
+        if (value.field?.name === "Start date") start = value.date;
+        if (value.field?.name === "Target date") end = value.date;
+      }
+
+      if (start) {
+        ranges.set(issueNumber, { start, end: end ?? start });
+      }
+    }
+
+    cursor = items.pageInfo.hasNextPage ? items.pageInfo.endCursor : null;
+  } while (cursor);
+
+  return ranges;
+}
+
+type ProjectDatesResponse = {
+  data?: {
+    repository?: {
+      projectsV2: {
+        nodes: Array<{
+          title: string;
+          closed: boolean;
+          items: {
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+            nodes: Array<{
+              content?: { number: number } | null;
+              fieldValues: {
+                nodes: Array<{
+                  date: string;
+                  field?: { name: string };
+                }>;
+              };
+            }>;
+          };
+        } | null>;
+      };
+    };
+  };
+};
 
 function isProgressSubissue(issue: GitHubIssue) {
   return /^Teil\s+\d+(?:\b|[:.)-])/i.test(issue.title.trim()) && extractDateRange(`${issue.title}\n${issue.body ?? ""}`) === undefined;
