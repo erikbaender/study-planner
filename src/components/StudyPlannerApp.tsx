@@ -48,11 +48,12 @@ type Selection =
   | { type: "milestone"; planId: string; courseId: string; milestoneId: string };
 
 type DragState = {
+  kind: "milestone" | "range";
   mode: "move" | "start" | "end";
   planId: string;
   courseId: string;
-  topicId: string;
-  rangeId: string;
+  topicId?: string;
+  itemId: string;
   originX: number;
   originStart: string;
   originEnd: string;
@@ -480,6 +481,26 @@ export function StudyPlannerApp() {
     }));
   }
 
+  async function updateMilestoneDates(courseId: string, milestoneId: string, start: string, end: string) {
+    const milestone = activePlan?.courses.find((course) => course.id === courseId)?.milestones.find((candidate) => candidate.id === milestoneId);
+    if (!milestone) return;
+    if (usingConvex) {
+      await updateMilestoneMutation({
+        milestoneId: milestoneId as Id<"milestones">,
+        name: milestone.name,
+        notes: milestone.notes,
+        startDate: start,
+        endDate: end,
+      });
+      return;
+    }
+
+    updateCourse(courseId, (course) => ({
+      ...course,
+      milestones: course.milestones.map((candidate) => candidate.id === milestoneId ? { ...candidate, start, end } : candidate),
+    }));
+  }
+
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (creationGesture) {
       const pointerIndex = Math.max(0, Math.min(timeline.length - 1, Math.floor((event.clientX - creationGesture.trackLeft) / dayWidth)));
@@ -501,8 +522,13 @@ export function StudyPlannerApp() {
     const originStart = parseISO(dragState.originStart);
     const originEnd = parseISO(dragState.originEnd);
     const course = activePlan?.courses.find((candidate) => candidate.id === dragState.courseId);
-    const topic = course?.topics.find((candidate) => candidate.id === dragState.topicId);
-    const neighboringRanges = topic?.ranges.filter((range) => range.id !== dragState.rangeId) ?? [];
+    const topic = dragState.topicId ? course?.topics.find((candidate) => candidate.id === dragState.topicId) : undefined;
+    const neighboringRanges = dragState.kind === "range"
+      ? topic?.ranges.filter((range) => range.id !== dragState.itemId) ?? []
+      : course?.milestones.filter((milestone) => milestone.id !== dragState.itemId).map((milestone) => ({
+          start: milestone.start,
+          end: milestone.end ?? milestone.start,
+        })) ?? [];
     let nextStart = originStart;
     let nextEnd = originEnd;
 
@@ -566,10 +592,13 @@ export function StudyPlannerApp() {
     }
 
     if (!dragState) return;
-    const range = dragState;
+    const item = dragState;
     setDragState(null);
-    void updateRange(range.courseId, range.topicId, range.rangeId, range.currentStart, range.currentEnd).catch((error) => {
-      setToast(error instanceof Error ? error.message : "Range update failed");
+    const update = item.kind === "range" && item.topicId
+      ? updateRange(item.courseId, item.topicId, item.itemId, item.currentStart, item.currentEnd)
+      : updateMilestoneDates(item.courseId, item.itemId, item.currentStart, item.currentEnd);
+    void update.catch((error) => {
+      setToast(error instanceof Error ? error.message : `${item.kind === "range" ? "Range" : "Milestone"} update failed`);
     });
   }
 
@@ -1073,8 +1102,11 @@ function CourseRows({
           <CreationPreview startIndex={hoverIndex} endIndex={hoverIndex} color={course.color} hover />
         ) : null}
         {course.milestones.map((milestone) => {
-          const startOffset = differenceInCalendarDays(parseISO(milestone.start), parseISO(timeline[0]));
-          const span = differenceInCalendarDays(parseISO(milestone.end ?? milestone.start), parseISO(milestone.start)) + 1;
+          const visibleMilestone = dragState?.kind === "milestone" && dragState.itemId === milestone.id
+            ? { start: dragState.currentStart, end: dragState.currentEnd }
+            : { start: milestone.start, end: milestone.end ?? milestone.start };
+          const startOffset = differenceInCalendarDays(parseISO(visibleMilestone.start), parseISO(timeline[0]));
+          const span = differenceInCalendarDays(parseISO(visibleMilestone.end), parseISO(visibleMilestone.start)) + 1;
           if (startOffset + span < 0 || startOffset > timeline.length) return null;
           return (
             <GanttBar
@@ -1083,10 +1115,66 @@ function CourseRows({
               color={course.color}
               startIndex={startOffset}
               endIndex={startOffset + span - 1}
+              dragging={dragState?.kind === "milestone" && dragState.itemId === milestone.id}
               title={milestone.name}
-              onPointerDown={(event) => event.stopPropagation()}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                setSelection({ type: "milestone", planId: plan.id, courseId: course.id, milestoneId: milestone.id });
+                setDragState({
+                  kind: "milestone",
+                  mode: "move",
+                  planId: plan.id,
+                  courseId: course.id,
+                  itemId: milestone.id,
+                  originX: event.clientX,
+                  originStart: milestone.start,
+                  originEnd: milestone.end ?? milestone.start,
+                  currentStart: milestone.start,
+                  currentEnd: milestone.end ?? milestone.start,
+                });
+              }}
               onClick={() => setSelection({ type: "milestone", planId: plan.id, courseId: course.id, milestoneId: milestone.id })}
-            />
+            >
+              <GanttResizeHandle
+                side="left"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  setDragState({
+                    kind: "milestone",
+                    mode: "start",
+                    planId: plan.id,
+                    courseId: course.id,
+                    itemId: milestone.id,
+                    originX: event.clientX,
+                    originStart: milestone.start,
+                    originEnd: milestone.end ?? milestone.start,
+                    currentStart: milestone.start,
+                    currentEnd: milestone.end ?? milestone.start,
+                  });
+                }}
+              />
+              <GanttResizeHandle
+                side="right"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  setDragState({
+                    kind: "milestone",
+                    mode: "end",
+                    planId: plan.id,
+                    courseId: course.id,
+                    itemId: milestone.id,
+                    originX: event.clientX,
+                    originStart: milestone.start,
+                    originEnd: milestone.end ?? milestone.start,
+                    currentStart: milestone.start,
+                    currentEnd: milestone.end ?? milestone.start,
+                  });
+                }}
+              />
+            </GanttBar>
           );
         })}
       </div>
@@ -1167,7 +1255,7 @@ function constrainRangeToNeighbors(
   originEnd: Date,
   candidateStart: Date,
   candidateEnd: Date,
-  ranges: Topic["ranges"],
+  ranges: Array<{ start: string; end: string }>,
 ) {
   const previousEnd = ranges
     .map((range) => parseISO(range.end))
@@ -1239,6 +1327,10 @@ function GanttBar({ label, color, startIndex, endIndex, title, onPointerDown, on
   );
 }
 
+function GanttResizeHandle({ side, onPointerDown }: { side: "left" | "right"; onPointerDown: (event: PointerEvent<HTMLSpanElement>) => void }) {
+  return <span className={`range-handle ${side}`} onPointerDown={onPointerDown} />;
+}
+
 function TopicRow({
   plan,
   course,
@@ -1287,7 +1379,7 @@ function TopicRow({
           <CreationPreview startIndex={hoverIndex} endIndex={hoverIndex} color={course.color} hover />
         ) : null}
         {topic.ranges.map((range) => {
-          const visibleRange = dragState?.rangeId === range.id ? { start: dragState.currentStart, end: dragState.currentEnd } : range;
+          const visibleRange = dragState?.kind === "range" && dragState.itemId === range.id ? { start: dragState.currentStart, end: dragState.currentEnd } : range;
           const startOffset = differenceInCalendarDays(parseISO(visibleRange.start), parseISO(timeline[0]));
           const span = differenceInCalendarDays(parseISO(visibleRange.end), parseISO(visibleRange.start)) + 1;
           if (startOffset + span < 0 || startOffset > timeline.length) return null;
@@ -1298,18 +1390,19 @@ function TopicRow({
               color={course.color}
               startIndex={startOffset}
               endIndex={startOffset + span - 1}
-              dragging={dragState?.rangeId === range.id}
+              dragging={dragState?.kind === "range" && dragState.itemId === range.id}
               title={`${course.name}: ${topic.name} (${visibleRange.start} to ${visibleRange.end})`}
               onPointerDown={(event) => {
                 event.stopPropagation();
                 event.currentTarget.setPointerCapture(event.pointerId);
                 setSelection({ type: "topic", planId: plan.id, courseId: course.id, topicId: topic.id });
                 setDragState({
+                  kind: "range",
                   mode: "move",
                   planId: plan.id,
                   courseId: course.id,
                   topicId: topic.id,
-                  rangeId: range.id,
+                  itemId: range.id,
                   originX: event.clientX,
                   originStart: range.start,
                   originEnd: range.end,
@@ -1318,17 +1411,18 @@ function TopicRow({
                 });
               }}
             >
-              <span
-                className="range-handle left"
+              <GanttResizeHandle
+                side="left"
                 onPointerDown={(event) => {
                   event.stopPropagation();
                   event.currentTarget.setPointerCapture(event.pointerId);
                   setDragState({
+                    kind: "range",
                     mode: "start",
                     planId: plan.id,
                     courseId: course.id,
                     topicId: topic.id,
-                    rangeId: range.id,
+                    itemId: range.id,
                     originX: event.clientX,
                     originStart: range.start,
                     originEnd: range.end,
@@ -1337,17 +1431,18 @@ function TopicRow({
                   });
                 }}
               />
-              <span
-                className="range-handle right"
+              <GanttResizeHandle
+                side="right"
                 onPointerDown={(event) => {
                   event.stopPropagation();
                   event.currentTarget.setPointerCapture(event.pointerId);
                   setDragState({
+                    kind: "range",
                     mode: "end",
                     planId: plan.id,
                     courseId: course.id,
                     topicId: topic.id,
-                    rangeId: range.id,
+                    itemId: range.id,
                     originX: event.clientX,
                     originStart: range.start,
                     originEnd: range.end,
