@@ -434,8 +434,10 @@ textarea {
 }
 
 .planner-workspace {
+  display: flex;
   min-height: 0;
   flex: 1;
+  margin: 16px;
   overflow: hidden;
 }
 
@@ -833,19 +835,18 @@ textarea {
 
 @media (max-width: 480px) {
   .ui-dialog-modal {
-    --width: 100%;
-    --max-height: calc(100vh - 16px);
-    --border-radius: 12px 12px 0 0;
-    align-items: end;
+    --width: calc(100vw - 24px);
+    --max-height: calc(100vh - 24px);
+    --border-radius: 12px;
   }
 
   .ui-dialog-modal::part(content) {
-    border-width: 1px 0 0;
-    border-radius: 12px 12px 0 0;
+    border-width: 1px;
+    border-radius: 12px;
   }
 
   .ui-dialog {
-    max-height: calc(100vh - 16px);
+    max-height: calc(100vh - 24px);
   }
 }
 

@@ -166,6 +166,12 @@ export function StudyPlannerApp() {
     setModalMode(null);
   }
 
+  function transitionToModal(mode: Exclude<ModalMode, "plan-picker" | null>) {
+    setDetailOpen(false);
+    setModalMode(null);
+    window.setTimeout(() => setModalMode(mode), 160);
+  }
+
   async function addPlan(name: string, notes: string) {
     if (usingConvex) {
       const planId = String(await createPlanMutation({ name, notes }));
@@ -716,7 +722,7 @@ export function StudyPlannerApp() {
         <span className="sr-only" aria-live="polite">{toast}</span>
       </header>
 
-      <section className="planner-workspace">
+      <section className="planner-workspace ui-panel">
         <GanttChart
           plan={activePlan}
           timeline={timeline}
@@ -740,7 +746,7 @@ export function StudyPlannerApp() {
         activePlanId={activePlan?.id}
         onClose={() => setModalMode(null)}
         onSelect={selectPlan}
-        onCreate={() => setModalMode("plan")}
+        onCreate={() => transitionToModal("plan")}
       />
 
       <DetailPopup
@@ -748,11 +754,11 @@ export function StudyPlannerApp() {
         plan={activePlan}
         selection={selection}
         onClose={() => setDetailOpen(false)}
-        onAddTopic={() => { setDetailOpen(false); setModalMode("topic"); }}
-        onEdit={(mode) => { setDetailOpen(false); setModalMode(mode); }}
-        onEditDependencies={() => { setDetailOpen(false); setModalMode("dependencies"); }}
+        onAddTopic={() => transitionToModal("topic")}
+        onEdit={transitionToModal}
+        onEditDependencies={() => transitionToModal("dependencies")}
         onDelete={() => { setDetailOpen(false); requestDeleteSelection(); }}
-        onEditRange={(rangeId) => { setDetailOpen(false); setEditingRangeId(rangeId); setModalMode("edit-range"); }}
+        onEditRange={(rangeId) => { setEditingRangeId(rangeId); transitionToModal("edit-range"); }}
         onDeleteRange={(rangeId) => { setDetailOpen(false); requestDeleteRange(rangeId); }}
       />
 
@@ -1744,8 +1750,9 @@ function PlannerModal({
                       type="checkbox"
                       checked={dependencyIds.includes(topic.id)}
                       onChange={(event) => {
+                        const checked = event.currentTarget.checked;
                         setDependencyIds((current) =>
-                          event.currentTarget.checked ? [...current, topic.id] : current.filter((dependencyId) => dependencyId !== topic.id),
+                          checked ? [...current, topic.id] : current.filter((dependencyId) => dependencyId !== topic.id),
                         );
                       }}
                     />

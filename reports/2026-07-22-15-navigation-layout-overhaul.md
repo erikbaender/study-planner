@@ -24,3 +24,15 @@ Replaced the persistent three-panel planner shell with a single central Gantt wo
 - `pnpm build` passed.
 - Browser validation on port 3000 confirmed one header control, no side panels, no planner toolbar, the plan picker flow, name-only plan creation, and Gantt milestone details in a popup.
 - Closing the detail popup left no active modal and retained the Gantt workspace.
+
+## Popup QA Correction
+
+- Forced reusable dialogs into Ionic's centered modal mode instead of the iOS sheet layout.
+- Targeted Ionic's actual shadow-root modal wrapper for shared enter and leave animations.
+- Sequenced popup-to-popup transitions so the outgoing popup finishes moving upward before the incoming popup enters from below.
+- Restored the padded, bordered, rounded center panel beneath the navigation bar.
+- Fixed a dependency checkbox event lifetime error discovered during popup testing.
+- Verified the entry path starts 28px below center and settles in 180ms.
+- Verified the exit path moves 28px above center while fading over 140ms.
+- Verified plan picker, new-plan, detail, and edit dialogs are centered and fully visible at 1555 x 933 and 390 x 844.
+- Verified the center panel retains a 16px inset, 6px radius, and 1px border at desktop and mobile widths.

@@ -14,11 +14,15 @@ import {
 type ButtonVariant = "default" | "primary" | "danger" | "invisible" | "unstyled";
 
 function popupEnterAnimation(baseElement: HTMLElement) {
+  const modalWrapper = baseElement.shadowRoot?.querySelector(".modal-wrapper");
+  const backdropElement = baseElement.shadowRoot?.querySelector("ion-backdrop");
+  if (!modalWrapper || !backdropElement) return createAnimation();
+
   const backdrop = createAnimation()
-    .addElement(baseElement.querySelector("ion-backdrop")!)
+    .addElement(backdropElement)
     .fromTo("opacity", "0.01", "var(--backdrop-opacity)");
   const content = createAnimation()
-    .addElement(baseElement.querySelector(".modal-wrapper")!)
+    .addElement(modalWrapper)
     .fromTo("opacity", "0", "1")
     .fromTo("transform", "translateY(28px)", "translateY(0)");
 
@@ -26,11 +30,15 @@ function popupEnterAnimation(baseElement: HTMLElement) {
 }
 
 function popupLeaveAnimation(baseElement: HTMLElement) {
+  const modalWrapper = baseElement.shadowRoot?.querySelector(".modal-wrapper");
+  const backdropElement = baseElement.shadowRoot?.querySelector("ion-backdrop");
+  if (!modalWrapper || !backdropElement) return createAnimation();
+
   const backdrop = createAnimation()
-    .addElement(baseElement.querySelector("ion-backdrop")!)
+    .addElement(backdropElement)
     .fromTo("opacity", "var(--backdrop-opacity)", "0");
   const content = createAnimation()
-    .addElement(baseElement.querySelector(".modal-wrapper")!)
+    .addElement(modalWrapper)
     .fromTo("opacity", "1", "0")
     .fromTo("transform", "translateY(0)", "translateY(-28px)");
 
@@ -165,7 +173,7 @@ export function Dialog({
   icon?: ReactNode;
 }) {
   return (
-    <IonModal isOpen={open} onDidDismiss={onClose} className="ui-dialog-modal" enterAnimation={popupEnterAnimation} leaveAnimation={popupLeaveAnimation}>
+    <IonModal mode="md" isOpen={open} onDidDismiss={onClose} className="ui-dialog-modal" enterAnimation={popupEnterAnimation} leaveAnimation={popupLeaveAnimation}>
       <div className="ui-dialog" role="document">
         <header className="ui-dialog-header">
           {icon ? <span className="ui-dialog-icon" aria-hidden="true">{icon}</span> : null}
