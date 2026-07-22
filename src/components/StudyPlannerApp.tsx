@@ -17,13 +17,12 @@ import {
   Moon,
   Pencil,
   Plus,
-  Save,
   Sun,
   Trash2,
   Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
-import { IonButton, IonInput, IonModal, IonTextarea, setupIonicReact } from "@ionic/react";
+import { setupIonicReact } from "@ionic/react";
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { clsx } from "clsx";
@@ -40,6 +39,7 @@ import {
   type Topic,
 } from "@/lib/planner-data";
 import { filterImportableGitHubIssues, fetchGitHubIssues, mapGitHubIssuesToPlan, parsePlannerJson, serializePlans } from "@/lib/import-export";
+import { Button, Dialog, FileIconButton, IconButton, TextArea, TextField } from "@/components/ui";
 
 setupIonicReact({ mode: "ios" });
 
@@ -96,10 +96,10 @@ const themeStorageKey = "study-planner-theme";
 type Theme = "light" | "dark";
 
 function getInitialTheme(): Theme {
-  if (typeof window === "undefined") return "light";
+  if (typeof window === "undefined") return "dark";
   const storedTheme = window.localStorage.getItem(themeStorageKey);
   if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return "dark";
 }
 
 export function StudyPlannerApp() {
@@ -601,16 +601,16 @@ export function StudyPlannerApp() {
   }
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-[var(--app-bg)]" data-theme={theme}>
-      <header className="sticky top-0 z-30 border-b border-[var(--hairline)] bg-[var(--surface-elevated)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
+    <main className="app-shell" data-theme={theme}>
+      <header className="app-header">
+        <div className="app-header-inner">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-[8px] bg-[#007aff] text-white">
-              <CalendarDays size={20} />
+            <div className="app-mark">
+              <CalendarDays size={18} />
             </div>
             <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold text-[var(--app-fg)]">Study Planner</h1>
-              <p className="truncate text-xs text-[var(--muted)]">{toast}</p>
+              <h1 className="truncate text-sm font-semibold">Study Planner</h1>
+              <p className="app-status">{toast}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -619,7 +619,7 @@ export function StudyPlannerApp() {
               icon={theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
               onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
             />
-            <IconButton label="Import JSON" icon={<Upload size={17} />} asFile onFile={importFile} />
+            <FileIconButton label="Import JSON" icon={<Upload size={17} />} accept="application/json" onFile={(file) => void importFile(file)} />
             <IconButton label="Export JSON" icon={<Download size={17} />} onClick={exportPlans} disabled={plans.length === 0} />
             <IconButton label="GitHub import" icon={<GitBranch size={17} />} onClick={() => setModalMode("github")} />
           </div>
@@ -628,13 +628,13 @@ export function StudyPlannerApp() {
 
       <div
         className={clsx(
-          "planner-layout mx-auto grid w-full max-w-[1440px] flex-1 gap-4 overflow-hidden px-4 py-4 sm:px-6",
+          "planner-layout mx-auto grid w-full max-w-[1600px] flex-1 overflow-hidden p-4",
           leftPaneCollapsed && "left-collapsed",
           rightPaneCollapsed && "right-collapsed",
         )}
       >
         {!leftPaneCollapsed ? (
-        <aside className="planner-pane rounded-[8px] border border-[var(--hairline)] bg-white p-3 shadow-sm">
+        <aside className="planner-pane ui-panel navigation-panel p-3">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Plans</h2>
             <span className="flex items-center gap-1">
@@ -645,12 +645,12 @@ export function StudyPlannerApp() {
           <div className="space-y-2">
             {plans.length > 0 ? (
               plans.map((plan) => (
-                <button
+                <Button
                   key={plan.id}
-                  type="button"
+                  variant="unstyled"
                   className={clsx(
-                    "w-full rounded-[8px] border px-3 py-2 text-left transition",
-                    plan.id === activePlan?.id ? "border-[#007aff] bg-[#e2f0ff]" : "border-transparent bg-[#f5f5f7] hover:bg-[#eeeeef]",
+                    "nav-row",
+                    plan.id === activePlan?.id && "selected",
                   )}
                   onClick={() => {
                     setActivePlanId(plan.id);
@@ -659,7 +659,7 @@ export function StudyPlannerApp() {
                 >
                   <span className="block text-sm font-medium">{plan.name}</span>
                   <span className="block text-xs text-[var(--muted)]">{plan.courses.length} courses</span>
-                </button>
+                </Button>
               ))
             ) : (
               <EmptyState title="No plans" text="Create a plan or import one to begin." icon={<CalendarDays size={18} />} />
@@ -673,14 +673,12 @@ export function StudyPlannerApp() {
           <div className="mt-3 space-y-2">
             {activePlan?.courses.length ? (
               activePlan.courses.map((course) => (
-                <button
+                <Button
                   key={course.id}
-                  type="button"
+                  variant="unstyled"
                   className={clsx(
-                    "flex w-full items-center gap-2 rounded-[8px] border px-3 py-2 text-left transition",
-                    selection.type !== "plan" && selection.courseId === course.id
-                      ? "border-[#007aff] bg-[#e2f0ff]"
-                      : "border-transparent bg-[#f5f5f7] hover:bg-[#eeeeef]",
+                    "nav-row flex items-center gap-2",
+                    selection.type !== "plan" && selection.courseId === course.id && "selected",
                   )}
                   onClick={() => setSelection({ type: "course", planId: activePlan.id, courseId: course.id })}
                 >
@@ -689,7 +687,7 @@ export function StudyPlannerApp() {
                     <span className="block truncate text-sm font-medium">{course.name}</span>
                     <span className="block text-xs text-[var(--muted)]">{course.topics.length} topics</span>
                   </span>
-                </button>
+                </Button>
               ))
             ) : (
               <EmptyState title="No courses" text={activePlan ? "Add a course to this plan." : "Select or create a plan first."} icon={<GraduationCap size={18} />} />
@@ -698,8 +696,8 @@ export function StudyPlannerApp() {
         </aside>
         ) : null}
 
-        <section className="planner-main min-w-0 rounded-[8px] border border-[var(--hairline)] bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3">
+        <section className="planner-main ui-panel min-w-0">
+          <div className="planner-toolbar">
             <div className="min-w-0">
               <h2 className="truncate text-lg font-semibold">{activePlan?.name ?? "No plan"}</h2>
               <p className="text-sm text-[var(--muted)]">{activePlan?.notes || "Create a course and begin scheduling topics."}</p>
@@ -707,15 +705,9 @@ export function StudyPlannerApp() {
             <div className="flex gap-2">
               {leftPaneCollapsed ? <IconButton label="Show navigation" icon={<ChevronRight size={16} />} onClick={() => setLeftPaneCollapsed(false)} /> : null}
               {rightPaneCollapsed ? <IconButton label="Show inspector" icon={<ChevronLeft size={16} />} onClick={() => setRightPaneCollapsed(false)} /> : null}
-              <button className="control-button" type="button" onClick={() => setModalMode("topic")} disabled={!selectedCourse}>
-                <BookOpen size={16} /> Topic
-              </button>
-              <button className="control-button" type="button" onClick={() => setModalMode("milestone")} disabled={!selectedCourse}>
-                <Milestone size={16} /> Milestone
-              </button>
-              <button className="control-button" type="button" onClick={() => setModalMode("range")} disabled={!selectedTopic}>
-                <GripHorizontal size={16} /> Range
-              </button>
+              <Button leadingIcon={<BookOpen size={16} />} onClick={() => setModalMode("topic")} disabled={!selectedCourse}>Topic</Button>
+              <Button leadingIcon={<Milestone size={16} />} onClick={() => setModalMode("milestone")} disabled={!selectedCourse}>Milestone</Button>
+              <Button leadingIcon={<GripHorizontal size={16} />} onClick={() => setModalMode("range")} disabled={!selectedTopic}>Range</Button>
             </div>
           </div>
           <GanttChart
@@ -807,72 +799,31 @@ function LoginGate({ onSignIn }: { onSignIn: () => void }) {
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <section className="w-full max-w-md rounded-[8px] border border-[var(--hairline)] bg-white p-6 shadow-sm">
-        <div className="mb-6 flex size-12 items-center justify-center rounded-[8px] bg-[#007aff] text-white">
+      <section className="auth-panel ui-panel w-full max-w-md p-6">
+        <div className="app-mark mb-6">
           <CalendarDays size={24} />
         </div>
         <h1 className="text-2xl font-semibold tracking-normal">Study Planner</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
           Sign in with GitHub to manage private plans, course milestones, topic ranges, and imports.
         </p>
-        <button className="mt-6 flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-[#1d1d1f] text-sm font-medium text-white" onClick={() => void handleGitHubSignIn()}>
-          <LogIn size={17} /> Continue with GitHub
-        </button>
-        <button className="mt-3 h-9 w-full rounded-[8px] border border-[var(--hairline)] text-xs font-medium text-[#1d1d1f]" onClick={onSignIn}>
+        <Button className="mt-6 w-full" variant="primary" leadingIcon={<LogIn size={16} />} onClick={() => void handleGitHubSignIn()}>
+          Continue with GitHub
+        </Button>
+        <Button className="mt-3 w-full" onClick={onSignIn}>
           Use local development mode
-        </button>
+        </Button>
         <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{message}</p>
       </section>
     </main>
   );
 }
 
-function IconButton({
-  label,
-  icon,
-  onClick,
-  disabled,
-  asFile,
-  onFile,
-}: {
-  label: string;
-  icon: ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  asFile?: boolean;
-  onFile?: (file: File) => void;
-}) {
-  if (asFile) {
-    return (
-      <label className={clsx("icon-button", disabled && "disabled")} title={label} aria-disabled={disabled}>
-        {icon}
-        <input
-          className="sr-only"
-          type="file"
-          accept="application/json"
-          disabled={disabled}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file && onFile) void onFile(file);
-            event.currentTarget.value = "";
-          }}
-        />
-      </label>
-    );
-  }
-
-  return (
-    <button className="icon-button" type="button" title={label} aria-label={label} onClick={onClick} disabled={disabled}>
-      {icon}
-    </button>
-  );
-}
-
 function EmptyState({ title, text, icon }: { title: string; text: string; icon: ReactNode }) {
   return (
-    <div className="rounded-[8px] bg-[#f5f5f7] px-3 py-3 text-sm">
-      <div className="mb-2 flex size-8 items-center justify-center rounded-[8px] bg-white text-[var(--muted)]">{icon}</div>
-      <p className="font-medium text-[#1d1d1f]">{title}</p>
+    <div className="empty-state">
+      <div className="empty-state-icon">{icon}</div>
+      <p className="font-medium">{title}</p>
       <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{text}</p>
     </div>
   );
@@ -924,7 +875,7 @@ function GanttChart({
       onPointerCancel={() => setDragState(null)}
     >
       <div className="gantt-grid" style={{ width: 220 + timeline.length * dayWidth, "--timeline-days": timeline.length } as CSSProperties}>
-        <div className="gantt-header sticky left-0 z-20 bg-white">Topic</div>
+        <div className="gantt-header sticky left-0 z-20">Topic</div>
         {timeline.map((date) => (
           <div key={date} className="gantt-header text-center">
             <span>{format(parseISO(date), "MMM")}</span>
@@ -974,8 +925,8 @@ function CourseRows({
 }) {
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="unstyled"
         className="course-row sticky left-0 z-10"
         aria-expanded={!collapsed}
         onClick={() => {
@@ -986,21 +937,22 @@ function CourseRows({
         <ChevronDown className={clsx("course-toggle", collapsed && "collapsed")} size={15} />
         <span className="size-3 shrink-0 rounded-full" style={{ background: course.color }} />
         <span className="truncate">{course.name}</span>
-      </button>
+      </Button>
       <div className="course-band" style={{ gridColumn: `span ${timeline.length}` }}>
         {course.milestones.map((milestone) => {
           const startIndex = timeline.indexOf(milestone.start);
           if (startIndex < 0) return null;
           return (
-            <button
+            <Button
               key={milestone.id}
+              variant="unstyled"
               className="milestone-marker"
               style={{ left: startIndex * dayWidth + dayWidth / 2 }}
               title={milestone.name}
               onClick={() => setSelection({ type: "milestone", planId: plan.id, courseId: course.id, milestoneId: milestone.id })}
             >
               <Milestone size={13} />
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -1049,14 +1001,14 @@ function TopicRow({
 }) {
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="unstyled"
         className={clsx("topic-label sticky left-0 z-10", selected && "selected")}
         onClick={() => setSelection({ type: "topic", planId: plan.id, courseId: course.id, topicId: topic.id })}
       >
         <span className="truncate">{topic.name}</span>
         {topic.dependencies.length > 0 ? <Link2 size={13} /> : null}
-      </button>
+      </Button>
       <div className="topic-track" style={{ gridColumn: `span ${timeline.length}` }}>
         {topic.ranges.map((range) => {
           const visibleRange = dragState?.rangeId === range.id ? { start: dragState.currentStart, end: dragState.currentEnd } : range;
@@ -1162,7 +1114,7 @@ function Inspector({
   const editMode = selection.type === "plan" ? "edit-plan" : selection.type === "course" ? "edit-course" : selection.type === "topic" ? "edit-topic" : "edit-milestone";
 
   return (
-    <aside className="rounded-[8px] border border-[var(--hairline)] bg-white p-4 shadow-sm">
+    <aside className="ui-panel p-4">
       <div className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold text-[var(--muted)]">
         <span className="flex items-center gap-2"><ChevronDown size={15} /> Inspector</span>
         <span className="flex items-center gap-1">
@@ -1185,28 +1137,26 @@ function Inspector({
         <div className="mt-5 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">Dependencies</h3>
-            <button className="control-button" type="button" onClick={onEditDependencies}>
-              <GitBranch size={15} /> Edit
-            </button>
+            <Button leadingIcon={<GitBranch size={15} />} onClick={onEditDependencies}>Edit</Button>
           </div>
           <div className="space-y-1">
             {topic.dependencies.length > 0 ? (
               topic.dependencies.map((dependencyId) => {
                 const dependency = course?.topics.find((candidate) => candidate.id === dependencyId);
                 return (
-                  <div key={dependencyId} className="rounded-[8px] bg-[#f5f5f7] px-3 py-2 text-sm">
+                  <div key={dependencyId} className="surface-row">
                     {dependency?.name ?? dependencyId}
                   </div>
                 );
               })
             ) : (
-              <div className="rounded-[8px] bg-[#f5f5f7] px-3 py-2 text-sm text-[var(--muted)]">No dependencies</div>
+              <div className="surface-row text-[var(--muted)]">No dependencies</div>
             )}
           </div>
           <h3 className="text-sm font-semibold">Study ranges</h3>
           {topic.ranges.length > 0 ? (
             topic.ranges.map((range) => (
-              <div key={range.id} className="flex items-center justify-between gap-2 rounded-[8px] bg-[#f5f5f7] px-3 py-2 text-sm">
+              <div key={range.id} className="surface-row flex items-center justify-between gap-2">
                 <span>{range.start} to {range.end}</span>
                 <span className="flex shrink-0 items-center gap-1">
                   <IconButton label="Edit range" icon={<Pencil size={14} />} onClick={() => onEditRange(range.id)} />
@@ -1215,21 +1165,15 @@ function Inspector({
               </div>
             ))
           ) : (
-            <div className="rounded-[8px] bg-[#f5f5f7] px-3 py-2 text-sm text-[var(--muted)]">No study ranges</div>
+            <div className="surface-row text-[var(--muted)]">No study ranges</div>
           )}
         </div>
       ) : null}
 
       <div className="mt-5 grid gap-2">
-        <button className="control-button justify-center" onClick={onAddTopic} disabled={!course}>
-          <BookOpen size={16} /> Add topic
-        </button>
-        <button className="control-button justify-center" onClick={onAddMilestone} disabled={!course}>
-          <Milestone size={16} /> Add milestone
-        </button>
-        <button className="control-button justify-center" onClick={onAddRange} disabled={!topic}>
-          <GripHorizontal size={16} /> Add range
-        </button>
+        <Button className="w-full" leadingIcon={<BookOpen size={16} />} onClick={onAddTopic} disabled={!course}>Add topic</Button>
+        <Button className="w-full" leadingIcon={<Milestone size={16} />} onClick={onAddMilestone} disabled={!course}>Add milestone</Button>
+        <Button className="w-full" leadingIcon={<GripHorizontal size={16} />} onClick={onAddRange} disabled={!topic}>Add range</Button>
       </div>
     </aside>
   );
@@ -1237,7 +1181,7 @@ function Inspector({
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[8px] bg-[#f5f5f7] px-2 py-3">
+    <div className="metric-cell">
       <div className="text-lg font-semibold">{value}</div>
       <div className="text-xs text-[var(--muted)]">{label}</div>
     </div>
@@ -1247,8 +1191,8 @@ function Metric({ label, value }: { label: string; value: number }) {
 function LoadingPlanner() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--app-bg)] px-4">
-      <section className="w-full max-w-sm rounded-[8px] border border-[var(--hairline)] bg-white p-6 text-center shadow-sm">
-        <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[8px] bg-[#007aff] text-white">
+      <section className="auth-panel ui-panel w-full max-w-sm p-6 text-center">
+        <div className="app-mark mx-auto mb-4">
           <CalendarDays size={22} />
         </div>
         <h1 className="text-lg font-semibold">Loading Study Planner</h1>
@@ -1260,21 +1204,20 @@ function LoadingPlanner() {
 
 function DeleteConfirmationModal({ target, onCancel, onConfirm }: { target: DeleteTarget | null; onCancel: () => void; onConfirm: () => void }) {
   return (
-    <IonModal isOpen={target !== null} onDidDismiss={onCancel} className="planner-modal">
-      <div className="p-5">
-        <div className="mb-4 flex size-10 items-center justify-center rounded-[8px] bg-[#ffebe9] text-[#ff3b30]">
-          <Trash2 size={19} />
-        </div>
-        <h2 className="text-xl font-semibold">{target?.title ?? "Delete item"}</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{target?.detail ?? "This action cannot be undone."}</p>
-        <div className="mt-6 flex justify-end gap-2">
-          <IonButton fill="clear" onClick={onCancel}>Cancel</IonButton>
-          <IonButton color="danger" onClick={onConfirm}>
-            <Trash2 size={16} className="mr-2" /> Delete
-          </IonButton>
-        </div>
-      </div>
-    </IonModal>
+    <Dialog
+      open={target !== null}
+      title={target?.title ?? "Delete item"}
+      onClose={onCancel}
+      icon={<Trash2 size={18} />}
+      footer={
+        <>
+          <Button variant="invisible" onClick={onCancel}>Cancel</Button>
+          <Button variant="danger" onClick={onConfirm}>Delete</Button>
+        </>
+      }
+    >
+      <p className="text-sm leading-6 text-[var(--muted)]">{target?.detail ?? "This action cannot be undone."}</p>
+    </Dialog>
   );
 }
 
@@ -1403,37 +1346,55 @@ function PlannerModal({
   const title = mode === "github" ? "Import GitHub issues" : mode === "dependencies" ? "Edit dependencies" : isEditMode && mode ? `Edit ${mode.replace("edit-", "")}` : `Add ${mode ?? "item"}`;
 
   return (
-    <IonModal isOpen={mode !== null} onDidDismiss={onClose} className="planner-modal">
-      <div className="p-5">
-        <h2 className="text-xl font-semibold">{title}</h2>
-        <div className="mt-5 grid gap-3">
+    <Dialog
+      open={mode !== null}
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="invisible" onClick={onClose}>Cancel</Button>
           {mode === "github" ? (
             <>
-              <IonInput
+              <Button onClick={() => void previewGitHubImport()} disabled={githubBusy || !owner || !repo || (!usingConvex && !token)}>
+                Preview
+              </Button>
+              <Button variant="primary" onClick={() => void submitGitHubImport()} disabled={githubBusy || !githubPreview}>
+                Import
+              </Button>
+            </>
+          ) : (
+            <Button variant="primary" onClick={submit} disabled={!mode?.includes("range") && mode !== "dependencies" && !name.trim()}>
+              Save
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="grid gap-4">
+          {mode === "github" ? (
+            <>
+              <TextField
                 label="Owner"
-                labelPlacement="stacked"
                 value={owner}
-                onIonInput={(event) => {
-                  setOwner(String(event.detail.value ?? ""));
+                onChange={(event) => {
+                  setOwner(event.currentTarget.value);
                   resetGitHubPreview();
                 }}
               />
-              <IonInput
+              <TextField
                 label="Repository"
-                labelPlacement="stacked"
                 value={repo}
-                onIonInput={(event) => {
-                  setRepo(String(event.detail.value ?? ""));
+                onChange={(event) => {
+                  setRepo(event.currentTarget.value);
                   resetGitHubPreview();
                 }}
               />
-              <IonInput
+              <TextField
                 label="Token"
-                labelPlacement="stacked"
                 type="password"
                 value={token}
-                onIonInput={(event) => {
-                  setToken(String(event.detail.value ?? ""));
+                onChange={(event) => {
+                  setToken(event.currentTarget.value);
                   resetGitHubPreview();
                 }}
               />
@@ -1442,20 +1403,20 @@ function PlannerModal({
               </p>
               {githubError ? <div className="rounded-[8px] bg-[#ffebe9] px-3 py-2 text-sm text-[#a4261d]">{githubError}</div> : null}
               {githubPreview ? (
-                <div className="rounded-[8px] bg-[#f5f5f7] p-3">
+                <div className="import-preview">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{githubPreview.planName}</p>
                       <p className="text-xs text-[var(--muted)]">{githubPreview.repository}</p>
                     </div>
-                    <span className="rounded-[8px] bg-white px-2 py-1 text-xs font-semibold">{githubPreview.issueCount} issues</span>
+                    <span className="ui-badge">{githubPreview.issueCount} issues</span>
                   </div>
                   {githubPreview.skippedSubissueCount ? (
                     <p className="mt-2 text-xs text-[var(--muted)]">Skipped {githubPreview.skippedSubissueCount} progress subissues.</p>
                   ) : null}
                   <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
                     {githubPreview.courses.map((course) => (
-                      <div key={course.name} className="rounded-[8px] bg-white px-3 py-2 text-sm">
+                      <div key={course.name} className="surface-row">
                         <div className="truncate font-medium">{course.name}</div>
                         <div className="mt-1 text-xs text-[var(--muted)]">
                           {course.topicCount} topics, {course.milestoneCount} milestones, {course.rangeCount} ranges
@@ -1470,21 +1431,22 @@ function PlannerModal({
 
           {mode && ["plan", "course", "topic", "milestone", "edit-plan", "edit-course", "edit-topic", "edit-milestone"].includes(mode) ? (
             <>
-              <IonInput label="Name" labelPlacement="stacked" value={name} onIonInput={(event) => setName(String(event.detail.value ?? ""))} />
-              <IonTextarea label="Notes" labelPlacement="stacked" autoGrow value={notes} onIonInput={(event) => setNotes(String(event.detail.value ?? ""))} />
+              <TextField label="Name" value={name} onChange={(event) => setName(event.currentTarget.value)} />
+              <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
             </>
           ) : null}
 
           {mode && ["course", "topic", "edit-course", "edit-topic"].includes(mode) ? (
-            <div>
-              <p className="mb-2 text-sm font-medium">Color</p>
-              <div className="grid grid-cols-7 gap-2">
+            <div className="planner-control-group">
+              <p className="planner-control-label">Color</p>
+              <div className="planner-color-grid">
                 {applePalette.map((paletteColor) => (
-                  <button
+                  <Button
                     key={paletteColor.value}
-                    type="button"
-                    className={clsx("size-8 rounded-full border-2", color === paletteColor.value ? "border-[#1d1d1f]" : "border-transparent")}
+                    variant="unstyled"
+                    className={clsx("planner-color-swatch", color === paletteColor.value && "selected")}
                     title={paletteColor.name}
+                    aria-label={paletteColor.name}
                     style={{ background: paletteColor.value }}
                     onClick={() => setColor(paletteColor.value)}
                   />
@@ -1495,16 +1457,16 @@ function PlannerModal({
 
           {mode && ["milestone", "range", "edit-milestone", "edit-range"].includes(mode) ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <IonInput label="Start" labelPlacement="stacked" type="date" value={start} onIonInput={(event) => setStart(String(event.detail.value ?? today))} />
-              <IonInput label="End" labelPlacement="stacked" type="date" value={end} onIonInput={(event) => setEnd(String(event.detail.value ?? start))} />
+              <TextField label="Start" type="date" value={start} onChange={(event) => setStart(event.currentTarget.value || today)} />
+              <TextField label="End" type="date" value={end} onChange={(event) => setEnd(event.currentTarget.value || start)} />
             </div>
           ) : null}
 
           {mode === "dependencies" ? (
-            <div className="grid gap-2">
+            <div className="planner-option-list">
               {dependencyOptions.length > 0 ? (
                 dependencyOptions.map((topic) => (
-                  <label key={topic.id} className="flex items-center justify-between gap-3 rounded-[8px] bg-[#f5f5f7] px-3 py-2 text-sm">
+                  <label key={topic.id} className="planner-option-row">
                     <span className="min-w-0 truncate">{topic.name}</span>
                     <input
                       type="checkbox"
@@ -1518,31 +1480,12 @@ function PlannerModal({
                   </label>
                 ))
               ) : (
-                <div className="rounded-[8px] bg-[#f5f5f7] px-3 py-2 text-sm text-[var(--muted)]">No other topics in this course</div>
+                <div className="planner-option-row text-[var(--muted)]">No other topics in this course</div>
               )}
             </div>
           ) : null}
-        </div>
-
-        <div className="mt-6 flex justify-end gap-2">
-          <IonButton fill="clear" onClick={onClose}>Cancel</IonButton>
-          {mode === "github" ? (
-            <>
-              <IonButton fill="outline" onClick={() => void previewGitHubImport()} disabled={githubBusy || !owner || !repo || (!usingConvex && !token)}>
-                <GitBranch size={16} className="mr-2" /> Preview
-              </IonButton>
-              <IonButton onClick={() => void submitGitHubImport()} disabled={githubBusy || !githubPreview}>
-                <GitBranch size={16} className="mr-2" /> Import
-              </IonButton>
-            </>
-          ) : (
-            <IonButton onClick={submit} disabled={!mode?.includes("range") && mode !== "dependencies" && !name.trim()}>
-              <Save size={16} className="mr-2" /> Save
-            </IonButton>
-          )}
-        </div>
       </div>
-    </IonModal>
+    </Dialog>
   );
 }
 
