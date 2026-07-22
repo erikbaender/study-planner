@@ -13,10 +13,11 @@ Work like a regular developer on this repository:
 - Use feature branches from `main`; do not implement feature work directly on `main`.
 - Make focused commits with clear messages.
 - Open pull requests for feature implementation and fixes.
-- After a quick review and successful validation, merge ready pull requests without waiting for separate user permission.
+- After validation, open pull requests and wait for explicit user approval before merging. Do not merge a pull request until the user approves it and provides the next task.
 - Use the repository GitHub Project, `Study Planner`, to track issue and PR progress.
 - Keep Project item status current: use `Ready` for queued work, `In progress` for the active implementation, `In review` for open PRs, and `Done` only after completion.
 - Use the `PROJECTS_ACCESS` token for GitHub Projects v2 operations when the default GitHub token cannot access project fields.
+- Run the local development app on port 3000. If that port is occupied by a stale process, stop that process instead of using a fallback port.
 - Develop in dark mode by default, except when explicitly testing light-mode behavior or contrast.
 - Keep progress reports in `reports/` for meaningful implementation slices.
 - Preserve German/source GitHub sample data as-is during imports; do not translate issue titles, milestones, labels, or body text.
