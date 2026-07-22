@@ -62,6 +62,22 @@ type DragState = {
   currentEnd: string;
 };
 
+type CreationGesture = {
+  courseId: string;
+  topicId?: string;
+  trackLeft: number;
+  originIndex: number;
+  currentIndex: number;
+};
+
+type CreationDraft = {
+  kind: "milestone" | "range";
+  courseId: string;
+  topicId?: string;
+  start: string;
+  end: string;
+};
+
 type ModalMode =
   | "plan"
   | "course"
@@ -111,6 +127,8 @@ export function StudyPlannerApp() {
   const [editingRangeId, setEditingRangeId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [creationGesture, setCreationGesture] = useState<CreationGesture | null>(null);
+  const [creationDraft, setCreationDraft] = useState<CreationDraft | null>(null);
   const [collapsedCourseIds, setCollapsedCourseIds] = useState<Set<string>>(() => new Set());
   const [leftPaneCollapsed, setLeftPaneCollapsed] = useState(false);
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
@@ -474,6 +492,14 @@ export function StudyPlannerApp() {
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (creationGesture) {
+      const currentIndex = Math.max(0, Math.min(timeline.length - 1, Math.floor((event.clientX - creationGesture.trackLeft) / dayWidth)));
+      if (currentIndex !== creationGesture.currentIndex) {
+        setCreationGesture({ ...creationGesture, currentIndex });
+      }
+      return;
+    }
+
     if (!dragState) return;
     const daysDelta = Math.round((event.clientX - dragState.originX) / dayWidth);
     const originStart = parseISO(dragState.originStart);
@@ -502,6 +528,31 @@ export function StudyPlannerApp() {
   }
 
   function handlePointerEnd() {
+    if (creationGesture && activePlan) {
+      const gesture = creationGesture;
+      setCreationGesture(null);
+      const startIndex = Math.min(gesture.originIndex, gesture.currentIndex);
+      const endIndex = Math.max(gesture.originIndex, gesture.currentIndex);
+      const start = timeline[startIndex];
+      const end = timeline[endIndex];
+      const course = activePlan.courses.find((candidate) => candidate.id === gesture.courseId);
+      if (!course || !start || !end) return;
+
+      if (startIndex !== endIndex && gesture.topicId) {
+        const topic = course.topics.find((candidate) => candidate.id === gesture.topicId);
+        if (!topic) return;
+        setSelection({ type: "topic", planId: activePlan.id, courseId: course.id, topicId: topic.id });
+        setCreationDraft({ kind: "range", courseId: course.id, topicId: topic.id, start, end });
+        setModalMode("range");
+        return;
+      }
+
+      setSelection({ type: "course", planId: activePlan.id, courseId: course.id });
+      setCreationDraft({ kind: "milestone", courseId: course.id, start, end: start });
+      setModalMode("milestone");
+      return;
+    }
+
     if (!dragState) return;
     const range = dragState;
     setDragState(null);
@@ -717,6 +768,8 @@ export function StudyPlannerApp() {
             setSelection={setSelection}
             dragState={dragState}
             setDragState={setDragState}
+            creationGesture={creationGesture}
+            setCreationGesture={setCreationGesture}
             onPointerMove={handlePointerMove}
             onPointerEnd={handlePointerEnd}
             collapsedCourseIds={collapsedCourseIds}
@@ -756,8 +809,12 @@ export function StudyPlannerApp() {
         selectedTopic={selectedTopic}
         selectedMilestone={selectedMilestone}
         selectedRange={selectedRange}
+        creationDraft={creationDraft}
         usingConvex={usingConvex}
-        onClose={() => setModalMode(null)}
+        onClose={() => {
+          setModalMode(null);
+          setCreationDraft(null);
+        }}
         onAddPlan={addPlan}
         onAddCourse={addCourse}
         onAddTopic={addTopic}
@@ -836,6 +893,8 @@ function GanttChart({
   setSelection,
   dragState,
   setDragState,
+  creationGesture,
+  setCreationGesture,
   onPointerMove,
   onPointerEnd,
   collapsedCourseIds,
@@ -847,6 +906,8 @@ function GanttChart({
   setSelection: (selection: Selection) => void;
   dragState: DragState | null;
   setDragState: (state: DragState | null) => void;
+  creationGesture: CreationGesture | null;
+  setCreationGesture: (state: CreationGesture | null) => void;
   onPointerMove: (event: PointerEvent<HTMLDivElement>) => void;
   onPointerEnd: () => void;
   collapsedCourseIds: Set<string>;
@@ -872,7 +933,10 @@ function GanttChart({
       className="gantt-scroll"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
-      onPointerCancel={() => setDragState(null)}
+      onPointerCancel={() => {
+        setDragState(null);
+        setCreationGesture(null);
+      }}
     >
       <div className="gantt-grid" style={{ width: 220 + timeline.length * dayWidth, "--timeline-days": timeline.length } as CSSProperties}>
         <div className="gantt-header sticky left-0 z-20">Topic</div>
@@ -893,6 +957,8 @@ function GanttChart({
             setSelection={setSelection}
             dragState={dragState}
             setDragState={setDragState}
+            creationGesture={creationGesture}
+            setCreationGesture={setCreationGesture}
             collapsed={collapsedCourseIds.has(course.id)}
             onToggleCourse={onToggleCourse}
           />
@@ -910,6 +976,8 @@ function CourseRows({
   setSelection,
   dragState,
   setDragState,
+  creationGesture,
+  setCreationGesture,
   collapsed,
   onToggleCourse,
 }: {
@@ -920,6 +988,8 @@ function CourseRows({
   setSelection: (selection: Selection) => void;
   dragState: DragState | null;
   setDragState: (state: DragState | null) => void;
+  creationGesture: CreationGesture | null;
+  setCreationGesture: (state: CreationGesture | null) => void;
   collapsed: boolean;
   onToggleCourse: (courseId: string) => void;
 }) {
@@ -938,7 +1008,14 @@ function CourseRows({
         <span className="size-3 shrink-0 rounded-full" style={{ background: course.color }} />
         <span className="truncate">{course.name}</span>
       </Button>
-      <div className="course-band" style={{ gridColumn: `span ${timeline.length}` }}>
+      <div
+        className="course-band gantt-create-target"
+        style={{ gridColumn: `span ${timeline.length}` }}
+        onPointerDown={(event) => startCreationGesture(event, course.id, undefined, timeline, setCreationGesture)}
+      >
+        {creationGesture?.courseId === course.id && creationGesture.topicId === undefined ? (
+          <CreationPreview gesture={creationGesture} />
+        ) : null}
         {course.milestones.map((milestone) => {
           const startIndex = timeline.indexOf(milestone.start);
           if (startIndex < 0) return null;
@@ -949,6 +1026,7 @@ function CourseRows({
               className="milestone-marker"
               style={{ left: startIndex * dayWidth + dayWidth / 2 }}
               title={milestone.name}
+              onPointerDown={(event) => event.stopPropagation()}
               onClick={() => setSelection({ type: "milestone", planId: plan.id, courseId: course.id, milestoneId: milestone.id })}
             >
               <Milestone size={13} />
@@ -968,6 +1046,8 @@ function CourseRows({
           setSelection={setSelection}
           dragState={dragState}
           setDragState={setDragState}
+          creationGesture={creationGesture}
+          setCreationGesture={setCreationGesture}
         />
       ))}
       {!collapsed && course.topics.length === 0 ? (
@@ -980,6 +1060,35 @@ function CourseRows({
   );
 }
 
+function startCreationGesture(
+  event: PointerEvent<HTMLDivElement>,
+  courseId: string,
+  topicId: string | undefined,
+  timeline: string[],
+  setCreationGesture: (state: CreationGesture | null) => void,
+) {
+  if (event.button !== 0) return;
+  const bounds = event.currentTarget.getBoundingClientRect();
+  const originIndex = Math.max(0, Math.min(timeline.length - 1, Math.floor((event.clientX - bounds.left) / dayWidth)));
+  event.currentTarget.setPointerCapture(event.pointerId);
+  setCreationGesture({ courseId, topicId, trackLeft: bounds.left, originIndex, currentIndex: originIndex });
+}
+
+function CreationPreview({ gesture, color }: { gesture: CreationGesture; color?: string }) {
+  const startIndex = Math.min(gesture.originIndex, gesture.currentIndex);
+  const endIndex = Math.max(gesture.originIndex, gesture.currentIndex);
+  return (
+    <div
+      className={clsx("gantt-creation-preview", startIndex === endIndex && "milestone")}
+      style={{
+        left: startIndex * dayWidth + 4,
+        width: (endIndex - startIndex + 1) * dayWidth - 8,
+        "--preview-color": color,
+      } as CSSProperties}
+    />
+  );
+}
+
 function TopicRow({
   plan,
   course,
@@ -989,6 +1098,8 @@ function TopicRow({
   setSelection,
   dragState,
   setDragState,
+  creationGesture,
+  setCreationGesture,
 }: {
   plan: Plan;
   course: Course;
@@ -998,6 +1109,8 @@ function TopicRow({
   setSelection: (selection: Selection) => void;
   dragState: DragState | null;
   setDragState: (state: DragState | null) => void;
+  creationGesture: CreationGesture | null;
+  setCreationGesture: (state: CreationGesture | null) => void;
 }) {
   return (
     <>
@@ -1009,7 +1122,14 @@ function TopicRow({
         <span className="truncate">{topic.name}</span>
         {topic.dependencies.length > 0 ? <Link2 size={13} /> : null}
       </Button>
-      <div className="topic-track" style={{ gridColumn: `span ${timeline.length}` }}>
+      <div
+        className="topic-track gantt-create-target"
+        style={{ gridColumn: `span ${timeline.length}` }}
+        onPointerDown={(event) => startCreationGesture(event, course.id, topic.id, timeline, setCreationGesture)}
+      >
+        {creationGesture?.courseId === course.id && creationGesture.topicId === topic.id ? (
+          <CreationPreview gesture={creationGesture} color={topic.color} />
+        ) : null}
         {topic.ranges.map((range) => {
           const visibleRange = dragState?.rangeId === range.id ? { start: dragState.currentStart, end: dragState.currentEnd } : range;
           const startOffset = differenceInCalendarDays(parseISO(visibleRange.start), parseISO(timeline[0]));
@@ -1022,6 +1142,7 @@ function TopicRow({
               style={{ left: startOffset * dayWidth + 5, width: Math.max(span * dayWidth - 10, 28), background: topic.color }}
               title={`${course.name}: ${topic.name} (${visibleRange.start} to ${visibleRange.end})`}
               onPointerDown={(event) => {
+                event.stopPropagation();
                 event.currentTarget.setPointerCapture(event.pointerId);
                 setSelection({ type: "topic", planId: plan.id, courseId: course.id, topicId: topic.id });
                 setDragState({
@@ -1228,6 +1349,7 @@ function PlannerModal({
   selectedTopic,
   selectedMilestone,
   selectedRange,
+  creationDraft,
   usingConvex,
   onClose,
   onAddPlan,
@@ -1250,6 +1372,7 @@ function PlannerModal({
   selectedTopic?: Topic;
   selectedMilestone?: MilestoneType;
   selectedRange?: { id: string; start: string; end: string };
+  creationDraft?: CreationDraft | null;
   usingConvex: boolean;
   onClose: () => void;
   onAddPlan: (name: string, notes: string) => void | Promise<void>;
@@ -1270,8 +1393,8 @@ function PlannerModal({
   const initialName = mode === "edit-plan" ? plan?.name : mode === "edit-course" ? selectedCourse?.name : mode === "edit-topic" ? selectedTopic?.name : mode === "edit-milestone" ? selectedMilestone?.name : "";
   const initialNotes = mode === "edit-plan" ? plan?.notes : mode === "edit-course" ? selectedCourse?.notes : mode === "edit-topic" ? selectedTopic?.notes : mode === "edit-milestone" ? selectedMilestone?.notes : "";
   const initialColor = mode === "edit-course" ? selectedCourse?.color : mode === "edit-topic" ? selectedTopic?.color : selectedCourse?.color ?? applePalette[7].value;
-  const initialStart = mode === "edit-milestone" ? selectedMilestone?.start : mode === "edit-range" ? selectedRange?.start : today;
-  const initialEnd = mode === "edit-milestone" ? selectedMilestone?.end ?? selectedMilestone?.start : mode === "edit-range" ? selectedRange?.end : fallbackEnd;
+  const initialStart = mode === "edit-milestone" ? selectedMilestone?.start : mode === "edit-range" ? selectedRange?.start : creationDraft?.start ?? today;
+  const initialEnd = mode === "edit-milestone" ? selectedMilestone?.end ?? selectedMilestone?.start : mode === "edit-range" ? selectedRange?.end : creationDraft?.end ?? fallbackEnd;
   const [name, setName] = useState(initialName ?? "");
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [color, setColor] = useState(initialColor ?? applePalette[7].value);
@@ -1343,7 +1466,17 @@ function PlannerModal({
     onClose();
   }
 
-  const title = mode === "github" ? "Import GitHub issues" : mode === "dependencies" ? "Edit dependencies" : isEditMode && mode ? `Edit ${mode.replace("edit-", "")}` : `Add ${mode ?? "item"}`;
+  const title = mode === "github"
+    ? "Import GitHub issues"
+    : mode === "dependencies"
+      ? "Edit dependencies"
+      : creationDraft?.kind === "milestone"
+        ? "Create milestone"
+        : creationDraft?.kind === "range"
+          ? "Create study range"
+          : isEditMode && mode
+            ? `Edit ${mode.replace("edit-", "")}`
+            : `Add ${mode ?? "item"}`;
 
   return (
     <Dialog
@@ -1371,6 +1504,24 @@ function PlannerModal({
       }
     >
       <div className="grid gap-4">
+          {creationDraft ? (
+            <div className="gantt-dialog-context">
+              <div className="gantt-dialog-context-icon">
+                {creationDraft.kind === "milestone" ? <Milestone size={18} /> : <GripHorizontal size={18} />}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">
+                  {selectedCourse?.name}{creationDraft.kind === "range" && selectedTopic ? ` / ${selectedTopic.name}` : ""}
+                </p>
+                <p className="text-xs text-[var(--muted)]">
+                  {creationDraft.kind === "milestone"
+                    ? format(parseISO(start), "EEEE, MMMM d, yyyy")
+                    : `${format(parseISO(start), "MMM d, yyyy")} to ${format(parseISO(end), "MMM d, yyyy")}`}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           {mode === "github" ? (
             <>
               <TextField
@@ -1431,7 +1582,7 @@ function PlannerModal({
 
           {mode && ["plan", "course", "topic", "milestone", "edit-plan", "edit-course", "edit-topic", "edit-milestone"].includes(mode) ? (
             <>
-              <TextField label="Name" value={name} onChange={(event) => setName(event.currentTarget.value)} />
+              <TextField label={mode === "milestone" ? "Milestone name" : "Name"} value={name} onChange={(event) => setName(event.currentTarget.value)} autoFocus={mode === "milestone"} />
               <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
             </>
           ) : null}
@@ -1457,8 +1608,10 @@ function PlannerModal({
 
           {mode && ["milestone", "range", "edit-milestone", "edit-range"].includes(mode) ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <TextField label="Start" type="date" value={start} onChange={(event) => setStart(event.currentTarget.value || today)} />
-              <TextField label="End" type="date" value={end} onChange={(event) => setEnd(event.currentTarget.value || start)} />
+              <TextField label={mode === "milestone" ? "Date" : "Start date"} type="date" value={start} onChange={(event) => setStart(event.currentTarget.value || today)} />
+              {mode !== "milestone" || !creationDraft ? (
+                <TextField label="End date" type="date" value={end} onChange={(event) => setEnd(event.currentTarget.value || start)} />
+              ) : null}
             </div>
           ) : null}
 
