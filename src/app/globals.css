@@ -532,7 +532,7 @@ textarea {
 }
 
 .gantt-create-target {
-  cursor: crosshair;
+  cursor: pointer;
   touch-action: pan-y;
   user-select: none;
 }
@@ -547,7 +547,7 @@ textarea {
   top: 6px;
   z-index: 2;
   height: 32px;
-  border: 2px dashed var(--preview-color);
+  border: 1px dashed var(--preview-color);
   border-radius: 8px;
   background: transparent;
   pointer-events: none;
@@ -577,9 +577,9 @@ textarea {
 
 .range-bar {
   position: absolute;
-  top: 8px;
+  top: 6px;
   display: flex;
-  height: 28px;
+  height: 32px;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
@@ -606,9 +606,10 @@ textarea {
 
 .range-handle {
   position: absolute;
-  top: 4px;
+  top: 5px;
+  z-index: 2;
   width: 8px;
-  height: 20px;
+  height: 22px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.68);
 }

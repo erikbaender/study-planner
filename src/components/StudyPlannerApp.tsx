@@ -9,11 +9,9 @@ import {
   ChevronRight,
   GitBranch,
   Download,
-  GripHorizontal,
   GraduationCap,
   Link2,
   LogIn,
-  Milestone,
   Moon,
   Pencil,
   Plus,
@@ -484,7 +482,14 @@ export function StudyPlannerApp() {
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (creationGesture) {
-      const currentIndex = Math.max(0, Math.min(timeline.length - 1, Math.floor((event.clientX - creationGesture.trackLeft) / dayWidth)));
+      const pointerIndex = Math.max(0, Math.min(timeline.length - 1, Math.floor((event.clientX - creationGesture.trackLeft) / dayWidth)));
+      const course = activePlan?.courses.find((candidate) => candidate.id === creationGesture.courseId);
+      const topic = creationGesture.topicId ? course?.topics.find((candidate) => candidate.id === creationGesture.topicId) : undefined;
+      const occupiedRanges = topic?.ranges ?? course?.milestones.map((milestone) => ({
+        start: milestone.start,
+        end: milestone.end ?? milestone.start,
+      })) ?? [];
+      const currentIndex = clampCreationIndex(creationGesture.originIndex, pointerIndex, timeline, occupiedRanges);
       if (currentIndex !== creationGesture.currentIndex) {
         setCreationGesture({ ...creationGesture, currentIndex });
       }
@@ -495,6 +500,9 @@ export function StudyPlannerApp() {
     const daysDelta = Math.round((event.clientX - dragState.originX) / dayWidth);
     const originStart = parseISO(dragState.originStart);
     const originEnd = parseISO(dragState.originEnd);
+    const course = activePlan?.courses.find((candidate) => candidate.id === dragState.courseId);
+    const topic = course?.topics.find((candidate) => candidate.id === dragState.topicId);
+    const neighboringRanges = topic?.ranges.filter((range) => range.id !== dragState.rangeId) ?? [];
     let nextStart = originStart;
     let nextEnd = originEnd;
 
@@ -510,6 +518,17 @@ export function StudyPlannerApp() {
     if (dragState.mode === "end") {
       nextEnd = isBefore(addDays(originEnd, daysDelta), originStart) ? originStart : addDays(originEnd, daysDelta);
     }
+
+    const constrained = constrainRangeToNeighbors(
+      dragState.mode,
+      originStart,
+      originEnd,
+      nextStart,
+      nextEnd,
+      neighboringRanges,
+    );
+    nextStart = constrained.start;
+    nextEnd = constrained.end;
 
     const currentStart = formatISO(nextStart, { representation: "date" });
     const currentEnd = formatISO(nextEnd, { representation: "date" });
@@ -556,6 +575,11 @@ export function StudyPlannerApp() {
 
   async function createMilestoneForCourse(course: Course, start: string, end: string) {
     if (!activePlan) return;
+    if (course.milestones.some((milestone) => dateRangesOverlap(start, end, milestone.start, milestone.end ?? milestone.start))) {
+      setToast("Milestones cannot overlap");
+      return;
+    }
+
     if (usingConvex) {
       const milestoneId = String(await createMilestoneMutation({
         courseId: course.id as Id<"courses">,
@@ -576,6 +600,12 @@ export function StudyPlannerApp() {
   }
 
   async function createRangeForTopic(courseId: string, topicId: string, start: string, end: string) {
+    const topic = activePlan?.courses.find((course) => course.id === courseId)?.topics.find((candidate) => candidate.id === topicId);
+    if (!topic || topic.ranges.some((range) => dateRangesOverlap(start, end, range.start, range.end))) {
+      setToast("Study ranges cannot overlap");
+      return;
+    }
+
     if (usingConvex) {
       await createTopicRangeMutation({ topicId: topicId as Id<"topics">, startDate: start, endDate: end });
       setToast("Study range created");
@@ -785,8 +815,6 @@ export function StudyPlannerApp() {
               {leftPaneCollapsed ? <IconButton label="Show navigation" icon={<ChevronRight size={16} />} onClick={() => setLeftPaneCollapsed(false)} /> : null}
               {rightPaneCollapsed ? <IconButton label="Show inspector" icon={<ChevronLeft size={16} />} onClick={() => setRightPaneCollapsed(false)} /> : null}
               <Button leadingIcon={<BookOpen size={16} />} onClick={() => setModalMode("topic")} disabled={!selectedCourse}>Topic</Button>
-              <Button leadingIcon={<Milestone size={16} />} onClick={() => setModalMode("milestone")} disabled={!selectedCourse}>Milestone</Button>
-              <Button leadingIcon={<GripHorizontal size={16} />} onClick={() => setModalMode("range")} disabled={!selectedTopic}>Range</Button>
             </div>
           </div>
           <GanttChart
@@ -814,8 +842,6 @@ export function StudyPlannerApp() {
           plan={activePlan}
           selection={selection}
           onAddTopic={() => setModalMode("topic")}
-          onAddMilestone={() => setModalMode("milestone")}
-          onAddRange={() => setModalMode("range")}
           onEdit={(mode) => setModalMode(mode)}
           onEditDependencies={() => setModalMode("dependencies")}
           onDelete={requestDeleteSelection}
@@ -1109,6 +1135,69 @@ function pointerDayIndex(event: PointerEvent<HTMLDivElement>, timelineLength: nu
   return Math.max(0, Math.min(timelineLength - 1, Math.floor((event.clientX - bounds.left) / dayWidth)));
 }
 
+function dateRangesOverlap(start: string, end: string, otherStart: string, otherEnd: string) {
+  return start <= otherEnd && end >= otherStart;
+}
+
+function clampCreationIndex(originIndex: number, pointerIndex: number, timeline: string[], ranges: Array<{ start: string; end: string }>) {
+  if (pointerIndex === originIndex) return pointerIndex;
+  const originDate = timeline[originIndex];
+  const pointerDate = timeline[pointerIndex];
+
+  if (pointerIndex > originIndex) {
+    const blocker = ranges
+      .filter((range) => range.end >= originDate && range.start <= pointerDate)
+      .sort((left, right) => left.start.localeCompare(right.start))[0];
+    if (!blocker) return pointerIndex;
+    const blockerIndex = differenceInCalendarDays(parseISO(blocker.start), parseISO(timeline[0]));
+    return Math.max(originIndex, blockerIndex - 1);
+  }
+
+  const blocker = ranges
+    .filter((range) => range.start <= originDate && range.end >= pointerDate)
+    .sort((left, right) => right.end.localeCompare(left.end))[0];
+  if (!blocker) return pointerIndex;
+  const blockerIndex = differenceInCalendarDays(parseISO(blocker.end), parseISO(timeline[0]));
+  return Math.min(originIndex, blockerIndex + 1);
+}
+
+function constrainRangeToNeighbors(
+  mode: DragState["mode"],
+  originStart: Date,
+  originEnd: Date,
+  candidateStart: Date,
+  candidateEnd: Date,
+  ranges: Topic["ranges"],
+) {
+  const previousEnd = ranges
+    .map((range) => parseISO(range.end))
+    .filter((end) => isBefore(end, originStart))
+    .sort((left, right) => right.getTime() - left.getTime())[0];
+  const nextStart = ranges
+    .map((range) => parseISO(range.start))
+    .filter((start) => isBefore(originEnd, start))
+    .sort((left, right) => left.getTime() - right.getTime())[0];
+  const earliestStart = previousEnd ? addDays(previousEnd, 1) : candidateStart;
+  const latestEnd = nextStart ? addDays(nextStart, -1) : candidateEnd;
+
+  if (mode === "start") {
+    return { start: isBefore(candidateStart, earliestStart) ? earliestStart : candidateStart, end: candidateEnd };
+  }
+
+  if (mode === "end") {
+    return { start: candidateStart, end: isBefore(latestEnd, candidateEnd) ? latestEnd : candidateEnd };
+  }
+
+  const duration = differenceInCalendarDays(originEnd, originStart);
+  let start = candidateStart;
+  if (previousEnd && isBefore(start, earliestStart)) start = earliestStart;
+  if (nextStart) {
+    const latestStart = addDays(latestEnd, -duration);
+    if (isBefore(latestStart, start)) start = latestStart;
+  }
+  return { start, end: addDays(start, duration) };
+}
+
 function CreationPreview({ startIndex, endIndex, color, hover = false }: { startIndex: number; endIndex: number; color: string; hover?: boolean }) {
   const normalizedStart = Math.min(startIndex, endIndex);
   const normalizedEnd = Math.max(startIndex, endIndex);
@@ -1116,8 +1205,8 @@ function CreationPreview({ startIndex, endIndex, color, hover = false }: { start
     <div
       className={clsx("gantt-creation-preview", hover && "hover")}
       style={{
-        left: normalizedStart * dayWidth + 5,
-        width: (normalizedEnd - normalizedStart + 1) * dayWidth - 10,
+        left: normalizedStart * dayWidth + 6,
+        width: (normalizedEnd - normalizedStart + 1) * dayWidth - 12,
         "--preview-color": color,
       } as CSSProperties}
     />
@@ -1139,7 +1228,7 @@ function GanttBar({ label, color, startIndex, endIndex, title, onPointerDown, on
   return (
     <div
       className={clsx("range-bar", dragging && "dragging")}
-      style={{ left: startIndex * dayWidth + 5, width: Math.max(span * dayWidth - 10, 28), background: color }}
+      style={{ left: startIndex * dayWidth + 6, width: Math.max(span * dayWidth - 12, 30), background: color }}
       title={title}
       onPointerDown={onPointerDown}
       onClick={onClick}
@@ -1279,8 +1368,6 @@ function Inspector({
   plan,
   selection,
   onAddTopic,
-  onAddMilestone,
-  onAddRange,
   onEdit,
   onEditDependencies,
   onDelete,
@@ -1290,8 +1377,6 @@ function Inspector({
   plan?: Plan;
   selection: Selection;
   onAddTopic: () => void;
-  onAddMilestone: () => void;
-  onAddRange: () => void;
   onEdit: (mode: Exclude<ModalMode, "plan" | "course" | "topic" | "milestone" | "range" | "github" | null>) => void;
   onEditDependencies: () => void;
   onDelete: () => void;
@@ -1364,8 +1449,6 @@ function Inspector({
 
       <div className="mt-5 grid gap-2">
         <Button className="w-full" leadingIcon={<BookOpen size={16} />} onClick={onAddTopic} disabled={!course}>Add topic</Button>
-        <Button className="w-full" leadingIcon={<Milestone size={16} />} onClick={onAddMilestone} disabled={!course}>Add milestone</Button>
-        <Button className="w-full" leadingIcon={<GripHorizontal size={16} />} onClick={onAddRange} disabled={!topic}>Add range</Button>
       </div>
     </aside>
   );
