@@ -1,7 +1,8 @@
 "use client";
 
-import { IonModal } from "@ionic/react";
+import { createAnimation, IonModal } from "@ionic/react";
 import { clsx } from "clsx";
+import { X } from "lucide-react";
 import {
   forwardRef,
   type ButtonHTMLAttributes,
@@ -11,6 +12,30 @@ import {
 } from "react";
 
 type ButtonVariant = "default" | "primary" | "danger" | "invisible" | "unstyled";
+
+function popupEnterAnimation(baseElement: HTMLElement) {
+  const backdrop = createAnimation()
+    .addElement(baseElement.querySelector("ion-backdrop")!)
+    .fromTo("opacity", "0.01", "var(--backdrop-opacity)");
+  const content = createAnimation()
+    .addElement(baseElement.querySelector(".modal-wrapper")!)
+    .fromTo("opacity", "0", "1")
+    .fromTo("transform", "translateY(28px)", "translateY(0)");
+
+  return createAnimation().addElement(baseElement).duration(180).easing("cubic-bezier(0.2, 0, 0, 1)").addAnimation([backdrop, content]);
+}
+
+function popupLeaveAnimation(baseElement: HTMLElement) {
+  const backdrop = createAnimation()
+    .addElement(baseElement.querySelector("ion-backdrop")!)
+    .fromTo("opacity", "var(--backdrop-opacity)", "0");
+  const content = createAnimation()
+    .addElement(baseElement.querySelector(".modal-wrapper")!)
+    .fromTo("opacity", "1", "0")
+    .fromTo("transform", "translateY(0)", "translateY(-28px)");
+
+  return createAnimation().addElement(baseElement).duration(140).easing("cubic-bezier(0.4, 0, 1, 1)").addAnimation([backdrop, content]);
+}
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
@@ -140,11 +165,12 @@ export function Dialog({
   icon?: ReactNode;
 }) {
   return (
-    <IonModal isOpen={open} onDidDismiss={onClose} className="ui-dialog-modal">
+    <IonModal isOpen={open} onDidDismiss={onClose} className="ui-dialog-modal" enterAnimation={popupEnterAnimation} leaveAnimation={popupLeaveAnimation}>
       <div className="ui-dialog" role="document">
         <header className="ui-dialog-header">
           {icon ? <span className="ui-dialog-icon" aria-hidden="true">{icon}</span> : null}
           <h2 className="ui-dialog-title">{title}</h2>
+          <IconButton label="Close dialog" icon={<X size={16} />} variant="invisible" className="ui-dialog-close" onClick={onClose} />
         </header>
         <div className="ui-dialog-body">{children}</div>
         <footer className="ui-dialog-footer">{footer}</footer>

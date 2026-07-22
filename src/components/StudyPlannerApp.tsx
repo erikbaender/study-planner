@@ -4,20 +4,13 @@ import { addDays, differenceInCalendarDays, format, formatISO, isBefore, min, pa
 import {
   BookOpen,
   CalendarDays,
-  ChevronLeft,
   ChevronDown,
-  ChevronRight,
   GitBranch,
-  Download,
-  GraduationCap,
   Link2,
   LogIn,
-  Moon,
   Pencil,
   Plus,
-  Sun,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { setupIonicReact } from "@ionic/react";
@@ -36,8 +29,8 @@ import {
   type Plan,
   type Topic,
 } from "@/lib/planner-data";
-import { filterImportableGitHubIssues, fetchGitHubIssues, mapGitHubIssuesToPlan, parsePlannerJson, serializePlans } from "@/lib/import-export";
-import { Button, Dialog, FileIconButton, IconButton, TextArea, TextField } from "@/components/ui";
+import { filterImportableGitHubIssues, fetchGitHubIssues, mapGitHubIssuesToPlan } from "@/lib/import-export";
+import { Button, Dialog, IconButton, TextArea, TextField } from "@/components/ui";
 
 setupIonicReact({ mode: "ios" });
 
@@ -70,6 +63,7 @@ type CreationGesture = {
 };
 
 type ModalMode =
+  | "plan-picker"
   | "plan"
   | "course"
   | "topic"
@@ -120,9 +114,8 @@ export function StudyPlannerApp() {
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [creationGesture, setCreationGesture] = useState<CreationGesture | null>(null);
   const [collapsedCourseIds, setCollapsedCourseIds] = useState<Set<string>>(() => new Set());
-  const [leftPaneCollapsed, setLeftPaneCollapsed] = useState(false);
-  const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [theme] = useState<Theme>(getInitialTheme);
   const [toast, setToast] = useState("Ready");
 
   const convexAuth = useConvexAuth();
@@ -144,7 +137,6 @@ export function StudyPlannerApp() {
   const deleteTopicMutation = useMutation(api.planner.deleteTopic);
   const deleteMilestoneMutation = useMutation(api.planner.deleteMilestone);
   const deleteTopicRangeMutation = useMutation(api.planner.deleteTopicRange);
-  const importPlanTreesMutation = useMutation(api.planner.importPlanTrees);
   const previewGitHubIssuesAction = useAction(api.github.previewIssues);
   const importGitHubIssuesAction = useAction(api.github.importIssues);
   const remotePlans = useMemo(() => (remotePlanTrees ? mapConvexPlanTrees(remotePlanTrees) : undefined), [remotePlanTrees]);
@@ -166,6 +158,12 @@ export function StudyPlannerApp() {
 
   function updatePlans(updater: (plans: Plan[]) => Plan[]) {
     setLocalPlans((current) => updater(structuredClone(current)));
+  }
+
+  function selectPlan(plan: Plan) {
+    setActivePlanId(plan.id);
+    setSelection({ type: "plan", planId: plan.id });
+    setModalMode(null);
   }
 
   async function addPlan(name: string, notes: string) {
@@ -660,37 +658,6 @@ export function StudyPlannerApp() {
     });
   }
 
-  function exportPlans() {
-    const blob = new Blob([JSON.stringify(serializePlans(plans), null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "study-planner-export.json";
-    link.click();
-    URL.revokeObjectURL(url);
-    setToast("Export downloaded");
-  }
-
-  async function importFile(file: File) {
-    try {
-      const imported = parsePlannerJson(await file.text());
-      if (usingConvex) {
-        const planIds = await importPlanTreesMutation({ plans: toImportPlanInputs(imported) });
-        const firstPlanId = String(planIds[0] ?? "");
-        if (firstPlanId) {
-          setActivePlanId(firstPlanId);
-          setSelection({ type: "plan", planId: firstPlanId });
-        }
-      } else {
-        updatePlans((current) => [...current, ...imported]);
-        setActivePlanId(imported[0]?.id ?? activePlanId);
-      }
-      setToast(`Imported ${imported.length} plan${imported.length === 1 ? "" : "s"}`);
-    } catch (error) {
-      setToast(error instanceof Error ? error.message : "Import failed");
-    }
-  }
-
   async function importGitHub(owner: string, repo: string, token: string) {
     try {
       if (usingConvex) {
@@ -741,152 +708,57 @@ export function StudyPlannerApp() {
   return (
     <main className="app-shell" data-theme={theme}>
       <header className="app-header">
-        <div className="app-header-inner">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="app-mark">
-              <CalendarDays size={18} />
-            </div>
-            <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold">Study Planner</h1>
-              <p className="app-status">{toast}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <IconButton
-              label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              icon={theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
-            />
-            <FileIconButton label="Import JSON" icon={<Upload size={17} />} accept="application/json" onFile={(file) => void importFile(file)} />
-            <IconButton label="Export JSON" icon={<Download size={17} />} onClick={exportPlans} disabled={plans.length === 0} />
-            <IconButton label="GitHub import" icon={<GitBranch size={17} />} onClick={() => setModalMode("github")} />
-          </div>
-        </div>
+        <button className="plan-command" onClick={() => setModalMode("plan-picker")} aria-haspopup="dialog">
+          <CalendarDays size={16} aria-hidden="true" />
+          <span className="truncate">{activePlan?.name ?? "Select a plan"}</span>
+          <ChevronDown size={16} aria-hidden="true" />
+        </button>
+        <span className="sr-only" aria-live="polite">{toast}</span>
       </header>
 
-      <div
-        className={clsx(
-          "planner-layout mx-auto grid w-full max-w-[1600px] flex-1 overflow-hidden p-4",
-          leftPaneCollapsed && "left-collapsed",
-          rightPaneCollapsed && "right-collapsed",
-        )}
-      >
-        {!leftPaneCollapsed ? (
-        <aside className="planner-pane ui-panel navigation-panel p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Plans</h2>
-            <span className="flex items-center gap-1">
-              <IconButton label="Collapse navigation" icon={<ChevronLeft size={16} />} onClick={() => setLeftPaneCollapsed(true)} />
-              <IconButton label="Add plan" icon={<Plus size={16} />} onClick={() => setModalMode("plan")} />
-            </span>
-          </div>
-          <div className="space-y-2">
-            {plans.length > 0 ? (
-              plans.map((plan) => (
-                <Button
-                  key={plan.id}
-                  variant="unstyled"
-                  className={clsx(
-                    "nav-row",
-                    plan.id === activePlan?.id && "selected",
-                  )}
-                  onClick={() => {
-                    setActivePlanId(plan.id);
-                    setSelection({ type: "plan", planId: plan.id });
-                  }}
-                >
-                  <span className="block text-sm font-medium">{plan.name}</span>
-                  <span className="block text-xs text-[var(--muted)]">{plan.courses.length} courses</span>
-                </Button>
-              ))
-            ) : (
-              <EmptyState title="No plans" text="Create a plan or import one to begin." icon={<CalendarDays size={18} />} />
-            )}
-          </div>
-
-          <div className="mt-5 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Courses</h2>
-            <IconButton label="Add course" icon={<Plus size={16} />} onClick={() => setModalMode("course")} disabled={!activePlan} />
-          </div>
-          <div className="mt-3 space-y-2">
-            {activePlan?.courses.length ? (
-              activePlan.courses.map((course) => (
-                <Button
-                  key={course.id}
-                  variant="unstyled"
-                  className={clsx(
-                    "nav-row flex items-center gap-2",
-                    selection.type !== "plan" && selection.courseId === course.id && "selected",
-                  )}
-                  onClick={() => setSelection({ type: "course", planId: activePlan.id, courseId: course.id })}
-                >
-                  <span className="size-3 shrink-0 rounded-full" style={{ background: course.color }} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{course.name}</span>
-                    <span className="block text-xs text-[var(--muted)]">{course.topics.length} topics</span>
-                  </span>
-                </Button>
-              ))
-            ) : (
-              <EmptyState title="No courses" text={activePlan ? "Add a course to this plan." : "Select or create a plan first."} icon={<GraduationCap size={18} />} />
-            )}
-          </div>
-        </aside>
-        ) : null}
-
-        <section className="planner-main ui-panel min-w-0">
-          <div className="planner-toolbar">
-            <div className="min-w-0">
-              <h2 className="truncate text-lg font-semibold">{activePlan?.name ?? "No plan"}</h2>
-              <p className="text-sm text-[var(--muted)]">{activePlan?.notes || "Create a course and begin scheduling topics."}</p>
-            </div>
-            <div className="flex gap-2">
-              {leftPaneCollapsed ? <IconButton label="Show navigation" icon={<ChevronRight size={16} />} onClick={() => setLeftPaneCollapsed(false)} /> : null}
-              {rightPaneCollapsed ? <IconButton label="Show inspector" icon={<ChevronLeft size={16} />} onClick={() => setRightPaneCollapsed(false)} /> : null}
-              <Button leadingIcon={<BookOpen size={16} />} onClick={() => setModalMode("topic")} disabled={!selectedCourse}>Topic</Button>
-            </div>
-          </div>
-          <GanttChart
-            plan={activePlan}
-            timeline={timeline}
-            selection={selection}
-            setSelection={setSelection}
-            dragState={dragState}
-            setDragState={setDragState}
-            creationGesture={creationGesture}
-            setCreationGesture={setCreationGesture}
-            onPointerMove={handlePointerMove}
-            onPointerEnd={handlePointerEnd}
-            collapsedCourseIds={collapsedCourseIds}
-            onToggleCourse={toggleCourse}
-          />
-        </section>
-
-        {!rightPaneCollapsed ? (
-        <div className="planner-pane min-w-0">
-          <div className="mb-2 flex justify-end">
-            <IconButton label="Collapse inspector" icon={<ChevronRight size={16} />} onClick={() => setRightPaneCollapsed(true)} />
-          </div>
-        <Inspector
+      <section className="planner-workspace">
+        <GanttChart
           plan={activePlan}
+          timeline={timeline}
           selection={selection}
-          onAddTopic={() => setModalMode("topic")}
-          onEdit={(mode) => setModalMode(mode)}
-          onEditDependencies={() => setModalMode("dependencies")}
-          onDelete={requestDeleteSelection}
-          onEditRange={(rangeId) => {
-            setEditingRangeId(rangeId);
-            setModalMode("edit-range");
-          }}
-          onDeleteRange={requestDeleteRange}
+          setSelection={setSelection}
+          onElementClick={() => setDetailOpen(true)}
+          dragState={dragState}
+          setDragState={setDragState}
+          creationGesture={creationGesture}
+          setCreationGesture={setCreationGesture}
+          onPointerMove={handlePointerMove}
+          onPointerEnd={handlePointerEnd}
+          collapsedCourseIds={collapsedCourseIds}
+          onToggleCourse={toggleCourse}
         />
-        </div>
-        ) : null}
-      </div>
+      </section>
+
+      <PlanPickerDialog
+        open={modalMode === "plan-picker"}
+        plans={plans}
+        activePlanId={activePlan?.id}
+        onClose={() => setModalMode(null)}
+        onSelect={selectPlan}
+        onCreate={() => setModalMode("plan")}
+      />
+
+      <DetailPopup
+        open={detailOpen}
+        plan={activePlan}
+        selection={selection}
+        onClose={() => setDetailOpen(false)}
+        onAddTopic={() => { setDetailOpen(false); setModalMode("topic"); }}
+        onEdit={(mode) => { setDetailOpen(false); setModalMode(mode); }}
+        onEditDependencies={() => { setDetailOpen(false); setModalMode("dependencies"); }}
+        onDelete={() => { setDetailOpen(false); requestDeleteSelection(); }}
+        onEditRange={(rangeId) => { setDetailOpen(false); setEditingRangeId(rangeId); setModalMode("edit-range"); }}
+        onDeleteRange={(rangeId) => { setDetailOpen(false); requestDeleteRange(rangeId); }}
+      />
 
       <PlannerModal
         key={`${modalMode}:${selection.type}:${selection.planId}:${selection.type !== "plan" ? selection.courseId : ""}:${selection.type === "topic" ? selection.topicId : ""}:${selection.type === "milestone" ? selection.milestoneId : ""}:${editingRangeId ?? ""}`}
-        mode={modalMode}
+        mode={modalMode === "plan-picker" ? null : modalMode}
         plan={activePlan}
         selectedCourse={selectedCourse}
         selectedTopic={selectedTopic}
@@ -955,21 +827,12 @@ function LoginGate({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
-function EmptyState({ title, text, icon }: { title: string; text: string; icon: ReactNode }) {
-  return (
-    <div className="empty-state">
-      <div className="empty-state-icon">{icon}</div>
-      <p className="font-medium">{title}</p>
-      <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{text}</p>
-    </div>
-  );
-}
-
 function GanttChart({
   plan,
   timeline,
   selection,
   setSelection,
+  onElementClick,
   dragState,
   setDragState,
   creationGesture,
@@ -983,6 +846,7 @@ function GanttChart({
   timeline: string[];
   selection: Selection;
   setSelection: (selection: Selection) => void;
+  onElementClick: () => void;
   dragState: DragState | null;
   setDragState: (state: DragState | null) => void;
   creationGesture: CreationGesture | null;
@@ -1034,6 +898,7 @@ function GanttChart({
             timeline={timeline}
             selection={selection}
             setSelection={setSelection}
+            onElementClick={onElementClick}
             dragState={dragState}
             setDragState={setDragState}
             creationGesture={creationGesture}
@@ -1053,6 +918,7 @@ function CourseRows({
   timeline,
   selection,
   setSelection,
+  onElementClick,
   dragState,
   setDragState,
   creationGesture,
@@ -1065,6 +931,7 @@ function CourseRows({
   timeline: string[];
   selection: Selection;
   setSelection: (selection: Selection) => void;
+  onElementClick: () => void;
   dragState: DragState | null;
   setDragState: (state: DragState | null) => void;
   creationGesture: CreationGesture | null;
@@ -1134,7 +1001,10 @@ function CourseRows({
                   currentEnd: milestone.end ?? milestone.start,
                 });
               }}
-              onClick={() => setSelection({ type: "milestone", planId: plan.id, courseId: course.id, milestoneId: milestone.id })}
+              onClick={() => {
+                setSelection({ type: "milestone", planId: plan.id, courseId: course.id, milestoneId: milestone.id });
+                onElementClick();
+              }}
             >
               <GanttResizeHandle
                 side="left"
@@ -1188,6 +1058,7 @@ function CourseRows({
           timeline={timeline}
           selected={selection.type === "topic" && selection.topicId === topic.id}
           setSelection={setSelection}
+          onElementClick={onElementClick}
           dragState={dragState}
           setDragState={setDragState}
           creationGesture={creationGesture}
@@ -1338,6 +1209,7 @@ function TopicRow({
   timeline,
   selected,
   setSelection,
+  onElementClick,
   dragState,
   setDragState,
   creationGesture,
@@ -1349,6 +1221,7 @@ function TopicRow({
   timeline: string[];
   selected: boolean;
   setSelection: (selection: Selection) => void;
+  onElementClick: () => void;
   dragState: DragState | null;
   setDragState: (state: DragState | null) => void;
   creationGesture: CreationGesture | null;
@@ -1410,6 +1283,10 @@ function TopicRow({
                   currentEnd: range.end,
                 });
               }}
+              onClick={() => {
+                setSelection({ type: "topic", planId: plan.id, courseId: course.id, topicId: topic.id });
+                onElementClick();
+              }}
             >
               <GanttResizeHandle
                 side="left"
@@ -1459,9 +1336,11 @@ function TopicRow({
   );
 }
 
-function Inspector({
+function DetailPopup({
+  open,
   plan,
   selection,
+  onClose,
   onAddTopic,
   onEdit,
   onEditDependencies,
@@ -1469,10 +1348,12 @@ function Inspector({
   onEditRange,
   onDeleteRange,
 }: {
+  open: boolean;
   plan?: Plan;
   selection: Selection;
+  onClose: () => void;
   onAddTopic: () => void;
-  onEdit: (mode: Exclude<ModalMode, "plan" | "course" | "topic" | "milestone" | "range" | "github" | null>) => void;
+  onEdit: (mode: Exclude<ModalMode, "plan-picker" | "plan" | "course" | "topic" | "milestone" | "range" | "github" | null>) => void;
   onEditDependencies: () => void;
   onDelete: () => void;
   onEditRange: (rangeId: string) => void;
@@ -1486,15 +1367,13 @@ function Inspector({
   const editMode = selection.type === "plan" ? "edit-plan" : selection.type === "course" ? "edit-course" : selection.type === "topic" ? "edit-topic" : "edit-milestone";
 
   return (
-    <aside className="ui-panel p-4">
-      <div className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold text-[var(--muted)]">
-        <span className="flex items-center gap-2"><ChevronDown size={15} /> Inspector</span>
-        <span className="flex items-center gap-1">
-          <IconButton label="Edit selected item" icon={<Pencil size={15} />} onClick={() => onEdit(editMode)} disabled={!plan} />
-          <IconButton label="Delete selected item" icon={<Trash2 size={15} />} onClick={onDelete} disabled={!plan} />
-        </span>
-      </div>
-      <h2 className="text-xl font-semibold">{title}</h2>
+    <Dialog
+      open={open}
+      title={title}
+      onClose={onClose}
+      footer={<><Button variant="danger" leadingIcon={<Trash2 size={15} />} onClick={onDelete} disabled={!plan}>Delete</Button><Button variant="primary" leadingIcon={<Pencil size={15} />} onClick={() => onEdit(editMode)} disabled={!plan}>Edit</Button></>}
+    >
+      <div className="detail-popup">
       <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{notes || "No notes yet."}</p>
 
       {course ? (
@@ -1543,9 +1422,10 @@ function Inspector({
       ) : null}
 
       <div className="mt-5 grid gap-2">
-        <Button className="w-full" leadingIcon={<BookOpen size={16} />} onClick={onAddTopic} disabled={!course}>Add topic</Button>
+        <Button className="w-full" leadingIcon={<Plus size={16} />} onClick={onAddTopic} disabled={!course}>Add topic</Button>
       </div>
-    </aside>
+      </div>
+    </Dialog>
   );
 }
 
@@ -1555,6 +1435,28 @@ function Metric({ label, value }: { label: string; value: number }) {
       <div className="text-lg font-semibold">{value}</div>
       <div className="text-xs text-[var(--muted)]">{label}</div>
     </div>
+  );
+}
+
+function PlanPickerDialog({ open, plans, activePlanId, onClose, onSelect, onCreate }: {
+  open: boolean;
+  plans: Plan[];
+  activePlanId?: string;
+  onClose: () => void;
+  onSelect: (plan: Plan) => void;
+  onCreate: () => void;
+}) {
+  return (
+    <Dialog open={open} title="Switch plan" onClose={onClose} footer={<Button variant="primary" leadingIcon={<Plus size={16} />} onClick={onCreate}>Create new plan</Button>}>
+      <div className="plan-picker-list" role="listbox" aria-label="Plans">
+        {plans.map((plan) => (
+          <button key={plan.id} className={clsx("plan-picker-row", plan.id === activePlanId && "selected")} role="option" aria-selected={plan.id === activePlanId} onClick={() => onSelect(plan)}>
+            <span className="truncate font-medium">{plan.name}</span>
+            <span className="text-xs text-[var(--muted)]">{plan.courses.length} courses</span>
+          </button>
+        ))}
+      </div>
+    </Dialog>
   );
 }
 
@@ -1802,7 +1704,7 @@ function PlannerModal({
           {mode && ["plan", "course", "topic", "milestone", "edit-plan", "edit-course", "edit-topic", "edit-milestone"].includes(mode) ? (
             <>
               <TextField label={mode === "milestone" ? "Milestone name" : "Name"} value={name} onChange={(event) => setName(event.currentTarget.value)} autoFocus={mode === "milestone"} />
-              <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
+              {mode !== "plan" ? <TextArea label="Notes" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} /> : null}
             </>
           ) : null}
 
@@ -1997,34 +1899,5 @@ function mapConvexPlanTrees(planTrees: ConvexPlanTree[]): Plan[] {
         })),
       })),
     })),
-  }));
-}
-
-function toImportPlanInputs(plans: Plan[]) {
-  return plans.map((plan) => ({
-    name: plan.name,
-    notes: plan.notes,
-    courses: plan.courses.map((course) => {
-      const topicNamesById = new Map(course.topics.map((topic) => [topic.id, topic.name]));
-
-      return {
-        name: course.name,
-        notes: course.notes,
-        color: course.color,
-        milestones: course.milestones.map((milestone) => ({
-          name: milestone.name,
-          notes: milestone.notes,
-          start: milestone.start,
-          end: milestone.end,
-        })),
-        topics: course.topics.map((topic) => ({
-          name: topic.name,
-          notes: topic.notes,
-          color: topic.color,
-          dependencies: topic.dependencies.map((dependency) => topicNamesById.get(dependency) ?? dependency),
-          ranges: topic.ranges.map((range) => ({ start: range.start, end: range.end })),
-        })),
-      };
-    }),
   }));
 }
