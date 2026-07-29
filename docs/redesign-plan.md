@@ -1,6 +1,6 @@
 # Study Planner — Architecture Repair & UX Redesign Plan
 
-Status: **approved, phase 0 complete**
+Status: **approved, phases 0–1 complete**
 Supersedes and replaces: `REQUIREMENTS.md` (deleted in this PR; preserved in git history at `7e6152e`)
 
 ---
@@ -361,7 +361,7 @@ for trust.
 | **Add Radix UI primitives** | Unstyled, accessibility-correct popovers/menus/dialogs/tooltips, with a bespoke macOS skin on top. shadcn/ui was considered but its visual defaults would be fought at every step. |
 | **Add TanStack Virtual** | Timeline virtualization. |
 | **Add Zustand** | Ephemeral view state (zoom, selection, collapsed lanes). Server state stays in Convex reactive queries. |
-| **Keep** | Next.js 16, React 19, Tailwind v4, Convex, Convex Auth, date-fns, zod, clsx, lucide-react. |
+| **Keep** | Next.js 16, React 19, Tailwind v4, Convex, Convex Auth, zod, clsx, lucide-react. |
 
 ### 8.3 Testing
 
@@ -384,7 +384,7 @@ the dev deployment reseeded. This removes the single riskiest item in the plan.
 In its place, a **seed script** (`convex/seed.ts` + a local-repository equivalent) generates a
 realistic development dataset modelled on the persona: 10 courses, 30–45 topics each,
 mixed units (slides / pages / videos), partial completion, a spread of confirmed and
-provisional exam dates, and a few dependency chains. ~400 topics total, which doubles as the
+provisional exam dates, and a few dependency chains. ~350 topics total, which doubles as the
 performance fixture for phase 9 and the fixture set for tests.
 
 Sample data being generated rather than imported also means the timeline's worst case is
@@ -408,19 +408,43 @@ phase 5 lands, so `main` is never broken.
 
 | Phase | Scope | Est. |
 |---|---|---|
-| **0** | *(this PR)* Plan; remove `AGENTS.md` and `REQUIREMENTS.md` | — |
-| **1** | Domain layer, repository abstraction, new schema, seed script, delete GitHub import, Vitest + CI | 2–3 d |
-| **2** | macOS design system: tokens, materials, typography, primitives on Radix; remove Ionic | 2 d |
+| **0** | ✅ Plan; remove `AGENTS.md` and `REQUIREMENTS.md` | — |
+| **1** | ✅ Domain layer, repository abstraction, new schema, seed generator, delete GitHub import, remove Ionic, Vitest + CI | 2–3 d |
+| **2** | macOS design system: tokens, materials, typography, primitives on Radix | 2 d |
 | **3** | App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
-| **4** | Outline view + bulk entry parser — *unblocks course creation, fixing audit issue #1* | 2 d |
+| **4** | Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
 | **5** | Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
 | **6** | Scheduling engine + Today view + Reflow | 3 d |
 | **7** | Exams, progress logging, velocity, on-track indicators | 2 d |
 | **8** | Restore JSON import/export into the new UI | 1 d |
 | **9** | Accessibility audit, mobile layout, performance pass at 400 topics, light/dark polish | 2–3 d |
 
-**≈ 3 weeks.** Phase 4 is deliberately early: it is the smallest change that makes the app
-usable again.
+**≈ 3 weeks.**
+
+### 9.1 Phase 1 as delivered — two deviations
+
+Phase 1 was planned to leave the old UI in place until phase 5. It could not: collapsing the
+dual-write meant rewriting every call site in `StudyPlannerApp.tsx`, and the old component's
+1,910 lines were written against a data model (`Plan → Course → Topic → DateRange`, no unit
+counts) that no longer exists. Porting it would have been a day's work on a file scheduled for
+deletion.
+
+So phase 1 ships an **interim shell** in its place — ~470 lines that drive every repository
+method through plain HTML controls: semesters, courses, exams, bulk topic entry, progress
+logging, import/export, and sample data. It is deliberately unstyled and deliberately temporary;
+phase 2 onward replaces it view by view. Two consequences worth stating plainly:
+
+- **Audit issue #1 is closed now rather than at phase 4.** Course creation works from a cold
+  start, so the app is usable again today.
+- **Ionic came out in phase 1, not phase 2.** The four controls it rendered had to be rewritten
+  either way, and keeping a second theme system alive for a file being deleted made no sense.
+  `src/components/ui.tsx` now holds plain-element primitives; the Radix-based macOS set replaces
+  them in phase 2. `date-fns` went with it — `src/domain/dates.ts` covers what was used.
+
+What phase 1 did *not* include, against the original scope: the scheduling engine (§6) stays in
+phase 6, and Testing Library and Playwright are not yet installed — there is no component or
+journey worth pinning until the real UI exists. Vitest covers `src/domain` and `src/data`
+(152 tests), and CI runs `lint`, `typecheck`, `test`, and `build` on every PR.
 
 ### Traceability to the original audit recommendations
 
@@ -462,7 +486,7 @@ All four confirmed by the repository owner on 2026-07-29.
 
 1. ✅ **Ionic and ionicons are removed.** A deliberate deviation from the original brief
    ("Use ... Ionic for the frontend"): it is used for one modal, and it is an iOS-mobile toolkit
-   in a macOS-desktop app. Removed in phase 2.
+   in a macOS-desktop app. Removed in phase 1 (see §9.1).
 2. ✅ **Today is the landing view, not the Gantt.** The Timeline remains a core view and gets the
    most engineering effort, but it is a poor answer to *"what do I study today?"*.
 3. ✅ **`REQUIREMENTS.md` is deleted** (phase 0, this PR). It is preserved in git history at
