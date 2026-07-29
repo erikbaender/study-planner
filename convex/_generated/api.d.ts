@@ -9,7 +9,6 @@
  */
 
 import type * as auth from "../auth.js";
-import type * as github from "../github.js";
 import type * as http from "../http.js";
 import type * as planner from "../planner.js";
 
@@ -21,7 +20,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
-  github: typeof github;
   http: typeof http;
   planner: typeof planner;
 }>;
