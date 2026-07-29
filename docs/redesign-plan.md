@@ -410,7 +410,7 @@ phase 5 lands, so `main` is never broken.
 |---|---|---|
 | **0** | ✅ Plan; remove `AGENTS.md` and `REQUIREMENTS.md` | — |
 | **1** | ✅ Domain layer, repository abstraction, new schema, seed generator, delete GitHub import, remove Ionic, Vitest + CI | 2–3 d |
-| **2** | macOS design system: tokens, materials, typography, primitives on Radix | 2 d |
+| **2** | ✅ macOS design system: tokens, materials, typography, primitives on Radix | 2 d |
 | **3** | App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
 | **4** | Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
 | **5** | Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
@@ -446,7 +446,58 @@ phase 6, and Testing Library and Playwright are not yet installed — there is n
 journey worth pinning until the real UI exists. Vitest covers `src/domain` and `src/data`
 (152 tests), and CI runs `lint`, `typecheck`, `test`, and `build` on every PR.
 
+### 9.2 Phase 2 as delivered
+
+Phase 2 ships the design system the rest of the redesign is built from: `src/app/globals.css`
+holds the token layer, and `src/ui/` holds ~1,700 lines of primitives with ~630 lines of tests
+against them.
+
+**Tokens.** A Tailwind v4 `@theme inline` block maps semantic names — `text-primary`,
+`bg-content`, `bg-fill-strong`, `border-separator`, `bg-accent` — onto CSS variables that flip
+under `[data-theme="dark"]`. Nothing in `src/ui/` names a raw colour. The type scale is macOS's,
+based at 13px (`text-caption` through `text-title1`), and the radii are concentric
+(`rounded-chip` < `rounded-control` < `rounded-card`) so a control nested in a card looks
+machined rather than stacked. Materials (`bg-sidebar`, the toolbar, popover backgrounds) use
+`backdrop-filter` rather than opaque fills.
+
+**Appearance.** `ThemeProvider` resolves light / dark / match-system, writes `data-theme` before
+paint to avoid a flash, and persists to `localStorage`. Thirteen accent colours are settable at
+runtime; the accent is a single variable, so a change repaints every control at once. Verified
+in-browser in both themes.
+
+**Primitives.** `Button` / `IconButton` / `FileButton`, `SegmentedControl`, `Checkbox`,
+`Switch`, `Stepper`, `TextField` / `TextArea` / `SelectField`, `ProgressBar`, `Badge`, `Card`,
+`Separator`, `EmptyState`, `Kbd`, `Spinner`, `Sidebar` / `SidebarSection` / `SidebarItem` /
+`CountdownBadge`, `Toolbar`, `Popover`, `Sheet`, `DropdownMenu`, `ContextMenu`, `Tooltip` — all
+on the unified `radix-ui` package.
+
+Three of them encode product principles rather than styling:
+
+- **`ProgressBar`** omits `aria-valuenow` entirely for a topic with no size, because `ratio:
+  null` means "I haven't said how big this is", not 0%.
+- **`CountdownBadge`** renders a confirmed exam filled and a provisional one outlined, and
+  spells the countdown out for screen readers ("Exam in 12 days" beside a visual `12d`).
+- **`EmptyState`** takes its action as a *required* prop — audit issue #1 was an empty state
+  with no way out of it, and that can no longer happen by omission.
+
+**Testing.** Testing Library and jsdom join Vitest as a second project (`ui`), alongside the
+existing `domain` project. 64 component tests bring the suite to **216**. `src/test/setup-dom.ts`
+carries the jsdom shims Radix needs (`ResizeObserver`, `DOMRect.fromRect`, pointer capture,
+`matchMedia`); they are deliberately dumb, and no assertion depends on a measured size.
+
+Two behaviours changed to match what the components claim about themselves:
+
+- `SegmentedControl` reports `role="radiogroup"`, so the arrow keys now move *selection*, not
+  just focus. Radix's default is toolbar semantics, which is the wrong contract here.
+- `StudyPlannerApp` reads `usePlannerState()` rather than `usePlannerSnapshot()`, so a loading
+  repository renders a spinner instead of "No semesters yet". The old flattening made the app
+  assert something it did not yet know — the fifth product principle rules that out.
+
+The interim shell is ported onto the primitives but keeps its interim structure; the three-column
+split view is still phase 3.
+
 ### Traceability to the original audit recommendations
+
 
 | Audit recommendation | Where it lands |
 |---|---|
