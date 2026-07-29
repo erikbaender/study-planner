@@ -376,13 +376,28 @@ Currently zero. Target:
   creatable from a cold start**, so issue #1 can never recur silently.
 - CI runs `lint`, `typecheck`, `test`, `build` on every PR.
 
-### 8.4 Data migration
+### 8.4 Schema replacement and seed data
 
-Breaking. `milestones → exams` and `topicRanges → studyBlocks` need real migrations, and new
-`topics` fields need backfill defaults (`unit: "slides"`, `totalUnits: 0`, `completedUnits: 0`,
-`status: "planned"`). A one-off Convex migration mutation will run against the dev deployment
-holding the 89 imported `erikbaender/mhh` issues. `totalUnits: 0` is treated as
-"size untracked" so existing data keeps working un-migrated and un-sized.
+**No migration.** Existing data is explicitly disposable, so `schema.ts` is simply replaced and
+the dev deployment reseeded. This removes the single riskiest item in the plan.
+
+In its place, a **seed script** (`convex/seed.ts` + a local-repository equivalent) generates a
+realistic development dataset modelled on the persona: 10 courses, 30–45 topics each,
+mixed units (slides / pages / videos), partial completion, a spread of confirmed and
+provisional exam dates, and a few dependency chains. ~400 topics total, which doubles as the
+performance fixture for phase 9 and the fixture set for tests.
+
+Sample data being generated rather than imported also means the timeline's worst case is
+exercised from phase 5 onward, instead of being discovered late.
+
+### 8.5 GitHub import: removed
+
+`convex/github.ts` (309 lines), the GitHub helpers in `src/lib/import-export.ts`, and the dead
+`setModalMode("github")` path are deleted in phase 1. The feature was already unreachable, its
+only purpose was seeding real data, and the seed script replaces that purpose. This also drops
+the `GITHUB_IMPORT_TOKEN` / `GITHUB_PROJECTS_TOKEN` surface entirely.
+
+JSON import/export is **kept** and restored to the UI — it is the actual portability story.
 
 ---
 
@@ -393,25 +408,26 @@ phase 5 lands, so `main` is never broken.
 
 | Phase | Scope | Est. |
 |---|---|---|
-| **0** | *(this PR)* Plan + remove agent instruction files | — |
-| **1** | Domain layer, repository abstraction, new Convex schema + migration, Vitest + CI | 2–3 d |
+| **0** | *(this PR)* Plan; remove `AGENTS.md` and `REQUIREMENTS.md` | — |
+| **1** | Domain layer, repository abstraction, new schema, seed script, delete GitHub import, Vitest + CI | 2–3 d |
 | **2** | macOS design system: tokens, materials, typography, primitives on Radix; remove Ionic | 2 d |
 | **3** | App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
 | **4** | Outline view + bulk entry parser — *unblocks course creation, fixing audit issue #1* | 2 d |
 | **5** | Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
 | **6** | Scheduling engine + Today view + Reflow | 3 d |
 | **7** | Exams, progress logging, velocity, on-track indicators | 2 d |
-| **8** | Restore JSON import/export and GitHub import into the new UI | 1–2 d |
+| **8** | Restore JSON import/export into the new UI | 1 d |
 | **9** | Accessibility audit, mobile layout, performance pass at 400 topics, light/dark polish | 2–3 d |
 
-**≈ 3–4 weeks.** Phase 4 is deliberately early: it is the smallest change that makes the app
+**≈ 3 weeks.** Phase 4 is deliberately early: it is the smallest change that makes the app
 usable again.
 
 ### Traceability to the original audit recommendations
 
 | Audit recommendation | Where it lands |
 |---|---|
-| Restore course creation, GitHub import, import/export, theme toggle | Phases 4, 8, 2 |
+| Restore course creation, import/export, theme toggle | Phases 4, 8, 2 |
+| ~~Restore GitHub import~~ | Dropped — feature removed (§8.5) |
 | Add drag threshold | Phase 5 |
 | Collapse dual-write architecture | Phase 1 |
 | Split the 1,910-line component | Phases 2–6 (feature-sliced by construction) |
@@ -468,38 +484,28 @@ All four confirmed by the repository owner on 2026-07-29.
 
 ## 13. Environment and access needed
 
-**Phases 1–7 need nothing that is not already in the repo.** The repository abstraction that
-collapses the dual-write is a pure refactor: extract a `PlannerRepository` interface, move the
-existing Convex calls behind `convex-repository.ts`, and write `local-repository.ts` against
-IndexedDB. It is validated by `typecheck`, `lint`, Vitest and Testing Library — none of which
-touch a deployment.
+**Nothing.** The whole plan is buildable from the repo as it stands.
 
-**A Convex dev deployment is needed to *verify* the Convex half**, and to run the schema
-migration. Without it:
+Dropping the migration (§8.4) removed the one item that genuinely wanted a live deployment.
+What remains is a pure refactor plus new code: extract a `PlannerRepository` interface, move the
+existing Convex calls behind `convex-repository.ts`, write `local-repository.ts` against
+IndexedDB, and seed both from the same generator. All of it is validated by `typecheck`, `lint`,
+Vitest, Testing Library and Playwright against the local repository — none of which touch a
+deployment.
 
-| Can be done offline | Needs a deployment |
-|---|---|
-| Repository interface + both implementations | Pushing `schema.ts` and confirming Convex's validators accept it |
-| Domain logic, scheduling engine, all unit tests | Running the `milestones → exams` / `topicRanges → studyBlocks` migration on the 89 imported issues |
-| Every UI phase, driven by `local-repository` | Playwright E2E through the authenticated path |
-| Migration mutation *written* and type-checked | Confirming it actually ran cleanly against real rows |
+Two things stay unverified-by-execution and should be flagged as such at review time:
 
-Convex dev deployments are free and scoped to a single project, so the smallest sufficient grant
-is a **dev deployment for this project only** — not account access. Either:
+- **Convex accepts the new `schema.ts`.** Its validators are checked at push time, not compile
+  time. The risk is low (the schema uses only ordinary `v.*` types) and the failure mode is
+  loud and immediate when you first run `pnpm convex:dev`.
+- **Signed-in flows end to end.** These need `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` in the
+  deployment env. The repository interface makes the auth boundary narrow, and E2E tests run
+  against the local repository instead.
 
-- **You run `pnpm convex:dev` once** and share the generated `.env.local`
-  (`CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`). Preferred; it is a dev deployment key, not an
-  account credential, and it can be rotated by deleting the deployment.
-- **Or nothing is shared**, and the migration ships as a reviewed, type-checked mutation that you
-  run yourself. This costs one round-trip per migration defect, and the Convex path stays
-  unexercised until you run it.
-
-GitHub OAuth (`AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` in the Convex deployment env) is only
-needed to test signed-in flows end to end. Phase 8's GitHub *import* additionally reads
-`GITHUB_IMPORT_TOKEN`, but a fixture-based test can stand in for it.
-
-**Recommendation:** proceed without access. Nothing on the critical path is blocked, and the
-question can be revisited at the end of phase 1 when the migration is written and ready to run.
+If either becomes a problem, the smallest sufficient grant is a **dev deployment for this
+project** — `pnpm convex:dev` once, then share the generated `.env.local` (`CONVEX_DEPLOYMENT`,
+`NEXT_PUBLIC_CONVEX_URL`). That is a project-scoped dev key, revocable by deleting the
+deployment, not account access. It is not needed to start.
 
 ## 14. Out of scope
 
