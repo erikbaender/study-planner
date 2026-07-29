@@ -50,6 +50,7 @@ import {
   parsePlannerJson,
   serializePlans,
 } from "@/lib/import-export";
+import { OneDrivePermissionProbe } from "@/features/onedrive/OneDrivePermissionProbe";
 import {
   AccentPicker,
   AppearanceControl,
@@ -161,6 +162,7 @@ export function StudyPlannerApp() {
           Export
         </Button>
         <FileButton size="sm" label="Import" accept="application/json" onFile={importJson} />
+        <OneDrivePermissionProbe />
 
         <Separator orientation="vertical" className="mx-1 h-4" />
 
