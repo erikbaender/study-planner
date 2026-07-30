@@ -20,6 +20,7 @@ export function Checkbox({
   checked,
   onCheckedChange,
   label,
+  ariaLabel,
   hint,
   disabled,
   className,
@@ -28,6 +29,8 @@ export function Checkbox({
   checked: boolean | "indeterminate";
   onCheckedChange: (checked: boolean) => void;
   label: ReactNode;
+  /** Explicit accessible name for visually-hidden or composite labels. */
+  ariaLabel?: string;
   hint?: ReactNode;
   disabled?: boolean;
   className?: string;
@@ -37,6 +40,7 @@ export function Checkbox({
     <div className={clsx("flex items-start gap-2", className)}>
       <RadixCheckbox.Root
         id={id}
+        aria-label={ariaLabel}
         checked={checked}
         disabled={disabled}
         onCheckedChange={(next) => onCheckedChange(next === true)}
@@ -57,12 +61,16 @@ export function Checkbox({
           )}
         </RadixCheckbox.Indicator>
       </RadixCheckbox.Root>
-      <div className="flex flex-col gap-0.5">
-        <label htmlFor={id} className={clsx("text-body select-none", disabled && "opacity-40")}>
-          {label}
-        </label>
-        {hint ? <span className="text-footnote text-secondary">{hint}</span> : null}
-      </div>
+      {label || hint ? (
+        <div className="flex flex-col gap-0.5">
+          {label ? (
+            <label htmlFor={id} className={clsx("text-body select-none", disabled && "opacity-40")}>
+              {label}
+            </label>
+          ) : null}
+          {hint ? <span className="text-footnote text-secondary">{hint}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

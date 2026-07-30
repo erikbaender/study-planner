@@ -687,7 +687,7 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
       });
     },
 
-    async replaceAutoBlocks(topicIds, blocks: GeneratedBlock[]) {
+    async replaceAutoBlocks(topicIds, blocks: GeneratedBlock[], options) {
       await commit((snapshot) => {
         const scope = new Set(topicIds);
         const byTopic = new Map<EntityId, GeneratedBlock[]>();
@@ -712,7 +712,12 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
                         ? {
                             ...topic,
                             blocks: [
-                              ...topic.blocks.filter((block) => block.source === "manual"),
+                              ...topic.blocks.filter(
+                                (block) =>
+                                  block.source === "manual" ||
+                                  (options?.fromDate !== undefined &&
+                                    block.endDate < options.fromDate),
+                              ),
                               ...(byTopic.get(topic.id) ?? []).map(
                                 (block): StudyBlock => ({
                                   id: createId("block"),

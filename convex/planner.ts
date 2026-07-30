@@ -649,6 +649,7 @@ export const deleteStudyBlock = mutation({
 export const replaceAutoBlocks = mutation({
   args: {
     topicIds: v.array(v.id("topics")),
+    fromDate: v.optional(v.string()),
     blocks: v.array(
       v.object({
         topicId: v.id("topics"),
@@ -678,7 +679,12 @@ export const replaceAutoBlocks = mutation({
         .withIndex("by_topic", (q) => q.eq("topicId", topicId))
         .collect();
       for (const block of existing) {
-        if (block.source === "auto") await ctx.db.delete(block._id);
+        if (
+          block.source === "auto" &&
+          (args.fromDate === undefined || block.endDate >= args.fromDate)
+        ) {
+          await ctx.db.delete(block._id);
+        }
       }
     }
 

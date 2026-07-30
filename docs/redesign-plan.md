@@ -414,7 +414,7 @@ workspace shell; phases 4–9 replace each content view without breaking the sha
 | **3** | ✅ App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
 | **4** | ✅ Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
 | **5** | ✅ Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
-| **6** | Scheduling engine + Today view + Reflow | 3 d |
+| **6** | ✅ Scheduling engine + Today view + Reflow | 3 d |
 | **7** | Exams, progress logging, velocity, on-track indicators | 2 d |
 | **8** | Restore JSON import/export into the new UI | 1 d |
 | **9** | Accessibility audit, mobile layout, performance pass at 400 topics, light/dark polish | 2–3 d |
@@ -608,6 +608,44 @@ mounted than the 300-plus-row ARIA total, and collapses a real 47-topic course.
 The detailed implementation report is
 `reports/2026-07-30-18-phase-5-timeline.md`.
 
+### 9.6 Phase 6 as delivered
+
+Phase 6 adds the pure scheduling boundary described in §6. `scheduleCourses` receives courses,
+an injected `today`, calendar preferences, and an optional What-if capacity. It schedules
+measured remaining work backwards from each effective exam date, gives earlier exams and
+higher-priority topics first claim on shared capacity, and places prerequisites before their
+dependants. Study days and blackout dates are respected; provisional exams use the start of
+their window.
+
+**Honest planning.** Missing capacity produces no generated blocks. Missing exams and unmeasured
+topics are reported separately. Measured manual blocks reserve capacity and count toward their
+topic target; an unmeasured manual block is preserved without inventing a cost. When work does
+not fit, the result carries each course's required pace and exact shortfall. The Today panel
+renders those numbers before anything is written, so changing capacity is a reversible What-if
+preview rather than an implicit mutation.
+
+**Safe application.** Initial planning handles every course with a deadline in one shared
+capacity pass, preventing individually generated courses from overbooking the same day. Applying
+the preview saves capacity and writes only generated blocks through `replaceAutoBlocks`. Reflow
+starts at the injected current date: older generated blocks remain historical records, future
+generated blocks are replaced, and manual blocks keep their original ids and dates.
+
+**Today loop.** Behind-course banners expose Reflow. A next-up card and checklist group the
+generated targets that cover today. Each row shows today's logged/target units, supports one-click
+target completion, and retains the inline stepper/Log path through `logStudy`. The next three exams
+now carry on-track or behind indicators.
+
+**Testing.** Domain tests cover calendar constraints, priority, dependency order, manual
+reservation, explicit infeasibility, unknown capacity, provisional deadlines, and determinism.
+Repository tests prove that Reflow preserves both manual work and older generated history.
+Component tests cover the What-if panel, checklist logging, accessible completion controls, and
+Behind Reflow. The Chromium journey generates and reflows the 344-topic sample. Browser inspection
+also guards the original scrolling defect: at 1280×800 and 1024×768 the root remains exactly
+viewport-sized while only the content pane scrolls.
+
+The detailed implementation report is
+`reports/2026-07-30-19-phase-6-scheduling-and-today.md`.
+
 ### Traceability to the original audit recommendations
 
 
@@ -744,6 +782,17 @@ The Today foundation already groups blocks scheduled for the injected date and s
 behind-course metrics. Phase 6 should turn those metrics into a usable planning loop: generate
 an initial schedule, explain infeasible capacity honestly, expose Reflow from Today, and prove
 with repository tests that manual blocks survive every regeneration.
+
+### 12.5 Where to start phase 7
+
+Phase 6 makes the daily loop operable, but its progress controls stay intentionally close to the
+generated target: check off today's amount or log a unit delta. Phase 7 should make exams and
+study history first-class editing surfaces, then expose the velocity already calculated in
+`src/domain/metrics.ts` rather than creating a second pace formula.
+
+Keep `logStudy` as the only progress write path and keep provisional exam certainty visible
+through every editor. The Today exam badges already consume `assessCourse`; extend that shared
+assessment into useful velocity/projection detail rather than recomputing status inside a view.
 
 ## 13. Environment and access needed
 

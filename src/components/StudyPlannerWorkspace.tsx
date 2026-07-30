@@ -24,6 +24,7 @@ import {
   EMPTY_SNAPSHOT,
   generateSeedData,
   leastUsedColor,
+  scheduleCourses,
   toIsoDate,
   type Course,
   type Plan,
@@ -63,6 +64,12 @@ export function StudyPlannerApp() {
   const { isAuthenticated } = useConvexAuth();
   const { signIn, signOut } = useAuthActions();
   const today = useToday();
+  const savedCapacity = snapshot.preferences.dailyCapacityUnits;
+  const [capacityDraft, setCapacityDraft] = useState<{
+    planId: string | null;
+    value: string;
+  } | null>(null);
+  const [planning, setPlanning] = useState(false);
 
   const view = useWorkspaceStore((state) => state.view);
   const smartView = useWorkspaceStore((state) => state.smartView);
@@ -90,6 +97,61 @@ export function StudyPlannerApp() {
 
   const plan = resolvePlan(snapshot.plans, planId);
   const course = resolveCourse(plan, courseId);
+  const capacity =
+    capacityDraft?.planId === (plan?.id ?? null)
+      ? capacityDraft.value
+      : savedCapacity === undefined
+        ? ""
+        : String(savedCapacity);
+
+  const schedule = useMemo(
+    () =>
+      scheduleCourses({
+        courses: plan?.courses ?? [],
+        today,
+        preferences: snapshot.preferences,
+        // Empty and temporarily-invalid editing states stay a What-if preview;
+        // saved preferences change only when the user applies the schedule.
+        dailyCapacityUnits: Number(capacity),
+      }),
+    [capacity, plan?.courses, snapshot.preferences, today],
+  );
+
+  const hasAutoSchedule = useMemo(
+    () =>
+      Boolean(
+        plan?.courses.some((candidate) =>
+          candidate.topics.some((topic) =>
+            topic.blocks.some((block) => block.source === "auto" && block.endDate >= today),
+          ),
+        ),
+      ),
+    [plan?.courses, today],
+  );
+
+  const applySchedule = useCallback(() => {
+    if (!plan || schedule.capacityUnits === null || planning) return;
+    const inScope = new Set(
+      schedule.courses
+        .filter((item) => item.deadline !== null)
+        .map((item) => item.courseId),
+    );
+    const topicIds = plan.courses
+      .filter((candidate) => inScope.has(candidate.id))
+      .flatMap((candidate) => candidate.topics.map((topic) => topic.id));
+    const nextPreferences = {
+      ...snapshot.preferences,
+      dailyCapacityUnits: schedule.capacityUnits,
+    };
+
+    setPlanning(true);
+    run(
+      (async () => {
+        await repository.savePreferences(nextPreferences);
+        await repository.replaceAutoBlocks(topicIds, schedule.blocks, { fromDate: today });
+      })().finally(() => setPlanning(false)),
+    );
+  }, [plan, planning, repository, run, schedule, snapshot.preferences, today]);
 
   useEffect(() => {
     if (!plan || plan.id === planId) return;
@@ -374,6 +436,17 @@ export function StudyPlannerApp() {
                 onSelectCourse={selectCourse}
                 onSelectTopic={selectTopic}
                 onCreate={() => setCreateOpen(true)}
+                schedule={schedule}
+                capacity={capacity}
+                hasAutoSchedule={hasAutoSchedule}
+                planning={planning}
+                onCapacityChange={(value) =>
+                  setCapacityDraft({ planId: plan.id, value })
+                }
+                onApplySchedule={applySchedule}
+                onLogStudy={(topicId, units) =>
+                  run(repository.logStudy({ topicId, date: today, units }))
+                }
               />
             ) : view === "timeline" ? (
               <TimelineView

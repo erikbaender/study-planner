@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("navigates the workspace through the Phase 4 outline and Phase 5 timeline", async ({
+test("navigates the workspace through the Phase 6 planning loop", async ({
   page,
 }) => {
   await page.goto("/");
@@ -10,6 +10,25 @@ test("navigates the workspace through the Phase 4 outline and Phase 5 timeline",
 
   await expect(page.getByRole("navigation", { name: "Study Planner navigation" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
+
+  const capacity = page.getByRole("spinbutton", { name: "What-if daily capacity" });
+  await capacity.fill("400");
+  await expect(page.getByText("974 units do not fit before the exams.")).toBeVisible();
+  await page.getByRole("button", { name: "Auto-plan semester" }).click();
+  await expect(page.getByRole("button", { name: "Reflow from today" })).toBeVisible();
+  await expect(page.getByText(/topics$/).first()).not.toHaveText("0 topics");
+  await expect(page.getByRole("heading", { name: "Next up" })).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", { name: /^Complete .+, .+, .+ target$/ }).first(),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Reflow from today" }).click();
+  await expect(page.getByRole("button", { name: "Reflow from today" })).toBeEnabled();
+  expect(
+    await page.evaluate(() => ({
+      width: [document.documentElement.scrollWidth, document.documentElement.clientWidth],
+      height: [document.documentElement.scrollHeight, document.documentElement.clientHeight],
+    })),
+  ).toEqual({ width: [1280, 1280], height: [720, 720] });
 
   await page
     .getByRole("navigation", { name: "Study Planner navigation" })

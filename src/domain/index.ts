@@ -8,6 +8,7 @@ export * from "./types";
 export * from "./dates";
 export * from "./validation";
 export * from "./metrics";
+export * from "./scheduling";
 export * from "./palette";
 export * from "./outline";
 export * from "./seed";

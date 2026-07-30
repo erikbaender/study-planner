@@ -350,10 +350,11 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         blockId: asId<"studyBlocks">(blockId),
       });
     },
-    async replaceAutoBlocks(topicIds, blocks: GeneratedBlock[]) {
+    async replaceAutoBlocks(topicIds, blocks: GeneratedBlock[], options) {
       await client.mutation(api.planner.replaceAutoBlocks, {
         topicIds: topicIds.map((id) => asId<"topics">(id)),
         blocks: blocks.map((block) => ({ ...block, topicId: asId<"topics">(block.topicId) })),
+        fromDate: options?.fromDate,
       });
     },
 

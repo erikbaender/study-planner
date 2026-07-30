@@ -153,8 +153,15 @@ export interface PlannerRepository {
     input: { startDate: IsoDate; endDate: IsoDate; plannedUnits?: number },
   ): Promise<void>;
   deleteStudyBlock(blockId: EntityId): Promise<void>;
-  /** Swaps generated blocks for `topicIds`, leaving `manual` ones untouched. */
-  replaceAutoBlocks(topicIds: EntityId[], blocks: GeneratedBlock[]): Promise<void>;
+  /**
+   * Swaps generated blocks for `topicIds`, leaving `manual` ones untouched.
+   * `fromDate` keeps older generated blocks as historical schedule records.
+   */
+  replaceAutoBlocks(
+    topicIds: EntityId[],
+    blocks: GeneratedBlock[],
+    options?: { fromDate?: IsoDate },
+  ): Promise<void>;
 
   /** Records a session and advances the topic's completion together. */
   logStudy(input: StudyLogInput): Promise<void>;

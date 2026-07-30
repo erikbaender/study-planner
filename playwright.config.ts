@@ -21,7 +21,9 @@ export default defineConfig({
   webServer: {
     command: "pnpm dev",
     url: "http://localhost:3000",
-    reuseExistingServer: false,
+    // Local T3 browser sessions deliberately keep this worktree's dev server
+    // alive. CI still starts a clean server and must never reuse another job.
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
 });

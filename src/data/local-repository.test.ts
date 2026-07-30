@@ -463,6 +463,41 @@ describe("study blocks", () => {
     expect((await read(repository)).plans[0].courses[0].topics[0].blocks).toEqual([]);
   });
 
+  it("reflows from a date without rewriting generated history or manual work", async () => {
+    const { repository } = setup();
+    const { topicId } = await withTopic(repository);
+    await repository.createStudyBlock({
+      topicId,
+      startDate: "2026-07-31",
+      endDate: "2026-07-31",
+      plannedUnits: 10,
+      source: "manual",
+    });
+    await repository.replaceAutoBlocks(
+      [topicId],
+      [
+        { topicId, startDate: "2026-07-28", endDate: "2026-07-28", plannedUnits: 20 },
+        { topicId, startDate: "2026-08-01", endDate: "2026-08-01", plannedUnits: 30 },
+      ],
+    );
+    const before = (await read(repository)).plans[0].courses[0].topics[0].blocks;
+    const historicalId = before.find((block) => block.startDate === "2026-07-28")?.id;
+    const manualId = before.find((block) => block.source === "manual")?.id;
+
+    await repository.replaceAutoBlocks(
+      [topicId],
+      [{ topicId, startDate: "2026-08-04", endDate: "2026-08-04", plannedUnits: 40 }],
+      { fromDate: "2026-07-30" },
+    );
+
+    const blocks = (await read(repository)).plans[0].courses[0].topics[0].blocks;
+    expect(blocks.map(({ id, source, startDate }) => ({ id, source, startDate }))).toEqual([
+      { id: manualId, source: "manual", startDate: "2026-07-31" },
+      { id: historicalId, source: "auto", startDate: "2026-07-28" },
+      { id: expect.any(String), source: "auto", startDate: "2026-08-04" },
+    ]);
+  });
+
   it("refuses to write outside the reflow scope", async () => {
     const { repository } = setup();
     const { courseId, topicId } = await withTopic(repository);
