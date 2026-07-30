@@ -496,6 +496,13 @@ Two behaviours changed to match what the components claim about themselves:
 The interim shell is ported onto the primitives but keeps its interim structure; the three-column
 split view is still phase 3.
 
+**One addition after review.** The topic row originally carried three controls for one idea — a
+read-only bar, a number stepper, and a Log button. `ProgressSlider` collapses them into a bar you
+can drag: click to jump, drag to scrub, arrows / PageUp / PageDown / Home / End from the
+keyboard, committing on release rather than per pixel. The knob is hidden at rest, so forty rows
+still read as progress rather than as a control panel. The `n / m units` readout stays beside it,
+because a bar alone cannot answer "how many are left". It brings the suite to 227.
+
 ### Traceability to the original audit recommendations
 
 
@@ -556,6 +563,58 @@ All four confirmed by the repository owner on 2026-07-29.
 - The scheduling engine must stay pure and free of `Date.now()` — inject the current date, so it
   is testable. The old code hard-coded `const today = "2026-05-01"`, the date it was written.
 - Never let "Reflow" touch a `manual` block.
+
+### 12.1 Conventions phases 1–2 established
+
+These are not visible from the diff alone, and phases 3–9 should hold to them.
+
+**Never state something the app does not know.** This is product principle 5 and it has already
+decided four implementation questions: `ProgressBar` omits `aria-valuenow` for an unsized topic
+rather than reporting 0%; the shell renders a spinner rather than "No semesters yet" while the
+repository is still loading; the pace badge says "Behind pace" rather than "0 days late" when
+the finish date is unknowable; an unsized topic row says "No size set" rather than drawing an
+empty bar. When a new view has to render an unknown, add to that list rather than picking a
+plausible-looking zero.
+
+**Match the ARIA role you claim.** `SegmentedControl` reports `role="radiogroup"`, so the arrow
+keys move selection, not just focus — Radix's roving-focus default is toolbar semantics and was
+the wrong contract. If a component announces a role, the keyboard behaviour of that role is part
+of the deal, and the test belongs beside it.
+
+**A control's absolute value, the log's delta.** `ProgressSlider` reports where a topic *is*;
+the caller subtracts to get the study-log entry. Anything that mutates progress in a later phase
+must go through `logStudy` the same way — writing `completedUnits` directly would leave velocity
+and the pace projection measuring nothing.
+
+**Tailwind orders `w-full` after `w-28`.** A width in a component's base classes beats every
+caller's override regardless of authoring order. This silently collapsed every course and topic
+name once, and nearly again with the slider. Layout primitives take their width from the caller;
+`src/ui/progress-slider.test.tsx` has the regression test.
+
+**Comments say why, not what.** The codebase's existing comments are the reference for density
+and voice: they exist where a reader would otherwise ask "why is it done that way", and nowhere
+else.
+
+**Every phase ships its tests.** `pnpm test` runs two Vitest projects — `domain` (node) and `ui`
+(jsdom). jsdom shims for Radix live in `src/test/setup-dom.ts` and are deliberately dumb; no
+assertion may depend on a measured size, because jsdom's measurements are fiction. Before
+opening anything for review: `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm test`, `pnpm build`.
+
+**Unit tests do not see layout.** Both browser-only defects found in phase 2 — the invisible
+names and the empty-state flash — passed every test in the suite. Run the app and look at it.
+
+### 12.2 Where to start phase 3
+
+`src/components/StudyPlannerApp.tsx` is the interim shell, ~600 lines, and is meant to be
+dismantled rather than extended. Phase 3 replaces it with the three-column split view described
+in §7.2; the primitives it needs (`Sidebar`, `Toolbar`, `Popover`, `Sheet`, `DropdownMenu`,
+`ContextMenu`, `Kbd`) all exist and are tested. Take the shell apart view by view into
+`src/features/`, and let it shrink to a router. `ProgressSlider`, `CountdownBadge` and the
+`TopicRow` composition are the parts worth carrying across intact.
+
+One thing is **unverified**: the topic row's layout after the width fix in `3cf7c54` passes
+typecheck, lint, tests and build, but was not seen in a browser. Load the sample data and
+confirm the row reads name · slider · count · ⋯ at a consistent height before building on it.
 
 ## 13. Environment and access needed
 
