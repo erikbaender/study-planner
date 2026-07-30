@@ -20,6 +20,10 @@ import {
   type Topic,
 } from "@/domain";
 import { Badge, Button, Card, Checkbox, EmptyState, ProgressBar, Stepper } from "@/ui";
+import {
+  CoursePaceBadge,
+  describeCoursePace,
+} from "@/features/progress/CoursePace";
 import type { SmartView } from "@/features/shell/workspace-store";
 
 type ScheduledTopic = {
@@ -341,12 +345,13 @@ export function TodayView({
                           <span className="block truncate text-caption text-tertiary">
                             {course.name}
                           </span>
+                          {health ? (
+                            <span className="block truncate text-caption text-secondary">
+                              {describeCoursePace(health)}
+                            </span>
+                          ) : null}
                         </span>
-                        {health?.pace ? (
-                          <Badge tone={health.pace.onTrack ? "green" : "orange"}>
-                            {health.pace.onTrack ? "On track" : "Behind"}
-                          </Badge>
-                        ) : null}
+                        {health ? <CoursePaceBadge health={health} /> : null}
                         <Badge variant={exam.status === "provisional" ? "outline" : "solid"}>
                           {daysUntil(exam.startDate, today)}d
                         </Badge>

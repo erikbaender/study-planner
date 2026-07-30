@@ -85,7 +85,8 @@ describe("TodayView", () => {
 
     expect(screen.getByRole("heading", { name: "Next up" })).toBeInTheDocument();
     expect(screen.getByText(/5\/25 slides/)).toBeInTheDocument();
-    expect(screen.getByText("Behind")).toBeInTheDocument();
+    expect(screen.getAllByText(/days late/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/\/day needed · finish/)).toBeInTheDocument();
 
     const stepper = screen.getByRole("spinbutton", {
       name: "Cell biology, Biochemistry units done",

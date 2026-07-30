@@ -37,6 +37,8 @@ import {
   type Unit,
 } from "@/domain";
 import type { TopicPatch } from "@/data/repository";
+import { ExamManager } from "@/features/exams/ExamManager";
+import { CoursePaceBadge } from "@/features/progress/CoursePace";
 import type { WorkspaceSelection } from "@/features/shell/workspace-store";
 import {
   Badge,
@@ -96,7 +98,7 @@ export function OutlineView({
             selection={selection}
             onSelectTopic={onSelectTopic}
           />
-          <ExamSection course={course} today={today} />
+          <BoundExamManager course={course} today={today} />
           <BoundOutlineForm course={course} />
         </>
       ) : (
@@ -338,17 +340,7 @@ function CourseSummary({ course, today }: { course: Course; today: string }) {
             : "Topic sizes have not been recorded yet"}
         </p>
       </div>
-      {health.pace ? (
-        <Badge tone={health.pace.onTrack ? "green" : "red"}>
-          {health.pace.onTrack
-            ? "On track"
-            : health.pace.daysLate > 0
-              ? `${health.pace.daysLate} days late`
-              : "Behind pace"}
-        </Badge>
-      ) : (
-        <Badge>No upcoming exam</Badge>
-      )}
+      <CoursePaceBadge health={health} />
     </header>
   );
 }
@@ -995,98 +987,18 @@ function NewTopicRow({
   );
 }
 
-function ExamSection({ course, today }: { course: Course; today: string }) {
+function BoundExamManager({ course, today }: { course: Course; today: string }) {
   const repository = useRepository();
   const { run } = usePlannerErrors();
 
   return (
-    <Card className="flex flex-col gap-3">
-      <h2 className="text-title3 font-semibold">Exams</h2>
-
-      {course.exams.length === 0 ? (
-        <p className="text-body text-secondary">
-          No exam date yet. A provisional window is fine and remains visibly provisional.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-1">
-          {course.exams.map((exam) => (
-            <li key={exam.id} className="flex items-center gap-3 text-body">
-              <span className="min-w-0 flex-1 truncate">{exam.name}</span>
-              <span className="shrink-0 text-secondary tabular-nums">
-                {exam.status === "provisional" && exam.endDate
-                  ? `${exam.startDate} – ${exam.endDate}`
-                  : exam.startDate}
-              </span>
-              {exam.status === "provisional" ? (
-                <Badge tone="orange" variant="outline">
-                  Provisional
-                </Badge>
-              ) : null}
-              <IconButton
-                size="sm"
-                label={`Delete ${exam.name}`}
-                icon={<Trash2 />}
-                onClick={() => run(repository.deleteExam(exam.id))}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <ExamForm
-        today={today}
-        onSubmit={(input) => run(repository.createExam(course.id, input))}
-      />
-    </Card>
-  );
-}
-
-function ExamForm({
-  today,
-  onSubmit,
-}: {
-  today: string;
-  onSubmit: (input: { name: string; startDate: string; endDate?: string }) => void;
-}) {
-  const [name, setName] = useState("");
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState("");
-
-  return (
-    <form
-      className="flex flex-wrap items-end gap-2 border-t border-separator pt-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const trimmed = name.trim();
-        if (!trimmed) return;
-        onSubmit({ name: trimmed, startDate, endDate: endDate || undefined });
-        setName("");
-        setEndDate("");
-      }}
-    >
-      <TextField
-        label="Exam"
-        fieldClassName="min-w-40 flex-1"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-      />
-      <TextField
-        label="Date"
-        type="date"
-        value={startDate}
-        onChange={(event) => setStartDate(event.target.value)}
-      />
-      <TextField
-        label="Window ends"
-        type="date"
-        hint="Optional — marks the date provisional"
-        value={endDate}
-        onChange={(event) => setEndDate(event.target.value)}
-      />
-      <Button type="submit" variant="accent">
-        Add exam
-      </Button>
-    </form>
+    <ExamManager
+      course={course}
+      today={today}
+      onCreate={(input) => run(repository.createExam(course.id, input))}
+      onUpdate={(examId, input) => run(repository.updateExam(examId, input))}
+      onDelete={(examId) => run(repository.deleteExam(examId))}
+    />
   );
 }
 

@@ -475,9 +475,7 @@ export function StudyPlannerApp() {
               selection={selection}
               today={today}
               onClose={() => setInspectorOpen(false)}
-              onLogStudy={(topicId, units) =>
-                run(repository.logStudy({ topicId, date: today, units }))
-              }
+              onLogStudy={(input) => run(repository.logStudy(input))}
             />
           ) : null}
         </div>

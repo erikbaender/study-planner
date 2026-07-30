@@ -11,8 +11,10 @@ import {
   type PlannerSnapshot,
   type Topic,
 } from "@/domain";
+import type { StudyLogInput } from "@/data/repository";
+import { CoursePaceBadge, CoursePaceDetails } from "@/features/progress/CoursePace";
+import { StudyHistory } from "@/features/progress/StudyHistory";
 import {
-  Badge,
   IconButton,
   ProgressBar,
   ProgressSlider,
@@ -34,7 +36,7 @@ export function InspectorPane({
   selection: WorkspaceSelection;
   today: string;
   onClose: () => void;
-  onLogStudy: (topicId: string, units: number) => void;
+  onLogStudy: (input: StudyLogInput) => void;
 }) {
   const resolved = useMemo(() => resolveSelection(plan, selection), [plan, selection]);
 
@@ -61,7 +63,13 @@ export function InspectorPane({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {resolved?.kind === "topic" ? (
-          <TopicInspector topic={resolved.topic} course={resolved.course} onLogStudy={onLogStudy} />
+          <TopicInspector
+            topic={resolved.topic}
+            course={resolved.course}
+            snapshot={snapshot}
+            today={today}
+            onLogStudy={onLogStudy}
+          />
         ) : resolved?.kind === "course" ? (
           <CourseInspector
             course={resolved.course}
@@ -85,11 +93,15 @@ export function InspectorPane({
 function TopicInspector({
   topic,
   course,
+  snapshot,
+  today,
   onLogStudy,
 }: {
   topic: Topic;
   course: Course;
-  onLogStudy: (topicId: string, units: number) => void;
+  snapshot: PlannerSnapshot;
+  today: string;
+  onLogStudy: (input: StudyLogInput) => void;
 }) {
   const unit = UNIT_LABELS[topic.unit];
 
@@ -115,12 +127,27 @@ function TopicInspector({
             label={`${topic.name} progress`}
             valueText={(value) => `${value} of ${topic.totalUnits} ${unit.plural}`}
             tint={topic.color}
-            onCommit={(value) => onLogStudy(topic.id, value - topic.completedUnits)}
+            onCommit={(value) =>
+              onLogStudy({
+                topicId: topic.id,
+                date: today,
+                units: value - topic.completedUnits,
+              })
+            }
           />
         ) : (
           <ProgressBar ratio={null} label={`${topic.name} progress`} />
         )}
       </section>
+
+      <Separator />
+
+      <StudyHistory
+        topic={topic}
+        entries={snapshot.studyLog}
+        today={today}
+        onLogStudy={onLogStudy}
+      />
 
       <Separator />
 
@@ -187,17 +214,14 @@ function CourseInspector({
         <ProgressBar ratio={progress.ratio} label={`${course.name} progress`} tint={course.color} />
       </section>
 
-      {health.pace ? (
-        <Badge tone={health.pace.onTrack ? "green" : "red"}>
-          {health.pace.onTrack
-            ? "On track"
-            : health.pace.daysLate > 0
-              ? `${health.pace.daysLate} days late`
-              : "Behind pace"}
-        </Badge>
-      ) : (
-        <Badge>No upcoming exam</Badge>
-      )}
+      <CoursePaceBadge health={health} />
+
+      <section className="flex flex-col gap-2" aria-labelledby="course-pace-title">
+        <h3 id="course-pace-title" className="text-callout font-semibold text-secondary">
+          Pace and projection
+        </h3>
+        <CoursePaceDetails health={health} />
+      </section>
 
       <Separator />
 
@@ -211,7 +235,14 @@ function CourseInspector({
               ? `${progress.completedUnits} / ${progress.totalUnits} units`
               : "Not known",
           ],
-          ["Next exam", health.exam?.startDate ?? "Not set"],
+          [
+            "Next exam",
+            health.exam
+              ? health.exam.status === "provisional" && health.exam.endDate
+                ? `${health.exam.startDate} – ${health.exam.endDate} (provisional)`
+                : `${health.exam.startDate} (${health.exam.status})`
+              : "Not set",
+          ],
         ]}
       />
 

@@ -215,6 +215,34 @@ describe("exams", () => {
       }),
     ).rejects.toThrow("End date cannot be before start date");
   });
+
+  it("updates the type, certainty, date, window, and notes together", async () => {
+    const { repository } = setup();
+    const { courseId } = await withCourse(repository);
+    const examId = await repository.createExam(courseId, {
+      name: "Final",
+      startDate: "2026-12-10",
+    });
+
+    await repository.updateExam(examId, {
+      name: "Oral defense",
+      kind: "presentation",
+      startDate: "2026-12-12",
+      endDate: "2026-12-16",
+      status: "provisional",
+      notes: "Panel pending",
+    });
+
+    expect((await read(repository)).plans[0].courses[0].exams[0]).toMatchObject({
+      id: examId,
+      name: "Oral defense",
+      kind: "presentation",
+      startDate: "2026-12-12",
+      endDate: "2026-12-16",
+      status: "provisional",
+      notes: "Panel pending",
+    });
+  });
 });
 
 describe("topics", () => {
@@ -532,7 +560,13 @@ describe("logStudy", () => {
   it("advances completion and moves the topic to active", async () => {
     const { repository } = setup();
     const topicId = await withTopic(repository, 100);
-    await repository.logStudy({ topicId, date: TODAY, units: 30, minutes: 45 });
+    await repository.logStudy({
+      topicId,
+      date: TODAY,
+      units: 30,
+      minutes: 45,
+      note: "Practice questions",
+    });
 
     expect(await topicOf(repository)).toMatchObject({ completedUnits: 30, status: "active" });
     expect((await read(repository)).studyLog[0]).toMatchObject({
@@ -540,6 +574,7 @@ describe("logStudy", () => {
       date: TODAY,
       units: 30,
       minutes: 45,
+      note: "Practice questions",
     });
   });
 

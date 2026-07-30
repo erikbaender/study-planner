@@ -415,7 +415,7 @@ workspace shell; phases 4–9 replace each content view without breaking the sha
 | **4** | ✅ Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
 | **5** | ✅ Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
 | **6** | ✅ Scheduling engine + Today view + Reflow | 3 d |
-| **7** | Exams, progress logging, velocity, on-track indicators | 2 d |
+| **7** | ✅ Exams, progress logging, velocity, on-track indicators | 2 d |
 | **8** | Restore JSON import/export into the new UI | 1 d |
 | **9** | Accessibility audit, mobile layout, performance pass at 400 topics, light/dark polish | 2–3 d |
 
@@ -646,6 +646,37 @@ viewport-sized while only the content pane scrolls.
 The detailed implementation report is
 `reports/2026-07-30-19-phase-6-scheduling-and-today.md`.
 
+### 9.7 Phase 7 as delivered
+
+Phase 7 turns the scheduling inputs and progress evidence into first-class workflows without
+changing the Phase 6 engine.
+
+**Exam management.** Outline now owns a complete exam/deadline manager. A macOS sheet creates and
+edits the name, kind, certainty, date or provisional window, and notes; existing entries can also
+be deleted. Confirming a previously provisional item clears its obsolete window. Every list and
+editor keeps provisional certainty explicit, and scheduling continues to use the first day of a
+window through the existing `effectiveDeadline` boundary.
+
+**Progress evidence.** Selecting a topic now shows its eight most recent study-log entries in the
+inspector, including unit delta, date, optional duration, and note. The same surface opens a
+detailed logging sheet. Both it and the existing sliders/checklists call `logStudy`; no view writes
+`completedUnits` directly, so visible completion, history, velocity, and status change together.
+
+**Shared assessment.** Today now shows observed pace, needed pace, and projected finish beside the
+next three exams. The course inspector expands the same assessment into observed velocity,
+required pace, projected finish, and remaining study days. Outline, Today, and Inspector share one
+pace badge. A course with an exam but no measured topic sizes now says that sizes are needed
+instead of being incorrectly presented as on track.
+
+**Testing.** Component tests cover complete exam create/edit/delete inputs, topic-scoped history,
+detailed progress logging, invalid zero-unit entries, and inspector projections. Repository tests
+cover full exam updates and rich log preservation. The Chromium journey creates, confirms, and
+deletes a provisional deadline, records a dated progress session with duration and note, verifies
+the assessment detail, and retains the root-overflow guard.
+
+The detailed implementation report is
+`reports/2026-07-30-20-phase-7-exams-and-progress.md`.
+
 ### Traceability to the original audit recommendations
 
 
@@ -793,6 +824,19 @@ study history first-class editing surfaces, then expose the velocity already cal
 Keep `logStudy` as the only progress write path and keep provisional exam certainty visible
 through every editor. The Today exam badges already consume `assessCourse`; extend that shared
 assessment into useful velocity/projection detail rather than recomputing status inside a view.
+
+### 12.6 Where to start phase 8
+
+Phase 7 leaves the repository and export document unchanged. Phase 8 should turn the toolbar's
+basic JSON file actions into an explicit import/export workflow over the existing
+`src/lib/import-export.ts` boundary: preview and explain the document, make append versus replace
+an intentional choice, surface validation errors inside the sheet, and keep destructive
+replacement behind confirmation.
+
+Do not invent another interchange shape. `PlannerExport` already carries plans, exams, blocks,
+study history, and preferences, and the repository already exposes `importPlans` and
+`replaceAll`. Preserve unknown-data honesty, never include authentication state, and extend the
+Chromium journey through a round trip without depending on the signed-in Convex path.
 
 ## 13. Environment and access needed
 

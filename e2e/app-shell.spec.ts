@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("navigates the workspace through the Phase 6 planning loop", async ({
+test("navigates the workspace through the Phase 7 planning and progress loop", async ({
   page,
 }) => {
   await page.goto("/");
@@ -37,6 +37,11 @@ test("navigates the workspace through the Phase 6 planning loop", async ({
   await expect(page.getByRole("textbox", { name: "Course name" })).toHaveValue("Biochemistry");
   for (const name of ["Name", "Unit", "Total", "Done", "Progress", "Status", "Exam"]) {
     await expect(page.getByRole("columnheader", { name })).toBeVisible();
+  }
+  const inspector = page.getByRole("complementary", { name: "Inspector" });
+  await expect(inspector.getByRole("heading", { name: "Pace and projection" })).toBeVisible();
+  for (const label of ["Observed pace", "Needed pace", "Projected finish", "Study days left"]) {
+    await expect(inspector.getByText(label, { exact: true })).toBeVisible();
   }
 
   const topicRows = page.locator("[data-topic-row]");
@@ -76,6 +81,37 @@ test("navigates the workspace through the Phase 6 planning loop", async ({
   await reviewStatus.selectOption("planned");
   await expect(reviewDone).toHaveValue("0");
   await expect(reviewProgress).toHaveAttribute("aria-valuenow", "0");
+
+  await expect(inspector.getByRole("heading", { name: "Study history" })).toBeVisible();
+  await inspector.getByRole("button", { name: "Log progress" }).click();
+  const logDialog = page.getByRole("dialog", { name: "Log progress for Review synthesis" });
+  await logDialog.getByRole("spinbutton", { name: "Slides" }).fill("2");
+  await logDialog.getByRole("spinbutton", { name: "Minutes" }).fill("15");
+  await logDialog.getByRole("textbox", { name: "Note" }).fill("Practice recall");
+  await logDialog.getByRole("button", { name: "Log progress" }).click();
+  await expect(logDialog).not.toBeVisible();
+  await expect(inspector.getByText(/\+2 slides/)).toBeVisible();
+  await expect(inspector.getByText(/15 min · Practice recall/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Add exam" }).click();
+  const examDialog = page.getByRole("dialog", { name: "Add exam or deadline" });
+  await examDialog.getByRole("textbox", { name: "Name" }).fill("Phase 7 deadline");
+  await examDialog.getByRole("combobox", { name: "Type" }).selectOption("deadline");
+  await examDialog.getByRole("combobox", { name: "Certainty" }).selectOption("provisional");
+  await examDialog.getByLabel("Window starts").fill("2026-09-10");
+  await examDialog.getByLabel("Window ends").fill("2026-09-14");
+  await examDialog.getByRole("textbox", { name: "Notes" }).fill("Review fixture");
+  await examDialog.getByRole("button", { name: "Add exam" }).click();
+  const addedExam = page.locator("li").filter({ hasText: "Phase 7 deadline" });
+  await expect(addedExam.getByText("Provisional", { exact: true })).toBeVisible();
+  await addedExam.getByRole("button", { name: "Edit Phase 7 deadline" }).click();
+  const editExamDialog = page.getByRole("dialog", { name: "Edit exam or deadline" });
+  await editExamDialog.getByRole("combobox", { name: "Certainty" }).selectOption("confirmed");
+  await expect(editExamDialog.getByLabel("Window ends")).toHaveCount(0);
+  await editExamDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(addedExam.getByText("Confirmed", { exact: true })).toBeVisible();
+  await addedExam.getByRole("button", { name: "Delete Phase 7 deadline" }).click();
+  await expect(page.getByText("Phase 7 deadline", { exact: true })).toHaveCount(0);
 
   expect(
     await page.evaluate(() => ({
