@@ -413,7 +413,7 @@ workspace shell; phases 4–9 replace each content view without breaking the sha
 | **2** | ✅ macOS design system: tokens, materials, typography, primitives on Radix | 2 d |
 | **3** | ✅ App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
 | **4** | ✅ Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
-| **5** | Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
+| **5** | ✅ Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
 | **6** | Scheduling engine + Today view + Reflow | 3 d |
 | **7** | Exams, progress logging, velocity, on-track indicators | 2 d |
 | **8** | Restore JSON import/export into the new UI | 1 d |
@@ -549,10 +549,13 @@ current topic; the ordinary Add topic action appends one. Course and section nam
 place. The existing paste parser remains the high-volume path and now lives directly below the
 table rather than inside a temporary shell.
 
-**Progress integrity.** Name, unit, size, status, section, and appearance edits use a partial
-topic patch. That patch deliberately cannot contain `completedUnits`. Both the Done cell and
-the progress slider call `logStudy` with a delta, preserving the study log that later velocity
-and projection work depends on.
+**Progress integrity.** Name, unit, size, section, and appearance edits use a partial topic
+patch. That patch deliberately cannot contain `completedUnits`. The Done field, progress
+slider, and measured-topic status menu all call `logStudy` with a delta, preserving the study
+log that later velocity and projection work depends on. Planned maps to zero, Done to the
+topic total, and Active preserves an existing partial value or chooses the nearest valid
+partial value at an endpoint. An unmeasured topic has no numeric progress to derive and keeps
+its explicitly selected status.
 
 **Ordering.** Courses and topics have drag handles, plus Move Up/Down or Left/Right commands for
 keyboard and assistive-technology users. Topic reordering is now a repository operation in both
@@ -568,6 +571,42 @@ height.
 
 The detailed implementation report is
 `reports/2026-07-30-17-phase-4-outline.md`.
+
+### 9.5 Phase 5 as delivered
+
+Phase 5 replaces the chronological Timeline agenda with the virtualized Gantt from §7.3.
+TanStack Virtual owns the visible course/topic rows and day columns independently; the
+generated 354-row sample renders only the viewport plus overscan. The initial position centers
+today, and Day / Week / Month / Quarter zoom changes the scale and drag snap unit without
+creating a document-sized canvas.
+
+**Schedule reading.** Courses are collapsible swimlanes with aggregate date and progress bars.
+Topic blocks carry an internal completion fill, while unsized topics remain visibly
+indeterminate. Today has a persistent accent rule. Confirmed exams use staggered flag chips;
+provisional ranges use hatched bands. Dependency curves can be hidden when they are not useful.
+
+**Schedule interaction.** A pointer must move 4 px before a block becomes a drag. Shift-click
+builds a block selection and dragging any selected member moves the group. Arrow keys move by
+the current zoom unit; Alt-arrow resizes. Clicking without dragging opens a Radix popover
+anchored to the block for date and target edits. All writes continue through
+`updateStudyBlock`, which adopts a moved generated block as manual so Reflow cannot silently
+undo the user's placement.
+
+**Phase 4 cleanup.** The Outline table is now a containing block for its screen-reader-only
+labels. Those labels previously escaped the wide table's scroll container and expanded the
+root document, producing empty vertical and horizontal page scrolling. Browser guards now
+assert that the document itself remains exactly viewport-sized in both Outline and Timeline.
+The status/progress synchronization described in §9.4 is covered in both component and browser
+tests.
+
+**Testing.** Timeline model tests cover padded ranges, zoom snapping, date movement, and tick
+boundaries. Component tests cover the two-axis virtual canvas contract, zoom, collapse,
+markers, multi-selection, keyboard move/resize, popover editing, and the drag threshold. The
+Chromium workspace journey covers the Phase 4 cleanup, verifies that fewer Timeline rows are
+mounted than the 300-plus-row ARIA total, and collapses a real 47-topic course.
+
+The detailed implementation report is
+`reports/2026-07-30-18-phase-5-timeline.md`.
 
 ### Traceability to the original audit recommendations
 
@@ -692,6 +731,19 @@ The current Timeline is an accessible chronological agenda over real study block
 canvas without weakening that keyboard contract. The next slice owns TanStack Virtual, zoom,
 the today line, exam markers and windows, the 4px drag threshold, and anchored quick-edit
 popovers. The 400-topic seed and Chromium journey are the performance and layout fixtures.
+
+### 12.4 Where to start phase 6
+
+Phase 5 renders and edits real study blocks but does not decide where work should go.
+`src/domain/scheduling.ts` remains Phase 6's pure boundary: inject today and preferences,
+generate only `auto` blocks, and leave every `manual` block untouched. Wire generation and
+Reflow through `replaceAutoBlocks`; do not move scheduling heuristics into Timeline event
+handlers.
+
+The Today foundation already groups blocks scheduled for the injected date and surfaces
+behind-course metrics. Phase 6 should turn those metrics into a usable planning loop: generate
+an initial schedule, explain infeasible capacity honestly, expose Reflow from Today, and prove
+with repository tests that manual blocks survive every regeneration.
 
 ## 13. Environment and access needed
 

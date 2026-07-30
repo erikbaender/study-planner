@@ -126,6 +126,31 @@ describe("OutlineView", () => {
     );
   });
 
+  it("keeps a measured topic's status and progress in sync through the study log", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Membrane transport status" }),
+      "done",
+    );
+    expect(repository.logStudy).toHaveBeenCalledWith({
+      topicId: "topic_b",
+      date: "2026-07-30",
+      units: 15,
+    });
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Membrane transport status" }),
+      "planned",
+    );
+    expect(repository.logStudy).toHaveBeenCalledWith({
+      topicId: "topic_b",
+      date: "2026-07-30",
+      units: -5,
+    });
+  });
+
   it("opens an inline row with Command-Enter and inserts the new topic in place", async () => {
     const user = userEvent.setup();
     renderOutline();

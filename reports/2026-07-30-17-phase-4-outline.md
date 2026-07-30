@@ -16,6 +16,13 @@ surface:
 The view stays inside the Phase 4 boundary. Timeline virtualization, generated scheduling,
 Reflow, velocity UI, and production import/export work remain in Phases 5–8.
 
+The Phase 5 cleanup pass corrected two Outline regressions found in live use. The wide table is
+now a containing block for its screen-reader-only labels, so those absolute elements can no
+longer enlarge the root document and create empty vertical or horizontal page scrolling.
+Measured-topic status changes now update numeric progress through `logStudy`: Planned maps to
+zero, Done to the total, and Active to a valid partial value. Unmeasured topics retain an
+explicit status because they have no numeric size from which one can be derived.
+
 ## Data integrity
 
 Topic detail updates are partial repository patches, but completion is intentionally excluded
@@ -48,6 +55,7 @@ Focused repository and component coverage verifies:
 - rejection when a total is reduced below logged work;
 - the seven-column table and section hierarchy;
 - inline detail edits and logged Done deltas;
+- measured status changes and their logged progress deltas;
 - Command/Ctrl-Enter insertion at the requested position;
 - drag reordering;
 - direct course creation.
@@ -57,6 +65,7 @@ The Chromium workspace journey loads the generated semester and verifies:
 - all 44 seeded Biochemistry topic rows render at one consistent height;
 - the seven requested columns are present;
 - inline insertion, size editing, logged completion, status editing, and drag reorder work;
+- the root document remains viewport-sized while the Outline pane owns its real content scroll;
 - a course can be created directly in Outline;
 - bulk paste adds two parsed topics;
 - existing command-palette, Timeline, create-sheet, and inspector navigation still work.

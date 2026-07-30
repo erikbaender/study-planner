@@ -378,6 +378,7 @@ export function StudyPlannerApp() {
             ) : view === "timeline" ? (
               <TimelineView
                 plan={plan}
+                today={today}
                 onCreate={() => setCreateOpen(true)}
                 onSelectTopic={selectTopic}
               />

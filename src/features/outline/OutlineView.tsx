@@ -460,7 +460,7 @@ function TopicTable({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[68rem] table-fixed border-collapse text-body">
+        <table className="relative w-full min-w-[68rem] table-fixed border-collapse text-body">
           <caption className="sr-only">
             Editable outline for {course.name}. Press Command or Control plus Enter in a topic
             row to insert another topic after it.
@@ -708,6 +708,30 @@ function EditableTopicRow({
     }
   };
 
+  const changeStatus = (status: TopicStatus) => {
+    if (topic.totalUnits === 0) {
+      onUpdate({ status });
+      return;
+    }
+
+    const target =
+      status === "planned"
+        ? 0
+        : status === "done"
+          ? topic.totalUnits
+          : topic.completedUnits > 0 && topic.completedUnits < topic.totalUnits
+            ? topic.completedUnits
+            : topic.completedUnits === 0
+              ? Math.min(1, topic.totalUnits / 2)
+              : Math.max(topic.totalUnits - 1, topic.totalUnits / 2);
+
+    if (target !== topic.completedUnits) {
+      onLog(target - topic.completedUnits);
+    } else if (status !== topic.status) {
+      onUpdate({ status });
+    }
+  };
+
   return (
     <tr
       data-topic-row
@@ -816,7 +840,7 @@ function EditableTopicRow({
           aria-label={`${topic.name} status`}
           value={topic.status}
           onFocus={onSelect}
-          onChange={(event) => onUpdate({ status: event.target.value as TopicStatus })}
+          onChange={(event) => changeStatus(event.target.value as TopicStatus)}
           onKeyDown={shortcut}
           className={cellControl("w-full px-1")}
         >

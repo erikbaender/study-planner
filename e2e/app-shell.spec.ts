@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("navigates the workspace and edits the Phase 4 outline", async ({ page }) => {
+test("navigates the workspace through the Phase 4 outline and Phase 5 timeline", async ({
+  page,
+}) => {
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "No semesters yet" })).toBeVisible();
@@ -43,9 +45,25 @@ test("navigates the workspace and edits the Phase 4 outline", async ({ page }) =
   await reviewDone.fill("3");
   await reviewDone.press("Tab");
   await expect(reviewDone).toHaveValue("3");
-  await reviewRow
-    .getByRole("combobox", { name: "Review synthesis status" })
-    .selectOption("active");
+  const reviewStatus = reviewRow.getByRole("combobox", {
+    name: "Review synthesis status",
+  });
+  const reviewProgress = reviewRow.getByRole("slider", {
+    name: "Review synthesis progress",
+  });
+  await reviewStatus.selectOption("done");
+  await expect(reviewDone).toHaveValue("12");
+  await expect(reviewProgress).toHaveAttribute("aria-valuenow", "12");
+  await reviewStatus.selectOption("planned");
+  await expect(reviewDone).toHaveValue("0");
+  await expect(reviewProgress).toHaveAttribute("aria-valuenow", "0");
+
+  expect(
+    await page.evaluate(() => ({
+      width: [document.documentElement.scrollWidth, document.documentElement.clientWidth],
+      height: [document.documentElement.scrollHeight, document.documentElement.clientHeight],
+    })),
+  ).toEqual({ width: [1280, 1280], height: [720, 720] });
 
   await reviewRow
     .getByRole("button", { name: "Drag Review synthesis" })
@@ -76,7 +94,32 @@ test("navigates the workspace and edits the Phase 4 outline", async ({ page }) =
 
   await page.keyboard.press("Control+2");
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
-  await expect(page.getByRole("grid", { name: /timeline/ })).toBeVisible();
+  const timeline = page.getByRole("grid", { name: /timeline/ });
+  await expect(timeline).toBeVisible();
+  await expect(timeline.getByLabel(/^Today,/)).toBeVisible();
+  const totalRows = Number(await timeline.getAttribute("aria-rowcount"));
+  expect(totalRows).toBeGreaterThan(300);
+  expect(await timeline.getByRole("row").count()).toBeLessThan(totalRows);
+
+  const collapse = timeline.getByRole("button", { name: "Collapse Biochemistry" });
+  const biochemistryCount = Number(
+    (await timeline.getByRole("rowheader", { name: /Biochemistry/ }).textContent())
+      ?.match(/\d+$/)?.[0],
+  );
+  await collapse.click();
+  await expect(
+    timeline.getByRole("button", { name: "Expand Biochemistry" }),
+  ).toBeVisible();
+  expect(Number(await timeline.getAttribute("aria-rowcount"))).toBe(
+    totalRows - biochemistryCount,
+  );
+
+  expect(
+    await page.evaluate(() => ({
+      width: [document.documentElement.scrollWidth, document.documentElement.clientWidth],
+      height: [document.documentElement.scrollHeight, document.documentElement.clientHeight],
+    })),
+  ).toEqual({ width: [1280, 1280], height: [720, 720] });
 
   await page.keyboard.press("Control+N");
   await expect(page.getByRole("dialog", { name: "New item" })).toBeVisible();
