@@ -1,6 +1,6 @@
 # Study Planner — Architecture Repair & UX Redesign Plan
 
-Status: **approved, phases 0–1 complete**
+Status: **approved, phases 0–3 complete**
 Supersedes and replaces: `REQUIREMENTS.md` (deleted in this PR; preserved in git history at `7e6152e`)
 
 ---
@@ -403,15 +403,15 @@ JSON import/export is **kept** and restored to the UI — it is the actual porta
 
 ## 9. Delivery plan
 
-Each phase is a reviewable PR. Phases 1–3 are foundation; the app stays on the old UI until
-phase 5 lands, so `main` is never broken.
+Each phase is a reviewable slice. Phases 1–3 establish the repository, design system, and
+workspace shell; phases 4–9 replace each content view without breaking the shared chrome.
 
 | Phase | Scope | Est. |
 |---|---|---|
 | **0** | ✅ Plan; remove `AGENTS.md` and `REQUIREMENTS.md` | — |
 | **1** | ✅ Domain layer, repository abstraction, new schema, seed generator, delete GitHub import, remove Ionic, Vitest + CI | 2–3 d |
 | **2** | ✅ macOS design system: tokens, materials, typography, primitives on Radix | 2 d |
-| **3** | App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
+| **3** | ✅ App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
 | **4** | Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
 | **5** | Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
 | **6** | Scheduling engine + Today view + Reflow | 3 d |
@@ -503,6 +503,38 @@ keyboard, committing on release rather than per pixel. The knob is hidden at res
 still read as progress rather than as a control panel. The `n / m units` readout stays beside it,
 because a bar alone cannot answer "how many are left". It brings the suite to 227.
 
+### 9.3 Phase 3 as delivered
+
+Phase 3 retires the interim route in favor of the three-column workspace from §7.2. The
+source-list sidebar keeps semesters, smart views, course progress, and exam certainty visible;
+the content region switches among Today, Timeline, and Outline; and a toggleable inspector
+resolves the current course or topic without opening a modal.
+
+**Workspace state.** Zustand owns the selected plan/course/topic, active view, inspector,
+command palette, and create/delete sheets. It does not mirror repository data. Opening a course
+selects Outline; opening a topic preserves the current view and reveals it in the inspector.
+
+**Navigation.** The command palette searches actions, courses, topics, sections, and view names,
+supports arrow-key selection, and closes after execution. The global keyboard map implements
+⌘K / ⌘F search, ⌘1/2/3 view switching, ⌘N create, ⌥⌘I inspector, ⌘⌫ delete, and Space
+quick look. Ctrl and Alt equivalents keep the web app operable off macOS, and editable controls
+are excluded so ordinary typing is never intercepted.
+
+**View boundaries.** Outline carries the interim shell's course/exam/topic/progress and bulk
+entry flows into `src/features/outline/`; Phase 4 still owns its inline table and reordering.
+Timeline is an accessible chronological agenda over existing blocks; Phase 5 still owns the
+virtualized Gantt. Today presents existing scheduled blocks, nearby exams, and behind-course
+metrics; Phase 6 still owns schedule generation and Reflow. These foundations do not claim
+behavior the later phases have not delivered.
+
+**Testing.** Zustand and command-palette behavior add six component tests, bringing Vitest to
+**233 tests** across 15 files. Playwright adds a Chromium workspace journey covering cold start,
+sample loading, sidebar navigation, command navigation, view/create/inspector shortcuts, and
+the handed-off topic-row guard: all 44 Biochemistry rows render, with the first eight at one
+consistent height. Typecheck, lint, Vitest, Playwright, and the production build all pass.
+
+The detailed implementation report is
+`reports/2026-07-30-16-phase-3-app-shell.md`.
 ### Traceability to the original audit recommendations
 
 

@@ -1,4 +1,4 @@
-import { StudyPlannerApp } from "@/components/StudyPlannerApp";
+import { StudyPlannerApp } from "@/components/StudyPlannerWorkspace";
 
 export default function Home() {
   return <StudyPlannerApp />;
