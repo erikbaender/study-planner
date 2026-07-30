@@ -63,13 +63,13 @@ import {
   IconButton,
   Popover,
   ProgressBar,
+  ProgressSlider,
   Sidebar,
   SidebarItem,
   SidebarSection,
   Separator,
   Spinner,
   SelectField,
-  Stepper,
   TextArea,
   TextField,
   Toolbar,
@@ -472,10 +472,7 @@ function TopicRow({ topic, today }: { topic: Topic; today: string }) {
   const repository = useRepository();
   const { run } = usePlannerErrors();
   const progress = topicProgress(topic);
-
-  // Seeded from the topic's own unit count so the common case — "I did the
-  // chunk I planned" — is one click rather than a number entry.
-  const [units, setUnits] = useState(0);
+  const unit = UNIT_LABELS[topic.unit].plural;
 
   return (
     <li className="group flex items-center gap-3 rounded-control px-2 py-1 hover:bg-fill">
@@ -484,38 +481,46 @@ function TopicRow({ topic, today }: { topic: Topic; today: string }) {
         {topic.name}
       </span>
 
-      <ProgressBar
-        ratio={progress.ratio}
-        label={`${topic.name} progress`}
-        size="sm"
-        className="w-20"
-      />
-      <span className="w-28 text-right text-callout tabular-nums text-secondary">
-        {topic.completedUnits} / {topic.totalUnits} {UNIT_LABELS[topic.unit].plural}
-      </span>
-
-      <form
-        className="flex items-center gap-1.5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (units === 0) return;
-          run(repository.logStudy({ topicId: topic.id, date: today, units }));
-          setUnits(0);
-        }}
-      >
-        <Stepper
-          label={`Units studied for ${topic.name}`}
-          value={units}
-          onValueChange={setUnits}
-          step={5}
-          // Negative values are allowed on purpose: correcting an over-log is
-          // the same operation as logging, and the repository already handles it.
-          min={-topic.completedUnits}
-        />
-        <Button size="sm" type="submit" variant="accent" disabled={units === 0}>
-          Log
-        </Button>
-      </form>
+      {topic.totalUnits > 0 ? (
+        <>
+          <ProgressSlider
+            value={topic.completedUnits}
+            max={topic.totalUnits}
+            label={`${topic.name} progress`}
+            valueText={(value) => `${value} of ${topic.totalUnits} ${unit}`}
+            tint={topic.color || undefined}
+            className="w-48 shrink-0"
+            // The slider says where the topic *is*; the log records what
+            // changed today. Dragging backwards to correct an over-log is the
+            // same operation with a negative delta, which the repository
+            // already accepts.
+            onCommit={(units) =>
+              run(
+                repository.logStudy({
+                  topicId: topic.id,
+                  date: today,
+                  units: units - topic.completedUnits,
+                }),
+              )
+            }
+          />
+          {/* Fixed width and no wrapping: "107 / 128 slides" breaking onto a
+              second line would make one row taller than its neighbours, and a
+              list of forty topics would comb. */}
+          <span className="w-32 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary">
+            {topic.completedUnits} / {topic.totalUnits} {unit}
+          </span>
+        </>
+      ) : (
+        // Nothing to slide along: an unsized topic has no scale, and inventing
+        // one would be the interface guessing.
+        <>
+          <ProgressBar ratio={progress.ratio} label={`${topic.name} progress`} size="sm" className="w-48 shrink-0" />
+          <span className="w-32 shrink-0 text-right text-callout whitespace-nowrap text-tertiary">
+            No size set
+          </span>
+        </>
+      )}
 
       <ContextMenu
         items={[

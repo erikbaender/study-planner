@@ -20,6 +20,8 @@ export { Checkbox, Stepper, Switch } from "./toggles";
 export { Badge, Card, EmptyState, Kbd, ProgressBar, Separator, Spinner } from "./feedback";
 export type { BadgeTone } from "./feedback";
 
+export { ProgressSlider } from "./progress-slider";
+
 export {
   ContextMenu,
   DropdownMenu,
