@@ -62,7 +62,7 @@ function renderOutline() {
   const onCreateCourse = vi.fn();
   const onSelectCourse = vi.fn();
   const onSelectTopic = vi.fn();
-  render(
+  const result = render(
     <OutlineView
       plan={semester}
       course={biochemistry}
@@ -73,7 +73,7 @@ function renderOutline() {
       onSelectTopic={onSelectTopic}
     />,
   );
-  return { onCreateCourse, onSelectCourse, onSelectTopic };
+  return { ...result, onCreateCourse, onSelectCourse, onSelectTopic };
 }
 
 describe("OutlineView", () => {
@@ -149,6 +149,34 @@ describe("OutlineView", () => {
       date: "2026-07-30",
       units: -5,
     });
+  });
+
+  it("preserves cell focus when repository updates rerender a row", async () => {
+    const user = userEvent.setup();
+    const { rerender, onCreateCourse, onSelectCourse, onSelectTopic } = renderOutline();
+    const unit = screen.getByRole("combobox", { name: "Cell biology unit" });
+    unit.focus();
+
+    const updatedCourse = {
+      ...biochemistry,
+      topics: [{ ...first, unit: "pages" as const }, second],
+    };
+    rerender(
+      <OutlineView
+        plan={{ ...semester, courses: [updatedCourse] }}
+        course={updatedCourse}
+        selection={{ kind: "course", id: updatedCourse.id }}
+        today="2026-07-30"
+        onCreateCourse={onCreateCourse}
+        onSelectCourse={onSelectCourse}
+        onSelectTopic={onSelectTopic}
+      />,
+    );
+    await user.tab();
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("spinbutton", { name: "Cell biology total" }),
+    );
   });
 
   it("opens an inline row with Command-Enter and inserts the new topic in place", async () => {

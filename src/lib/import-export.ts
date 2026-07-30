@@ -7,13 +7,19 @@
  * anything reconstructed from it would have to invent sizes. Since v1 was never
  * reachable from the UI, no file in that format exists in the wild.
  *
- * Ids are deliberately absent from the format. Dependencies travel as topic
- * names, resolved per course on import, so a file can be imported into any
- * account without id collisions.
+ * Database ids are deliberately absent from the format. Export-local topic
+ * refs preserve dependencies and study history even when names repeat, while
+ * readable names remain in the document for people and early-v2 compatibility.
  */
 
 import { z } from "zod";
-import { EXAM_KINDS, EXAM_STATUSES, PRIORITIES, TOPIC_STATUSES, UNITS } from "@/domain/types";
+import {
+  EXAM_KINDS,
+  EXAM_STATUSES,
+  PRIORITIES,
+  TOPIC_STATUSES,
+  UNITS,
+} from "@/domain/types";
 import type { Plan, PlannerSnapshot } from "@/domain/types";
 
 export const EXPORT_VERSION = 2;
@@ -26,6 +32,8 @@ const blockSchema = z.object({
 });
 
 const topicSchema = z.object({
+  /** Export-local identity. Unlike a name, this remains unique when lecture titles repeat. */
+  ref: z.string().min(1).optional(),
   name: z.string().min(1),
   section: z.string().optional(),
   unit: z.enum(UNITS).default("slides"),
@@ -35,6 +43,9 @@ const topicSchema = z.object({
   priority: z.enum(PRIORITIES).default("normal"),
   color: z.string().default("#007aff"),
   notes: z.string().default(""),
+  /** Preferred dependency representation for files written by this build. */
+  dependencyRefs: z.array(z.string()).optional(),
+  /** Retained for readable files and compatibility with early version-2 exports. */
   dependencies: z.array(z.string()).default([]),
   blocks: z.array(blockSchema).default([]),
 });
@@ -66,6 +77,8 @@ const planSchema = z.object({
 });
 
 const logEntrySchema = z.object({
+  /** Preferred identity; names alone are ambiguous across repeated courses and topics. */
+  topicRef: z.string().min(1).optional(),
   courseName: z.string().min(1),
   topicName: z.string().min(1),
   date: z.string().min(1),
@@ -74,12 +87,58 @@ const logEntrySchema = z.object({
   note: z.string().optional(),
 });
 
-export const plannerExportSchema = z.object({
-  version: z.literal(EXPORT_VERSION),
-  exportedAt: z.string().optional(),
-  plans: z.array(planSchema),
-  studyLog: z.array(logEntrySchema).default([]),
+const preferencesSchema = z.object({
+  dailyCapacityUnits: z.number().positive().optional(),
+  studyDaysOfWeek: z.array(z.union([
+    z.literal(0),
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+    z.literal(6),
+  ])),
+  blackoutDates: z.array(z.string()),
+  theme: z.enum(["system", "light", "dark"]),
+  accentColor: z.string().min(1),
 });
+
+export const plannerExportSchema = z
+  .object({
+    version: z.literal(EXPORT_VERSION),
+    exportedAt: z.string().optional(),
+    plans: z.array(planSchema),
+    studyLog: z.array(logEntrySchema).default([]),
+    preferences: preferencesSchema.optional(),
+  })
+  .superRefine((document, context) => {
+    const refs = new Set<string>();
+    for (const [planIndex, plan] of document.plans.entries()) {
+      for (const [courseIndex, course] of plan.courses.entries()) {
+        for (const [topicIndex, topic] of course.topics.entries()) {
+          if (!topic.ref) continue;
+          if (refs.has(topic.ref)) {
+            context.addIssue({
+              code: "custom",
+              path: ["plans", planIndex, "courses", courseIndex, "topics", topicIndex, "ref"],
+              message: `Duplicate topic reference ${topic.ref}`,
+            });
+          }
+          refs.add(topic.ref);
+        }
+      }
+    }
+
+    for (const [entryIndex, entry] of document.studyLog.entries()) {
+      if (entry.topicRef && !refs.has(entry.topicRef)) {
+        context.addIssue({
+          code: "custom",
+          path: ["studyLog", entryIndex, "topicRef"],
+          message: `Unknown topic reference ${entry.topicRef}`,
+        });
+      }
+    }
+  });
 
 export type PlannerExport = z.infer<typeof plannerExportSchema>;
 export type ExportedPlan = z.infer<typeof planSchema>;
@@ -90,11 +149,18 @@ export type ExportedLogEntry = z.infer<typeof logEntrySchema>;
  * test can assert on the whole document.
  */
 export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): PlannerExport {
-  const topicPaths = new Map<string, { courseName: string; topicName: string }>();
-  for (const plan of snapshot.plans) {
-    for (const course of plan.courses) {
-      for (const topic of course.topics) {
-        topicPaths.set(topic.id, { courseName: course.name, topicName: topic.name });
+  const topicPaths = new Map<
+    string,
+    { ref: string; courseName: string; topicName: string }
+  >();
+  for (const [planIndex, plan] of snapshot.plans.entries()) {
+    for (const [courseIndex, course] of plan.courses.entries()) {
+      for (const [topicIndex, topic] of course.topics.entries()) {
+        topicPaths.set(topic.id, {
+          ref: topicReference(planIndex, courseIndex, topicIndex),
+          courseName: course.name,
+          topicName: topic.name,
+        });
       }
     }
   }
@@ -102,13 +168,19 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
   return {
     version: EXPORT_VERSION,
     exportedAt,
-    plans: snapshot.plans.map((plan) => ({
+    plans: snapshot.plans.map((plan, planIndex) => ({
       name: plan.name,
       notes: plan.notes,
       startDate: plan.startDate,
       endDate: plan.endDate,
-      courses: plan.courses.map((course) => {
+      courses: plan.courses.map((course, courseIndex) => {
         const namesById = new Map(course.topics.map((topic) => [topic.id, topic.name]));
+        const refsById = new Map(
+          course.topics.map((topic, topicIndex) => [
+            topic.id,
+            topicReference(planIndex, courseIndex, topicIndex),
+          ]),
+        );
         return {
           name: course.name,
           code: course.code,
@@ -122,7 +194,8 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
             status: exam.status,
             notes: exam.notes,
           })),
-          topics: course.topics.map((topic) => ({
+          topics: course.topics.map((topic, topicIndex) => ({
+            ref: topicReference(planIndex, courseIndex, topicIndex),
             name: topic.name,
             section: topic.section,
             unit: topic.unit,
@@ -132,6 +205,9 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
             priority: topic.priority,
             color: topic.color,
             notes: topic.notes,
+            dependencyRefs: topic.dependencyIds
+              .map((id) => refsById.get(id))
+              .filter((ref): ref is string => ref !== undefined),
             dependencies: topic.dependencyIds
               .map((id) => namesById.get(id))
               .filter((name): name is string => name !== undefined),
@@ -152,6 +228,7 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
       if (!path) return [];
       return [
         {
+          topicRef: path.ref,
           courseName: path.courseName,
           topicName: path.topicName,
           date: entry.date,
@@ -161,6 +238,7 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
         },
       ];
     }),
+    preferences: snapshot.preferences,
   };
 }
 
@@ -221,10 +299,12 @@ export function toPlans(
         courses: planInput.courses.map((courseInput, courseIndex) => {
           const courseId = createId("course");
           const topicIdsByName = new Map<string, string>();
+          const topicIdsByRef = new Map<string, string>();
 
           const topics = courseInput.topics.map((topicInput, topicIndex) => {
             const topicId = createId("topic");
             topicIdsByName.set(topicInput.name, topicId);
+            if (topicInput.ref) topicIdsByRef.set(topicInput.ref, topicId);
             return { topicId, topicInput, topicIndex };
           });
 
@@ -257,8 +337,9 @@ export function toPlans(
               completedUnits: topicInput.completedUnits,
               status: topicInput.status,
               priority: topicInput.priority,
-              dependencyIds: topicInput.dependencies
-                .map((name) => topicIdsByName.get(name))
+              dependencyIds: (topicInput.dependencyRefs
+                ? topicInput.dependencyRefs.map((ref) => topicIdsByRef.get(ref))
+                : topicInput.dependencies.map((name) => topicIdsByName.get(name)))
                 .filter((id): id is string => id !== undefined && id !== topicId),
               color: topicInput.color,
               notes: topicInput.notes,
@@ -281,4 +362,8 @@ export function toPlans(
 
 export function exportFilename(date: string): string {
   return `study-planner-${date}.json`;
+}
+
+function topicReference(planIndex: number, courseIndex: number, topicIndex: number): string {
+  return `p${planIndex}:c${courseIndex}:t${topicIndex}`;
 }

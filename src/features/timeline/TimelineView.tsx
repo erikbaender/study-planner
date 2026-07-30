@@ -582,7 +582,7 @@ function TimelineLane({
       ) : (
         visibleBlocks.map((block) => (
           <DraggableBlock
-            key={`${block.id}:${block.startDate}:${block.endDate}:${block.plannedUnits ?? ""}`}
+            key={block.id}
             block={block}
             rangeStart={rangeStart}
             pixelsPerDay={pixelsPerDay}
@@ -694,11 +694,12 @@ function DraggableBlock({
   const suppressClick = useRef(false);
   const previewDelta = useRef(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [startDate, setStartDate] = useState(block.startDate);
-  const [endDate, setEndDate] = useState(block.endDate);
-  const [plannedUnits, setPlannedUnits] = useState(
+  const [startDate, setStartDate] = useDraftValue(block.startDate);
+  const [endDate, setEndDate] = useDraftValue(block.endDate);
+  const [plannedUnits, setPlannedUnits] = useDraftValue(
     block.plannedUnits === undefined ? "" : String(block.plannedUnits),
   );
+
   const ratio =
     block.topic.totalUnits > 0
       ? Math.min(1, block.topic.completedUnits / block.topic.totalUnits)
@@ -899,6 +900,17 @@ function blockLabel(block: TimelineBlock, ratio: number | null): string {
   return `${block.topic.name}, ${block.startDate} to ${block.endDate}, ${
     ratio === null ? "size not set" : `${Math.round(ratio * 100)}% complete`
   }, ${block.source} block`;
+}
+
+function useDraftValue(source: string): [string, (value: string) => void] {
+  const [draft, setDraft] = useState({ source, value: source });
+  if (draft.source !== source) {
+    setDraft({ source, value: source });
+  }
+  return [
+    draft.source === source ? draft.value : source,
+    (value) => setDraft({ source, value }),
+  ];
 }
 
 function ExamMarkers({

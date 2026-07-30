@@ -376,12 +376,16 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
     },
 
     async importPlans(document: PlannerExport) {
-      await client.mutation(api.planner.importPlans, { plans: document.plans });
+      await client.mutation(api.planner.importPlans, {
+        plans: document.plans,
+        studyLog: document.studyLog,
+      });
     },
     async replaceAll(document: PlannerExport) {
       await client.mutation(api.planner.replaceAllPlans, {
         plans: document.plans,
         studyLog: document.studyLog,
+        preferences: document.preferences,
       });
     },
   };

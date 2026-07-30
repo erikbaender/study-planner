@@ -40,7 +40,10 @@ import {
 import { CommandPalette, type PaletteCommand } from "@/features/command-palette/CommandPalette";
 import { InspectorPane } from "@/features/inspector/InspectorPane";
 import { OutlineView } from "@/features/outline/OutlineView";
-import { CreateItemSheet } from "@/features/shell/CreateItemSheet";
+import {
+  CreateItemSheet,
+  type ItemKind,
+} from "@/features/shell/CreateItemSheet";
 import { DeleteSelectionSheet } from "@/features/shell/DeleteSelectionSheet";
 import { PlannerSidebar } from "@/features/shell/PlannerSidebar";
 import { WorkspaceToolbar } from "@/features/shell/WorkspaceToolbar";
@@ -50,7 +53,7 @@ import {
 } from "@/features/shell/workspace-store";
 import { TimelineView } from "@/features/timeline/TimelineView";
 import { TodayView } from "@/features/today/TodayView";
-import { Button, EmptyState, Spinner } from "@/ui";
+import { Button, EmptyState, Sheet, Spinner } from "@/ui";
 
 function useToday() {
   return useState(() => toIsoDate(new Date()))[0];
@@ -70,6 +73,8 @@ export function StudyPlannerApp() {
     value: string;
   } | null>(null);
   const [planning, setPlanning] = useState(false);
+  const [createKind, setCreateKind] = useState<ItemKind | undefined>();
+  const [sampleConfirmationOpen, setSampleConfirmationOpen] = useState(false);
 
   const view = useWorkspaceStore((state) => state.view);
   const smartView = useWorkspaceStore((state) => state.smartView);
@@ -228,6 +233,14 @@ export function StudyPlannerApp() {
     );
   };
 
+  const openCreate = useCallback(
+    (kind?: ItemKind) => {
+      setCreateKind(kind);
+      setCreateOpen(true);
+    },
+    [setCreateOpen],
+  );
+
   const deleteCourse = (id: string) => {
     clearSelection();
     useWorkspaceStore.setState({ courseId: null });
@@ -298,7 +311,7 @@ export function StudyPlannerApp() {
         category: "Action",
         shortcut: "⌘N",
         icon: <Plus />,
-        run: () => setCreateOpen(true),
+        run: () => openCreate(),
       },
       {
         id: "action-inspector",
@@ -351,7 +364,7 @@ export function StudyPlannerApp() {
     selectCourse,
     selectView,
     selectTopic,
-    setCreateOpen,
+    openCreate,
     setDeleteOpen,
     toggleInspector,
   ]);
@@ -360,7 +373,7 @@ export function StudyPlannerApp() {
     selectionPresent: Boolean(selection),
     onOpenCommand: openCommand,
     onViewChange: selectView,
-    onCreate: () => setCreateOpen(true),
+    onCreate: () => openCreate(),
     onDelete: () => setDeleteOpen(true),
     onToggleInspector: toggleInspector,
   });
@@ -374,9 +387,12 @@ export function StudyPlannerApp() {
       canExport={snapshot.plans.length > 0}
       onViewChange={selectView}
       onOpenCommand={() => openCommand()}
-      onCreate={() => setCreateOpen(true)}
+      onCreate={() => openCreate()}
       onToggleInspector={toggleInspector}
-      onLoadSample={loadSampleData}
+      onLoadSample={() => {
+        if (snapshot.plans.length > 0) setSampleConfirmationOpen(true);
+        else loadSampleData();
+      }}
       onExport={exportJson}
       onImport={importJson}
       onSignIn={() => void signIn("github")}
@@ -423,7 +439,8 @@ export function StudyPlannerApp() {
             onSelectPlan={selectPlan}
             onSelectSmartView={activateSmartView}
             onSelectCourse={selectCourse}
-            onCreate={() => setCreateOpen(true)}
+            onCreate={() => openCreate()}
+            onCreateCourse={() => openCreate("course")}
           />
 
           <main className="min-w-0 flex-1 overflow-y-auto bg-content">
@@ -435,7 +452,7 @@ export function StudyPlannerApp() {
                 smartView={smartView}
                 onSelectCourse={selectCourse}
                 onSelectTopic={selectTopic}
-                onCreate={() => setCreateOpen(true)}
+                onCreate={() => openCreate()}
                 schedule={schedule}
                 capacity={capacity}
                 hasAutoSchedule={hasAutoSchedule}
@@ -452,7 +469,7 @@ export function StudyPlannerApp() {
               <TimelineView
                 plan={plan}
                 today={today}
-                onCreate={() => setCreateOpen(true)}
+                onCreate={() => openCreate()}
                 onSelectTopic={selectTopic}
               />
             ) : (
@@ -489,7 +506,7 @@ export function StudyPlannerApp() {
                 <Button
                   variant="accent"
                   leadingIcon={<Plus />}
-                  onClick={() => setCreateOpen(true)}
+                  onClick={() => openCreate("semester")}
                 >
                   New semester
                 </Button>
@@ -511,13 +528,41 @@ export function StudyPlannerApp() {
       {createOpen ? (
         <CreateItemSheet
           open
-          onOpenChange={setCreateOpen}
+          onOpenChange={(open) => {
+            setCreateOpen(open);
+            if (!open) setCreateKind(undefined);
+          }}
           plan={plan}
           course={course}
+          initialKind={createKind}
           onCreatePlan={createPlan}
           onCreateCourse={createCourse}
           onCreateTopic={createTopic}
         />
+      ) : null}
+      {sampleConfirmationOpen ? (
+        <Sheet
+          open
+          onOpenChange={setSampleConfirmationOpen}
+          title="Replace with sample data?"
+          description="The sample semester will replace every semester and study-history entry on this account."
+          footer={
+            <>
+              <Button onClick={() => setSampleConfirmationOpen(false)}>Cancel</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setSampleConfirmationOpen(false);
+                  loadSampleData();
+                }}
+              >
+                Replace data
+              </Button>
+            </>
+          }
+        >
+          <p className="text-body text-secondary">Export first if you want a backup.</p>
+        </Sheet>
       ) : null}
       {plan ? (
         <DeleteSelectionSheet
@@ -587,7 +632,12 @@ function useKeyboardMap({
       } else if (command && event.key === "Backspace" && selectionPresent) {
         event.preventDefault();
         onDelete();
-      } else if (!command && event.key === " " && selectionPresent) {
+      } else if (
+        !command &&
+        event.key === " " &&
+        selectionPresent &&
+        !isNativeActivationTarget(event.target)
+      ) {
         event.preventDefault();
         onToggleInspector();
       }
@@ -609,5 +659,16 @@ function isEditableTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
     (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+  );
+}
+
+function isNativeActivationTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest(
+        'button, a[href], summary, [role="button"], [role="checkbox"], [role="menuitem"], [role="radio"]',
+      ),
+    )
   );
 }

@@ -4,13 +4,14 @@ import { useState } from "react";
 import { type Course, type Plan, UNITS, UNIT_LABELS, type Unit } from "@/domain";
 import { Button, SelectField, Sheet, TextField } from "@/ui";
 
-type ItemKind = "semester" | "course" | "topic";
+export type ItemKind = "semester" | "course" | "topic";
 
 export function CreateItemSheet({
   open,
   onOpenChange,
   plan,
   course,
+  initialKind,
   onCreatePlan,
   onCreateCourse,
   onCreateTopic,
@@ -19,11 +20,14 @@ export function CreateItemSheet({
   onOpenChange: (open: boolean) => void;
   plan: Plan | null;
   course: Course | null;
+  initialKind?: ItemKind;
   onCreatePlan: (name: string) => void;
   onCreateCourse: (name: string) => void;
   onCreateTopic: (input: { name: string; unit: Unit; totalUnits: number }) => void;
 }) {
-  const [kind, setKind] = useState<ItemKind>(plan ? (course ? "topic" : "course") : "semester");
+  const [kind, setKind] = useState<ItemKind>(
+    initialKind ?? (plan ? (course ? "topic" : "course") : "semester"),
+  );
   const [name, setName] = useState("");
   const [unit, setUnit] = useState<Unit>(course?.topics[0]?.unit ?? "slides");
   const [totalUnits, setTotalUnits] = useState("0");

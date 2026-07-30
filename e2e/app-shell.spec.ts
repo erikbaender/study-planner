@@ -11,6 +11,18 @@ test("navigates the workspace through the Phase 7 planning and progress loop", a
   await expect(page.getByRole("navigation", { name: "Study Planner navigation" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
 
+  const navigation = page.getByRole("navigation", { name: "Study Planner navigation" });
+  const upcoming = navigation.getByRole("button", { name: /Upcoming/ });
+  await upcoming.focus();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("heading", { name: "Upcoming" })).toBeVisible();
+  await navigation.getByRole("button", { name: /Today/ }).click();
+
+  await page.getByRole("button", { name: "Sample", exact: true }).click();
+  const replaceSample = page.getByRole("dialog", { name: "Replace with sample data?" });
+  await expect(replaceSample).toBeVisible();
+  await replaceSample.getByRole("button", { name: "Cancel" }).click();
+
   const capacity = page.getByRole("spinbutton", { name: "What-if daily capacity" });
   await capacity.fill("400");
   await expect(page.getByText("974 units do not fit before the exams.")).toBeVisible();
@@ -35,6 +47,10 @@ test("navigates the workspace through the Phase 7 planning and progress loop", a
     .getByRole("button", { name: /Biochemistry/ }).click();
   await expect(page.getByText("Course outline", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Course name" })).toHaveValue("Biochemistry");
+  await navigation.getByRole("button", { name: "New course" }).click();
+  const newCourseDialog = page.getByRole("dialog", { name: "New item" });
+  await expect(newCourseDialog.getByRole("combobox", { name: "Item" })).toHaveValue("course");
+  await page.keyboard.press("Escape");
   for (const name of ["Name", "Unit", "Total", "Done", "Progress", "Status", "Exam"]) {
     await expect(page.getByRole("columnheader", { name })).toBeVisible();
   }
@@ -111,6 +127,8 @@ test("navigates the workspace through the Phase 7 planning and progress loop", a
   await editExamDialog.getByRole("button", { name: "Save changes" }).click();
   await expect(addedExam.getByText("Confirmed", { exact: true })).toBeVisible();
   await addedExam.getByRole("button", { name: "Delete Phase 7 deadline" }).click();
+  const deleteExamDialog = page.getByRole("dialog", { name: "Delete exam or deadline?" });
+  await deleteExamDialog.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("Phase 7 deadline", { exact: true })).toHaveCount(0);
 
   expect(

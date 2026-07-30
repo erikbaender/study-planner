@@ -81,11 +81,17 @@ describe("ExamManager", () => {
     });
   });
 
-  it("exposes deletion as a named action", async () => {
+  it("confirms before deleting an exam", async () => {
     const user = userEvent.setup();
     const props = renderManager();
 
     await user.click(screen.getByRole("button", { name: "Delete Final" }));
+    expect(props.onDelete).not.toHaveBeenCalled();
+
+    const dialog = within(
+      screen.getByRole("dialog", { name: "Delete exam or deadline?" }),
+    );
+    await user.click(dialog.getByRole("button", { name: "Delete" }));
     expect(props.onDelete).toHaveBeenCalledWith("exam_final");
   });
 });

@@ -191,6 +191,47 @@ function mapTopic(snapshot: PlannerSnapshot, topicId: EntityId, fn: (topic: Topi
   }));
 }
 
+function materializeImportedLog(
+  document: PlannerExport,
+  plans: readonly Plan[],
+  createId: IdFactory,
+): StudyLogEntry[] {
+  const byRef = new Map<string, EntityId>();
+  const byLegacyPath = new Map<string, EntityId | null>();
+
+  for (const [planIndex, plan] of plans.entries()) {
+    for (const [courseIndex, course] of plan.courses.entries()) {
+      const courseInput = document.plans[planIndex]?.courses[courseIndex];
+      for (const [topicIndex, topic] of course.topics.entries()) {
+        const topicInput = courseInput?.topics[topicIndex];
+        if (topicInput?.ref) byRef.set(topicInput.ref, topic.id);
+
+        const path = `${courseInput?.name ?? course.name}\0${topicInput?.name ?? topic.name}`;
+        byLegacyPath.set(path, byLegacyPath.has(path) ? null : topic.id);
+      }
+    }
+  }
+
+  return document.studyLog.flatMap((entry): StudyLogEntry[] => {
+    const topicId = entry.topicRef
+      ? byRef.get(entry.topicRef)
+      : byLegacyPath.get(`${entry.courseName}\0${entry.topicName}`);
+    // Early version-2 files did not have refs. An ambiguous name is skipped
+    // rather than silently assigning the session to the wrong repeated topic.
+    if (!topicId) return [];
+    return [
+      {
+        id: createId("log"),
+        topicId,
+        date: entry.date,
+        units: entry.units,
+        minutes: entry.minutes,
+        note: entry.note,
+      },
+    ];
+  });
+}
+
 /* ------------------------------------------------------------- repository */
 
 export type LocalRepositoryOptions = {
@@ -796,7 +837,16 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
     async importPlans(document: PlannerExport) {
       await commit((snapshot) => {
         const { plans } = toPlans(document, createId);
-        return withPlans(snapshot, [...snapshot.plans, ...plans]);
+        return {
+          ...snapshot,
+          plans: [...snapshot.plans, ...plans],
+          studyLog: [
+            ...snapshot.studyLog,
+            ...materializeImportedLog(document, plans, createId),
+          ].sort((left, right) =>
+            left.date < right.date ? -1 : left.date > right.date ? 1 : 0,
+          ),
+        };
       });
     },
 
@@ -804,36 +854,10 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
       await commit((snapshot) => {
         const { plans } = toPlans(document, createId);
 
-        // Log entries reference their topic by course and topic name, because
-        // ids do not exist until the document has been materialised.
-        const topicIdsByPath = new Map<string, EntityId>();
-        for (const plan of plans) {
-          for (const course of plan.courses) {
-            for (const topic of course.topics) {
-              topicIdsByPath.set(`${course.name}\0${topic.name}`, topic.id);
-            }
-          }
-        }
-
         return {
           plans,
-          studyLog: document.studyLog.flatMap((entry): StudyLogEntry[] => {
-            const topicId = topicIdsByPath.get(`${entry.courseName}\0${entry.topicName}`);
-            // Skipped rather than thrown: an entry pointing at a topic that is
-            // not in the document is stale data, not a reason to fail the seed.
-            if (!topicId) return [];
-            return [
-              {
-                id: createId("log"),
-                topicId,
-                date: entry.date,
-                units: entry.units,
-                minutes: entry.minutes,
-                note: entry.note,
-              },
-            ];
-          }),
-          preferences: snapshot.preferences,
+          studyLog: materializeImportedLog(document, plans, createId),
+          preferences: document.preferences ?? snapshot.preferences,
         };
       });
     },

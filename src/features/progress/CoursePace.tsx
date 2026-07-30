@@ -17,7 +17,7 @@ export function CoursePaceBadge({ health }: { health: CourseHealth }) {
       {health.pace.onTrack
         ? "On track"
         : health.pace.daysLate > 0
-          ? `${health.pace.daysLate} days late`
+          ? `${health.pace.daysLate} ${health.pace.daysLate === 1 ? "day" : "days"} late`
           : "Behind pace"}
     </Badge>
   );

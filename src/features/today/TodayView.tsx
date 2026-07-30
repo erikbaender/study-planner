@@ -12,6 +12,7 @@ import {
   assessCourse,
   daysUntil,
   nextExam,
+  UPCOMING_WINDOW_DAYS,
   UNIT_LABELS,
   type Course,
   type Plan,
@@ -101,19 +102,19 @@ export function TodayView({
           days: daysUntil(exam.startDate, today),
         })),
       )
-      .filter(({ days }) => days >= 0 && days <= 30)
+      .filter(({ days }) => days >= 0 && days <= UPCOMING_WINDOW_DAYS)
       .sort((a, b) => a.days - b.days);
 
     const health = plan.courses.map((course) => ({
+      course,
+      health: assessCourse({
         course,
-        health: assessCourse({
-          course,
-          today,
-          calendar: snapshot.preferences,
-          log: snapshot.studyLog,
-          dailyCapacityUnits: snapshot.preferences.dailyCapacityUnits,
-        }),
-      }));
+        today,
+        calendar: snapshot.preferences,
+        log: snapshot.studyLog,
+        dailyCapacityUnits: snapshot.preferences.dailyCapacityUnits,
+      }),
+    }));
     const healthByCourse = new Map(health.map((item) => [item.course.id, item.health]));
     const behind = health.filter(({ health }) => health.pace && !health.pace.onTrack);
 

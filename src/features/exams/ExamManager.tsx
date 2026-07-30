@@ -50,6 +50,7 @@ export function ExamManager({
   onDelete: (examId: string) => void;
 }) {
   const [draft, setDraft] = useState<ExamDraft | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Exam | null>(null);
 
   const openNew = () => {
     setDraft({
@@ -137,7 +138,7 @@ export function ExamManager({
                     size="sm"
                     label={`Delete ${exam.name}`}
                     icon={<Trash2 />}
-                    onClick={() => onDelete(exam.id)}
+                    onClick={() => setPendingDelete(exam)}
                   />
                 </div>
               </li>
@@ -156,6 +157,32 @@ export function ExamManager({
             setDraft(null);
           }}
         />
+      ) : null}
+      {pendingDelete ? (
+        <Sheet
+          open
+          onOpenChange={(open) => {
+            if (!open) setPendingDelete(null);
+          }}
+          title="Delete exam or deadline?"
+          description={`“${pendingDelete.name}” will be permanently removed.`}
+          footer={
+            <>
+              <Button onClick={() => setPendingDelete(null)}>Cancel</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  onDelete(pendingDelete.id);
+                  setPendingDelete(null);
+                }}
+              >
+                Delete
+              </Button>
+            </>
+          }
+        >
+          <p className="text-body text-secondary">This action cannot be undone.</p>
+        </Sheet>
       ) : null}
     </Card>
   );

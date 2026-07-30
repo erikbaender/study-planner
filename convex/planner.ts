@@ -777,6 +777,7 @@ const importBlock = v.object({
   source: v.optional(blockSourceValidator),
 });
 const importTopic = v.object({
+  ref: v.optional(v.string()),
   name: v.string(),
   section: v.optional(v.string()),
   unit: unitValidator,
@@ -786,7 +787,8 @@ const importTopic = v.object({
   priority: priorityValidator,
   color: v.string(),
   notes: v.string(),
-  /** Dependencies travel as names — ids are not stable across deployments. */
+  /** Refs disambiguate repeated names; names retain early-v2 compatibility. */
+  dependencyRefs: v.optional(v.array(v.string())),
   dependencies: v.array(v.string()),
   blocks: v.array(importBlock),
 });
@@ -817,11 +819,11 @@ const importPlan = v.object({
 type ImportPlanInput = (typeof importPlan)["type"];
 
 /**
- * Log entries reference their topic by course and topic name rather than by id,
- * because ids do not exist until the import has run. Names are unique within a
- * course by construction of the exporter.
+ * Log entries use an export-local ref because names are not unique in real
+ * outlines. The name path remains for early version-2 files.
  */
 const importLogEntry = v.object({
+  topicRef: v.optional(v.string()),
   courseName: v.string(),
   topicName: v.string(),
   date: v.string(),
@@ -830,11 +832,30 @@ const importLogEntry = v.object({
   note: v.optional(v.string()),
 });
 
+const importPreferences = v.object({
+  dailyCapacityUnits: v.optional(v.number()),
+  studyDaysOfWeek: v.array(v.number()),
+  blackoutDates: v.array(v.string()),
+  theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")),
+  accentColor: v.string(),
+});
+
 export const importPlans = mutation({
-  args: { plans: v.array(importPlan) },
+  args: { plans: v.array(importPlan), studyLog: v.optional(v.array(importLogEntry)) },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const { planIds } = await insertPlans(ctx, userId, args.plans);
+    const { planIds, topicIdsByRef, topicIdsByPath } = await insertPlans(
+      ctx,
+      userId,
+      args.plans,
+    );
+    await insertImportedStudyLog(
+      ctx,
+      userId,
+      args.studyLog ?? [],
+      topicIdsByRef,
+      topicIdsByPath,
+    );
     return planIds;
   },
 });
@@ -847,7 +868,11 @@ export const importPlans = mutation({
  * user's data even by mistake.
  */
 export const replaceAllPlans = mutation({
-  args: { plans: v.array(importPlan), studyLog: v.optional(v.array(importLogEntry)) },
+  args: {
+    plans: v.array(importPlan),
+    studyLog: v.optional(v.array(importLogEntry)),
+    preferences: v.optional(importPreferences),
+  },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
 
@@ -860,23 +885,30 @@ export const replaceAllPlans = mutation({
       await ctx.db.delete(entry._id);
     }
 
-    const { planIds, topicIdsByPath } = await insertPlans(ctx, userId, args.plans);
+    const { planIds, topicIdsByRef, topicIdsByPath } = await insertPlans(
+      ctx,
+      userId,
+      args.plans,
+    );
+    await insertImportedStudyLog(
+      ctx,
+      userId,
+      args.studyLog ?? [],
+      topicIdsByRef,
+      topicIdsByPath,
+    );
 
-    const now = Date.now();
-    for (const entry of args.studyLog ?? []) {
-      const topicId = topicIdsByPath.get(`${entry.courseName}\0${entry.topicName}`);
-      // Silently skipped rather than thrown: a log entry pointing at a topic
-      // that is not in the import is stale data, not a reason to fail the seed.
-      if (!topicId) continue;
-      await ctx.db.insert("studyLog", {
-        ownerId: userId,
-        topicId,
-        date: entry.date,
-        units: entry.units,
-        minutes: entry.minutes,
-        note: entry.note,
-        createdAt: now,
-      });
+    if (args.preferences) {
+      const existingPreferences = await ctx.db
+        .query("preferences")
+        .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+        .unique();
+      const preferences = { ...args.preferences, updatedAt: Date.now() };
+      if (existingPreferences) {
+        await ctx.db.patch(existingPreferences._id, preferences);
+      } else {
+        await ctx.db.insert("preferences", { ownerId: userId, ...preferences });
+      }
     }
 
     return planIds;
@@ -887,7 +919,8 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
   const now = Date.now();
   const planIds: Id<"plans">[] = [];
   /** Keyed `courseName\0topicName`, for resolving study-log references. */
-  const topicIdsByPath = new Map<string, Id<"topics">>();
+  const topicIdsByRef = new Map<string, Id<"topics">>();
+  const topicIdsByPath = new Map<string, Id<"topics"> | null>();
 
   for (const planInput of plans) {
     const planId = await ctx.db.insert("plans", {
@@ -927,7 +960,12 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
       // Scoped per course: two courses may legitimately both have a topic
       // called "Overview", and a shared map would cross-link them.
       const topicIdsByName = new Map<string, Id<"topics">>();
-      const pendingDependencies: Array<{ topicId: Id<"topics">; dependencies: string[] }> = [];
+      const topicIdsByCourseRef = new Map<string, Id<"topics">>();
+      const pendingDependencies: Array<{
+        topicId: Id<"topics">;
+        dependencyRefs?: string[];
+        dependencies: string[];
+      }> = [];
 
       for (const [topicIndex, topicInput] of courseInput.topics.entries()) {
         assertProgress(topicInput.completedUnits, topicInput.totalUnits);
@@ -949,8 +987,17 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
         });
 
         topicIdsByName.set(topicInput.name, topicId);
-        topicIdsByPath.set(`${courseInput.name}\0${topicInput.name}`, topicId);
-        pendingDependencies.push({ topicId, dependencies: topicInput.dependencies });
+        if (topicInput.ref) {
+          topicIdsByRef.set(topicInput.ref, topicId);
+          topicIdsByCourseRef.set(topicInput.ref, topicId);
+        }
+        const path = `${courseInput.name}\0${topicInput.name}`;
+        topicIdsByPath.set(path, topicIdsByPath.has(path) ? null : topicId);
+        pendingDependencies.push({
+          topicId,
+          dependencyRefs: topicInput.dependencyRefs,
+          dependencies: topicInput.dependencies,
+        });
 
         for (const blockInput of topicInput.blocks) {
           assertOrderedDates(blockInput.startDate, blockInput.endDate);
@@ -967,8 +1014,9 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
       }
 
       for (const pending of pendingDependencies) {
-        const dependencyIds = pending.dependencies
-          .map((name) => topicIdsByName.get(name))
+        const dependencyIds = (pending.dependencyRefs
+          ? pending.dependencyRefs.map((ref) => topicIdsByCourseRef.get(ref))
+          : pending.dependencies.map((name) => topicIdsByName.get(name)))
           .filter((id): id is Id<"topics"> => id !== undefined && id !== pending.topicId);
         if (dependencyIds.length > 0) {
           await ctx.db.patch(pending.topicId, { dependencyIds, updatedAt: now });
@@ -977,7 +1025,33 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
     }
   }
 
-  return { planIds, topicIdsByPath };
+  return { planIds, topicIdsByRef, topicIdsByPath };
+}
+
+async function insertImportedStudyLog(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  entries: Array<(typeof importLogEntry)["type"]>,
+  topicIdsByRef: ReadonlyMap<string, Id<"topics">>,
+  topicIdsByPath: ReadonlyMap<string, Id<"topics"> | null>,
+) {
+  const now = Date.now();
+  for (const entry of entries) {
+    const topicId = entry.topicRef
+      ? topicIdsByRef.get(entry.topicRef)
+      : topicIdsByPath.get(`${entry.courseName}\0${entry.topicName}`);
+    // Ambiguous legacy name paths are skipped rather than cross-linked.
+    if (!topicId) continue;
+    await ctx.db.insert("studyLog", {
+      ownerId: userId,
+      topicId,
+      date: entry.date,
+      units: entry.units,
+      minutes: entry.minutes,
+      note: entry.note,
+      createdAt: now,
+    });
+  }
 }
 
 /* ------------------------------------------------------ cascade utilities */

@@ -94,7 +94,7 @@ const semester = plan({
 
 function renderTimeline() {
   const onSelectTopic = vi.fn();
-  render(
+  const result = render(
     <TimelineView
       plan={semester}
       today="2026-07-30"
@@ -102,7 +102,7 @@ function renderTimeline() {
       onSelectTopic={onSelectTopic}
     />,
   );
-  return { onSelectTopic };
+  return { ...result, onSelectTopic };
 }
 
 describe("TimelineView", () => {
@@ -187,5 +187,38 @@ describe("TimelineView", () => {
       startDate: "2026-08-10",
       endDate: "2026-08-12",
     });
+  });
+
+  it("keeps keyboard focus when a moved block rerenders", () => {
+    const { rerender } = renderTimeline();
+    const block = screen.getByRole("gridcell", { name: /Cell biology/ });
+    block.focus();
+
+    const movedTopic = {
+      ...cellBiology,
+      blocks: [
+        {
+          ...cellBiology.blocks[0],
+          startDate: "2026-08-10" as const,
+          endDate: "2026-08-12" as const,
+        },
+      ],
+    };
+    const movedCourse = {
+      ...biochemistry,
+      topics: [movedTopic, metabolism],
+    };
+    rerender(
+      <TimelineView
+        plan={{ ...semester, courses: [movedCourse] }}
+        today="2026-07-30"
+        onCreate={vi.fn()}
+        onSelectTopic={vi.fn()}
+      />,
+    );
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("gridcell", { name: /Cell biology.*2026-08-10/ }),
+    );
   });
 });

@@ -90,8 +90,8 @@ export function OutlineView({
       />
 
       {course ? (
-        <>
-          <CourseSummary key={`${course.id}:${course.name}`} course={course} today={today} />
+        <Fragment key={course.id}>
+          <CourseSummary course={course} today={today} />
           <TopicTable
             course={course}
             today={today}
@@ -100,7 +100,7 @@ export function OutlineView({
           />
           <BoundExamManager course={course} today={today} />
           <BoundOutlineForm course={course} />
-        </>
+        </Fragment>
       ) : (
         <Card className="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
           <div>
@@ -511,14 +511,6 @@ function TopicTable({
                     />
                   ) : null}
                   <EditableTopicRow
-                    key={[
-                      topic.id,
-                      topic.name,
-                      topic.unit,
-                      topic.totalUnits,
-                      topic.completedUnits,
-                      topic.status,
-                    ].join(":")}
                     topic={topic}
                     today={today}
                     exam={exam}
@@ -656,9 +648,9 @@ function EditableTopicRow({
   onDragEnd: () => void;
   onDrop: () => void;
 }) {
-  const [name, setName] = useState(topic.name);
-  const [total, setTotal] = useState(String(topic.totalUnits));
-  const [done, setDone] = useState(String(topic.completedUnits));
+  const [name, setName] = useDraftValue(topic.name);
+  const [total, setTotal] = useDraftValue(String(topic.totalUnits));
+  const [done, setDone] = useDraftValue(String(topic.completedUnits));
   const progress = topicProgress(topic);
 
   const shortcut = (event: KeyboardEvent<HTMLElement>) => {
@@ -1095,6 +1087,17 @@ function OutlineForm({
 
 function cellControl(className: string) {
   return `h-control rounded-control bg-transparent text-body hover:bg-fill focus:bg-content focus:shadow-focus focus:outline-none disabled:opacity-40 ${className}`;
+}
+
+function useDraftValue(source: string): [string, (value: string) => void] {
+  const [draft, setDraft] = useState({ source, value: source });
+  if (draft.source !== source) {
+    setDraft({ source, value: source });
+  }
+  return [
+    draft.source === source ? draft.value : source,
+    (value) => setDraft({ source, value }),
+  ];
 }
 
 function moveBefore(ids: string[], sourceId: string, targetId: string) {

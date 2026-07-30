@@ -18,6 +18,8 @@ import type { Course, Exam, IsoDate, StudyLogEntry, Topic } from "./types";
 
 /** Trailing window for velocity. Long enough to smooth a bad day, short enough to react within a week. */
 export const VELOCITY_WINDOW_DAYS = 7;
+/** Smart-view horizon shared by its sidebar count and destination list. */
+export const UPCOMING_WINDOW_DAYS = 30;
 
 export type Progress = {
   totalUnits: number;

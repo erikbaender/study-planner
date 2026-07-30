@@ -6,7 +6,8 @@ import {
   assessCourse,
   courseProgress,
   daysUntil,
-  nextExam,
+    nextExam,
+    UPCOMING_WINDOW_DAYS,
   type Plan,
   type PlannerSnapshot,
 } from "@/domain";
@@ -31,6 +32,7 @@ export function PlannerSidebar({
   onSelectSmartView,
   onSelectCourse,
   onCreate,
+  onCreateCourse,
 }: {
   snapshot: PlannerSnapshot;
   plan: Plan;
@@ -42,6 +44,7 @@ export function PlannerSidebar({
   onSelectSmartView: (view: SmartView) => void;
   onSelectCourse: (courseId: string) => void;
   onCreate: () => void;
+  onCreateCourse: () => void;
 }) {
   const summary = useMemo(() => {
     const health = plan.courses.map((course) =>
@@ -53,15 +56,12 @@ export function PlannerSidebar({
         dailyCapacityUnits: snapshot.preferences.dailyCapacityUnits,
       }),
     );
-    const blocksToday = plan.courses.reduce(
+    const topicsToday = plan.courses.reduce(
       (count, course) =>
         count +
-        course.topics.reduce(
-          (topicCount, topic) =>
-            topicCount +
-            topic.blocks.filter((block) => block.startDate <= today && block.endDate >= today).length,
-          0,
-        ),
+        course.topics.filter((topic) =>
+          topic.blocks.some((block) => block.startDate <= today && block.endDate >= today),
+        ).length,
       0,
     );
     const upcomingExams = plan.courses.reduce(
@@ -69,14 +69,14 @@ export function PlannerSidebar({
         count +
         course.exams.filter((exam) => {
           const days = daysUntil(exam.startDate, today);
-          return days >= 0 && days <= 14;
+          return days >= 0 && days <= UPCOMING_WINDOW_DAYS;
         }).length,
       0,
     );
 
     return {
       health: new Map(health.map((courseHealth) => [courseHealth.courseId, courseHealth])),
-      blocksToday,
+      topicsToday,
       upcomingExams,
       behind: health.filter((courseHealth) => courseHealth.pace && !courseHealth.pace.onTrack).length,
     };
@@ -108,7 +108,7 @@ export function PlannerSidebar({
         <SidebarItem
           label="Today"
           icon={<CalendarDays />}
-          count={summary.blocksToday}
+          count={summary.topicsToday}
           selected={view === "today" && smartView === "today"}
           onSelect={() => onSelectSmartView("today")}
         />
@@ -132,7 +132,12 @@ export function PlannerSidebar({
         title="Courses"
         action={
           <Tooltip content="New course">
-            <IconButton size="sm" label="New course" icon={<Plus />} onClick={onCreate} />
+            <IconButton
+              size="sm"
+              label="New course"
+              icon={<Plus />}
+              onClick={onCreateCourse}
+            />
           </Tooltip>
         }
       >

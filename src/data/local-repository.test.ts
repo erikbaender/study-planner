@@ -665,10 +665,12 @@ describe("import and replaceAll", () => {
     await repository.createPlan({ name: "Existing" });
     await repository.importPlans(seedDocument());
 
-    expect((await read(repository)).plans.map((plan) => plan.name)).toEqual([
+    const snapshot = await read(repository);
+    expect(snapshot.plans.map((plan) => plan.name)).toEqual([
       "Existing",
       "Winter semester",
     ]);
+    expect(snapshot.studyLog).toHaveLength(seedDocument().studyLog.length);
   });
 
   it("drops everything else on replaceAll", async () => {
@@ -710,12 +712,41 @@ describe("import and replaceAll", () => {
     expect((await read(repository)).studyLog).toHaveLength(document.studyLog.length - 1);
   });
 
-  it("keeps preferences across a replaceAll", async () => {
+  it("restores exported preferences on replaceAll", async () => {
     const { repository } = setup();
     await repository.savePreferences({ ...DEFAULT_PREFERENCES, dailyCapacityUnits: 60 });
     await repository.replaceAll(seedDocument());
 
-    expect((await read(repository)).preferences.dailyCapacityUnits).toBe(60);
+    expect((await read(repository)).preferences).toEqual(DEFAULT_PREFERENCES);
+  });
+
+  it("keeps repeated topic names distinct when restoring study history", async () => {
+    const source = setup().repository;
+    const { courseId } = await withCourse(source);
+    const first = await source.createTopic(courseId, {
+      name: "Review",
+      totalUnits: 20,
+      color: "#f00",
+    });
+    const second = await source.createTopic(courseId, {
+      name: "Review",
+      totalUnits: 20,
+      color: "#f00",
+    });
+    await source.logStudy({ topicId: first, date: "2026-07-28", units: 3 });
+    await source.logStudy({ topicId: second, date: "2026-07-29", units: 7 });
+    const document = serializePlans(await read(source), `${TODAY}T00:00:00.000Z`);
+
+    const target = setup().repository;
+    await target.replaceAll(document);
+    const restored = await read(target);
+    const [restoredFirst, restoredSecond] = restored.plans[0].courses[0].topics;
+
+    expect(restoredFirst.name).toBe(restoredSecond.name);
+    expect(restored.studyLog).toEqual([
+      expect.objectContaining({ topicId: restoredFirst.id, units: 3 }),
+      expect.objectContaining({ topicId: restoredSecond.id, units: 7 }),
+    ]);
   });
 });
 

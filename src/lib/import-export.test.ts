@@ -88,10 +88,20 @@ describe("serializePlans", () => {
     expect(JSON.stringify(document)).not.toContain("topic_a");
   });
 
+  it("also carries stable export-local refs for repeated topic names", () => {
+    const document = serializePlans(fixture());
+    const [glycolysis, krebs] = document.plans[0].courses[0].topics;
+
+    expect(glycolysis.ref).toBe("p0:c0:t0");
+    expect(krebs.dependencyRefs).toEqual(["p0:c0:t0"]);
+    expect(document.studyLog[0].topicRef).toBe("p0:c0:t0");
+  });
+
   it("resolves log entries to a course and topic name", () => {
     const document = serializePlans(fixture());
     expect(document.studyLog).toEqual([
       {
+        topicRef: "p0:c0:t0",
         courseName: "Biochemistry",
         topicName: "Glycolysis",
         date: "2026-09-20",
@@ -110,6 +120,10 @@ describe("serializePlans", () => {
 
   it("stamps the current format version", () => {
     expect(serializePlans(fixture()).version).toBe(EXPORT_VERSION);
+  });
+
+  it("includes scheduling preferences in the portable document", () => {
+    expect(serializePlans(fixture()).preferences).toEqual(fixture().preferences);
   });
 });
 
@@ -161,6 +175,7 @@ describe("toPlans", () => {
 
   it("drops a dependency naming a topic that is not in the file", () => {
     const document = serializePlans(fixture());
+    document.plans[0].courses[0].topics[1].dependencyRefs = undefined;
     document.plans[0].courses[0].topics[1].dependencies = ["Nowhere"];
     const { plans } = toPlans(document, sequentialIdFactory());
     expect(plans[0].courses[0].topics[1].dependencyIds).toEqual([]);
@@ -171,6 +186,26 @@ describe("toPlans", () => {
     document.plans[0].courses[0].topics[0].dependencies = ["Glycolysis"];
     const { plans } = toPlans(document, sequentialIdFactory());
     expect(plans[0].courses[0].topics[0].dependencyIds).toEqual([]);
+  });
+
+  it("resolves dependencies by ref when names repeat", () => {
+    const original = fixture();
+    const first = original.plans[0].courses[0].topics[0];
+    const repeated = topic({
+      id: "topic_repeat",
+      courseId: first.courseId,
+      name: first.name,
+      order: 2,
+      dependencyIds: [first.id],
+    });
+    original.plans[0].courses[0].topics.push(repeated);
+
+    const { plans } = toPlans(serializePlans(original), sequentialIdFactory());
+    const imported = plans[0].courses[0].topics;
+
+    expect(imported[2].name).toBe(imported[0].name);
+    expect(imported[2].dependencyIds).toEqual([imported[0].id]);
+    expect(imported[2].dependencyIds).not.toEqual([imported[2].id]);
   });
 
   it("assigns order from position in the file", () => {

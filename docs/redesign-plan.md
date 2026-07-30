@@ -1,6 +1,6 @@
 # Study Planner — Architecture Repair & UX Redesign Plan
 
-Status: **approved, phases 0–3 complete**
+Status: **approved, phases 0–7 complete; cross-phase QC complete**
 Supersedes and replaces: `REQUIREMENTS.md` (deleted in this PR; preserved in git history at `7e6152e`)
 
 ---
@@ -676,6 +676,28 @@ the assessment detail, and retains the root-overflow guard.
 
 The detailed implementation report is
 `reports/2026-07-30-20-phase-7-exams-and-progress.md`.
+
+### 9.8 Cross-phase quality control
+
+The release-style pass after Phase 7 exercised cold start, seeded data, CRUD, scheduling,
+keyboard paths, persistence, JSON round trips, and responsive boundaries rather than relying on
+the happy-path Chromium journey alone.
+
+- Outline cells and Timeline blocks now retain their DOM identity when repository updates arrive,
+  so Tab and repeated arrow-key editing do not lose focus.
+- Space no longer lets the global inspector shortcut replace a focused control's native
+  activation.
+- Sidebar counts use the same 30-day Upcoming horizon and topic-level Today grouping as their
+  destination views.
+- Course-specific creation, sample replacement, and exam deletion now match their labels and
+  destructive-action contracts.
+- Version-2 exports carry export-local topic refs and preferences. Repeated topic names no longer
+  cross-link dependencies or study history; append import retains history; replacement restores
+  preferences.
+
+The narrow-screen audit also confirmed that the fixed split view and toolbar are not yet usable
+at phone widths. That remains an explicit Phase 9 deliverable rather than a claim made by the
+current desktop workspace.
 
 ### Traceability to the original audit recommendations
 
