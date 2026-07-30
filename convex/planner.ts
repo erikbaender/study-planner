@@ -498,30 +498,28 @@ export const createTopics = mutation({
 export const updateTopic = mutation({
   args: {
     topicId: v.id("topics"),
-    name: v.string(),
-    section: v.optional(v.string()),
-    unit: unitValidator,
-    totalUnits: v.number(),
-    completedUnits: v.number(),
-    status: statusValidator,
-    priority: priorityValidator,
-    notes: v.string(),
-    color: v.string(),
+    name: v.optional(v.string()),
+    section: v.optional(v.union(v.string(), v.null())),
+    unit: v.optional(unitValidator),
+    totalUnits: v.optional(v.number()),
+    status: v.optional(statusValidator),
+    priority: v.optional(priorityValidator),
+    notes: v.optional(v.string()),
+    color: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertTopicOwner(ctx, args.topicId, userId);
-    assertProgress(args.completedUnits, args.totalUnits);
+    const { topic } = await assertTopicOwner(ctx, args.topicId, userId);
+    assertProgress(topic.completedUnits, args.totalUnits ?? topic.totalUnits);
     await ctx.db.patch(args.topicId, {
-      name: args.name,
-      section: args.section,
-      unit: args.unit,
-      totalUnits: args.totalUnits,
-      completedUnits: args.completedUnits,
-      status: args.status,
-      priority: args.priority,
-      notes: args.notes,
-      color: args.color,
+      ...(args.name !== undefined ? { name: args.name } : {}),
+      ...(args.section !== undefined ? { section: args.section ?? undefined } : {}),
+      ...(args.unit !== undefined ? { unit: args.unit } : {}),
+      ...(args.totalUnits !== undefined ? { totalUnits: args.totalUnits } : {}),
+      ...(args.status !== undefined ? { status: args.status } : {}),
+      ...(args.priority !== undefined ? { priority: args.priority } : {}),
+      ...(args.notes !== undefined ? { notes: args.notes } : {}),
+      ...(args.color !== undefined ? { color: args.color } : {}),
       updatedAt: Date.now(),
     });
   },
@@ -533,6 +531,33 @@ export const deleteTopic = mutation({
     const userId = await requireUser(ctx);
     const { topic } = await assertTopicOwner(ctx, args.topicId, userId);
     await deleteTopicTree(ctx, topic);
+  },
+});
+
+export const reorderTopics = mutation({
+  args: { courseId: v.id("courses"), topicIds: v.array(v.id("topics")) },
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await assertCourseOwner(ctx, args.courseId, userId);
+    const existing = await ctx.db
+      .query("topics")
+      .withIndex("by_course", (q) => q.eq("courseId", args.courseId))
+      .collect();
+    if (
+      args.topicIds.length !== existing.length ||
+      new Set(args.topicIds).size !== existing.length
+    ) {
+      throw new Error("Reorder must list every topic in the course exactly once");
+    }
+
+    const existingIds = new Set(existing.map((topic) => topic._id));
+    const now = Date.now();
+    for (const [index, topicId] of args.topicIds.entries()) {
+      if (!existingIds.has(topicId)) {
+        throw new Error("Topic does not belong to that course");
+      }
+      await ctx.db.patch(topicId, { order: index, updatedAt: now });
+    }
   },
 });
 

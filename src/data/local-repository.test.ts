@@ -253,7 +253,7 @@ describe("topics", () => {
     expect(orders).toEqual([0, 1, 2]);
   });
 
-  it("rejects completing more than a topic holds", async () => {
+  it("rejects shrinking a topic below work already logged", async () => {
     const { repository } = setup();
     const { courseId } = await withCourse(repository);
     const topicId = await repository.createTopic(courseId, {
@@ -261,19 +261,53 @@ describe("topics", () => {
       totalUnits: 100,
       color: "#f00",
     });
+    await repository.logStudy({ topicId, date: TODAY, units: 80 });
 
-    await expect(
-      repository.updateTopic(topicId, {
-        name: "Glycolysis",
-        unit: "slides",
-        totalUnits: 100,
-        completedUnits: 120,
-        status: "active",
-        priority: "normal",
-        notes: "",
-        color: "#f00",
-      }),
-    ).rejects.toThrow("Completed units cannot exceed the total");
+    await expect(repository.updateTopic(topicId, { totalUnits: 60 })).rejects.toThrow(
+      "Completed units cannot exceed the total",
+    );
+  });
+
+  it("reorders topics by an explicit complete list", async () => {
+    const { repository } = setup();
+    const { courseId } = await withCourse(repository);
+    const a = await repository.createTopic(courseId, { name: "A", color: "#f00" });
+    const b = await repository.createTopic(courseId, { name: "B", color: "#f00" });
+    const c = await repository.createTopic(courseId, { name: "C", color: "#f00" });
+
+    await repository.reorderTopics(courseId, [c, a, b]);
+
+    expect(
+      (await read(repository)).plans[0].courses[0].topics.map((topic) => topic.name),
+    ).toEqual(["C", "A", "B"]);
+  });
+
+  it("rejects a partial topic reorder", async () => {
+    const { repository } = setup();
+    const { courseId } = await withCourse(repository);
+    const a = await repository.createTopic(courseId, { name: "A", color: "#f00" });
+    await repository.createTopic(courseId, { name: "B", color: "#f00" });
+
+    await expect(repository.reorderTopics(courseId, [a])).rejects.toThrow(
+      "Reorder must list every topic in the course exactly once",
+    );
+  });
+
+  it("clears a section without overwriting unrelated topic fields", async () => {
+    const { repository } = setup();
+    const { courseId } = await withCourse(repository);
+    const topicId = await repository.createTopic(courseId, {
+      name: "Glycolysis",
+      section: "Metabolism",
+      totalUnits: 100,
+      color: "#f00",
+    });
+
+    await repository.updateTopic(topicId, { section: null });
+
+    const updated = (await read(repository)).plans[0].courses[0].topics[0];
+    expect(updated).toMatchObject({ name: "Glycolysis", totalUnits: 100 });
+    expect(updated.section).toBeUndefined();
   });
 
   it("strips the deleted topic from its dependants and from the log", async () => {

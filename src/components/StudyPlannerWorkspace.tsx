@@ -387,7 +387,8 @@ export function StudyPlannerApp() {
                 course={course}
                 selection={selection}
                 today={today}
-                onCreate={() => setCreateOpen(true)}
+                onCreateCourse={createCourse}
+                onSelectCourse={selectCourse}
                 onSelectTopic={selectTopic}
               />
             )}

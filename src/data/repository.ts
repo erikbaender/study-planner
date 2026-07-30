@@ -62,17 +62,17 @@ export type TopicInput = {
   color: string;
 };
 
-export type TopicPatch = {
+export type TopicPatch = Partial<{
   name: string;
-  section?: string;
+  /** `null` clears the optional section; omission leaves it unchanged. */
+  section: string | null;
   unit: Unit;
   totalUnits: number;
-  completedUnits: number;
   status: TopicStatus;
   priority: Priority;
   notes: string;
   color: string;
-};
+}>;
 
 export type StudyBlockInput = {
   topicId: EntityId;
@@ -144,6 +144,7 @@ export interface PlannerRepository {
   ): Promise<EntityId[]>;
   updateTopic(topicId: EntityId, patch: TopicPatch): Promise<void>;
   deleteTopic(topicId: EntityId): Promise<void>;
+  reorderTopics(courseId: EntityId, topicIds: EntityId[]): Promise<void>;
   setTopicDependencies(topicId: EntityId, dependencyIds: EntityId[]): Promise<void>;
 
   createStudyBlock(input: StudyBlockInput): Promise<EntityId>;

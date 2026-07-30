@@ -412,7 +412,7 @@ workspace shell; phases 4–9 replace each content view without breaking the sha
 | **1** | ✅ Domain layer, repository abstraction, new schema, seed generator, delete GitHub import, remove Ionic, Vitest + CI | 2–3 d |
 | **2** | ✅ macOS design system: tokens, materials, typography, primitives on Radix | 2 d |
 | **3** | ✅ App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
-| **4** | Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
+| **4** | ✅ Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
 | **5** | Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
 | **6** | Scheduling engine + Today view + Reflow | 3 d |
 | **7** | Exams, progress logging, velocity, on-track indicators | 2 d |
@@ -535,6 +535,40 @@ consistent height. Typecheck, lint, Vitest, Playwright, and the production build
 
 The detailed implementation report is
 `reports/2026-07-30-16-phase-3-app-shell.md`.
+
+### 9.4 Phase 4 as delivered
+
+Phase 4 replaces the Outline foundation with the permanent setup workflow from §7.3. Courses
+are created, selected, renamed, and reordered directly in the view. Topics sit in an editable
+table under their optional section rows, with the specified Name, Unit, Total, Done, Progress,
+Status, and Exam columns.
+
+**Editing.** The table uses native input order, so Tab advances through editable cells without
+custom focus bookkeeping. ⌘⏎ (Ctrl+Enter off macOS) opens a new row immediately after the
+current topic; the ordinary Add topic action appends one. Course and section names edit in
+place. The existing paste parser remains the high-volume path and now lives directly below the
+table rather than inside a temporary shell.
+
+**Progress integrity.** Name, unit, size, status, section, and appearance edits use a partial
+topic patch. That patch deliberately cannot contain `completedUnits`. Both the Done cell and
+the progress slider call `logStudy` with a delta, preserving the study log that later velocity
+and projection work depends on.
+
+**Ordering.** Courses and topics have drag handles, plus Move Up/Down or Left/Right commands for
+keyboard and assistive-technology users. Topic reordering is now a repository operation in both
+IndexedDB and Convex, with ownership and complete-list validation at the storage boundary.
+Dragging a topic into another section updates its section before committing the order.
+
+**Testing.** Repository tests cover complete and invalid topic reorder lists, partial topic
+patches, section clearing, and the rule that a total cannot be reduced below logged work.
+Component tests cover the table contract, inline edits, logged Done deltas, insertion,
+dragging, and direct course creation. The Chromium workspace journey exercises the same flow
+against the real local repository, including all 44 seeded Biochemistry rows at one consistent
+height.
+
+The detailed implementation report is
+`reports/2026-07-30-17-phase-4-outline.md`.
+
 ### Traceability to the original audit recommendations
 
 
@@ -647,6 +681,17 @@ in §7.2; the primitives it needs (`Sidebar`, `Toolbar`, `Popover`, `Sheet`, `Dr
 One thing is **unverified**: the topic row's layout after the width fix in `3cf7c54` passes
 typecheck, lint, tests and build, but was not seen in a browser. Load the sample data and
 confirm the row reads name · slider · count · ⋯ at a consistent height before building on it.
+
+### 12.3 Where to start phase 5
+
+Phase 4 makes Outline the permanent editing surface. Do not add drag scheduling, generated
+blocks, or Reflow to it: `src/features/timeline/TimelineView.tsx` is the Phase 5 boundary, and
+`src/domain/scheduling.ts` remains Phase 6.
+
+The current Timeline is an accessible chronological agenda over real study blocks. Replace its
+canvas without weakening that keyboard contract. The next slice owns TanStack Virtual, zoom,
+the today line, exam markers and windows, the 4px drag threshold, and anchored quick-edit
+popovers. The 400-topic seed and Chromium journey are the performance and layout fixtures.
 
 ## 13. Environment and access needed
 

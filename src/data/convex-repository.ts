@@ -320,6 +320,12 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
     async deleteTopic(topicId) {
       await client.mutation(api.planner.deleteTopic, { topicId: asId<"topics">(topicId) });
     },
+    async reorderTopics(courseId, topicIds) {
+      await client.mutation(api.planner.reorderTopics, {
+        courseId: asId<"courses">(courseId),
+        topicIds: topicIds.map((id) => asId<"topics">(id)),
+      });
+    },
     async setTopicDependencies(topicId, dependencyIds) {
       await client.mutation(api.planner.updateTopicDependencies, {
         topicId: asId<"topics">(topicId),

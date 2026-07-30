@@ -540,10 +540,15 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     async updateTopic(topicId, patch: TopicPatch) {
       await commit((snapshot) => {
-        requireValidProgress(patch.completedUnits, patch.totalUnits);
+        const { topic } = findTopic(snapshot, topicId);
+        requireValidProgress(topic.completedUnits, patch.totalUnits ?? topic.totalUnits);
         return withPlans(
           snapshot,
-          mapTopic(snapshot, topicId, (topic) => ({ ...topic, ...patch })),
+          mapTopic(snapshot, topicId, (current) => ({
+            ...current,
+            ...patch,
+            section: patch.section === null ? undefined : (patch.section ?? current.section),
+          })),
         );
       });
     },
@@ -571,6 +576,32 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
           studyLog: snapshot.studyLog.filter((entry) => entry.topicId !== topicId),
         };
       });
+    },
+
+    async reorderTopics(courseId, topicIds) {
+      await commit((snapshot) =>
+        withPlans(
+          snapshot,
+          mapCourse(snapshot, courseId, (course) => {
+            const positions = new Map(topicIds.map((id, index) => [id, index]));
+            if (positions.size !== course.topics.length) {
+              throw new ValidationError("Reorder must list every topic in the course exactly once");
+            }
+            return {
+              ...course,
+              topics: [...course.topics]
+                .map((topic) => {
+                  const order = positions.get(topic.id);
+                  if (order === undefined) {
+                    throw new ValidationError("Topic does not belong to that course");
+                  }
+                  return { ...topic, order };
+                })
+                .sort((left, right) => left.order - right.order),
+            };
+          }),
+        ),
+      );
     },
 
     async setTopicDependencies(topicId, dependencyIds) {
