@@ -842,7 +842,7 @@ function EditableTopicRow({
         )}
         <span className="sr-only">
           {exam
-            ? `, ${daysUntil(today, exam.startDate)} days away${
+            ? `, ${daysUntil(exam.startDate, today)} days away${
                 exam.status === "provisional" ? ", provisional" : ""
               }`
             : ""}

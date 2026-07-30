@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_PREFERENCES } from "@/domain";
-import { course, plan, topic } from "@/test/factories";
+import { course, exam, plan, topic } from "@/test/factories";
 import { OutlineView } from "./OutlineView";
 
 const repository = vi.hoisted(() => ({
@@ -53,6 +53,7 @@ const second = topic({
 const biochemistry = course({
   id: "course_1",
   name: "Biochemistry",
+  exams: [exam({ startDate: "2026-08-23" })],
   topics: [first, second],
 });
 const semester = plan({ courses: [biochemistry] });
@@ -89,6 +90,7 @@ describe("OutlineView", () => {
     }
     expect(screen.getByRole("textbox", { name: "Section Block 1" })).toBeInTheDocument();
     expect(document.querySelectorAll("[data-topic-row]")).toHaveLength(2);
+    expect(screen.getAllByText(/24 days away/)).toHaveLength(2);
   });
 
   it("edits topic details inline and records Done as a study-log delta", async () => {
