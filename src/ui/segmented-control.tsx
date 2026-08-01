@@ -31,6 +31,7 @@ export function SegmentedControl<T extends string>({
   size = "md",
   label,
   className,
+  "aria-controls": ariaControls,
 }: {
   value: T;
   onValueChange: (value: T) => void;
@@ -39,6 +40,8 @@ export function SegmentedControl<T extends string>({
   /** Names the group for screen readers, e.g. "Zoom level". */
   label: string;
   className?: string;
+  /** The region this control switches, when it drives one. */
+  "aria-controls"?: string;
 }) {
   const move = (delta: number) => {
     const enabled = segments.filter((segment) => !segment.disabled);
@@ -53,6 +56,7 @@ export function SegmentedControl<T extends string>({
       type="single"
       value={value}
       aria-label={label}
+      aria-controls={ariaControls}
       // Radix emits "" when the pressed item is re-pressed. A segmented control
       // has no empty state, so that is dropped rather than passed on.
       onValueChange={(next) => {

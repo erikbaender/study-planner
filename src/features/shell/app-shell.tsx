@@ -1,0 +1,369 @@
+"use client";
+
+/**
+ * The three-column split view.
+ *
+ * ```
+ * ┌───────────────┬──────────────────────────────┬──────────────┐
+ * │  sidebar      │  content                     │  inspector   │
+ * │  focus +      │  Today / Timeline / Outline  │  contextual  │
+ * │  course list  │                              │  (⌘I)        │
+ * └───────────────┴──────────────────────────────┴──────────────┘
+ * ```
+ *
+ * This file's whole job is wiring: it reads the repository, derives what the
+ * three columns need, and hands the pieces down. Everything with an opinion in
+ * it lives elsewhere — the scoping rules in `workspace/scope.ts`, the shortcuts
+ * in `workspace/keyboard.ts`, the command list in `workspace/commands.ts`. That
+ * split is what stops this becoming the 600-line component it replaced.
+ *
+ * The one piece of judgement here is what happens while the repository is still
+ * loading: a spinner, not an empty state. "You have no semesters" is a claim,
+ * and until the repository has answered it is one the app cannot make.
+ */
+
+import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
+import { Plus } from "lucide-react";
+import { useId, useMemo, useRef, useState } from "react";
+import { usePlannerErrors, usePlannerState, useRepository } from "@/data/use-repository";
+import {
+  DEFAULT_PREFERENCES,
+  EMPTY_SNAPSHOT,
+  generateSeedData,
+  toIsoDate,
+  type Course,
+  type Exam,
+  type Topic,
+} from "@/domain";
+import {
+  exportFilename,
+  ImportError,
+  parsePlannerJson,
+  serializePlans,
+} from "@/lib/import-export";
+import { Button, EmptyState, Spinner } from "@/ui";
+import { AppSidebar } from "./app-sidebar";
+import { AppToolbar } from "./app-toolbar";
+import { CommandPalette } from "./command-palette";
+import { Inspector } from "./inspector";
+import { ConfirmDeleteSheet, NewCourseSheet, NewPlanSheet } from "./sheets";
+import { OutlineView } from "@/features/outline/outline-view";
+import { TimelineView } from "@/features/timeline/timeline-view";
+import { TodayView } from "@/features/today/today-view";
+import { buildCommands } from "@/features/workspace/commands";
+import { isApplePlatform, shortcutLabel, useKeyboardMap } from "@/features/workspace/keyboard";
+import {
+  coursesInFocus,
+  healthByCourse,
+  resolveSelection,
+  type ResolvedSelection,
+} from "@/features/workspace/scope";
+import { revealSelection, useWorkspace } from "@/features/workspace/store";
+
+/** Read once per mount: the planner is day-granular, so a re-render mid-day is not worth it. */
+function useToday() {
+  return useState(() => toIsoDate(new Date()))[0];
+}
+
+export function AppShell() {
+  const repository = useRepository();
+  const state = usePlannerState();
+  const snapshot = state.status === "ready" ? state.snapshot : EMPTY_SNAPSHOT;
+  const { error, run, clear } = usePlannerErrors();
+  const { isAuthenticated } = useConvexAuth();
+  const { signIn, signOut } = useAuthActions();
+  const today = useToday();
+
+  const contentId = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const workspace = useWorkspace();
+  const apple = useMemo(() => isApplePlatform(), []);
+
+  const plan =
+    snapshot.plans.find((candidate) => candidate.id === workspace.planId) ?? snapshot.plans[0];
+  const health = useMemo(() => healthByCourse(plan, snapshot, today), [plan, snapshot, today]);
+  const focused = useMemo(
+    () => coursesInFocus(plan, workspace.focus, health),
+    [plan, workspace.focus, health],
+  );
+  const selection = useMemo(
+    () => resolveSelection(plan, workspace.selection),
+    [plan, workspace.selection],
+  );
+  const pendingDelete = useMemo(
+    () => resolveSelection(plan, workspace.pendingDelete),
+    [plan, workspace.pendingDelete],
+  );
+
+  /* ─── Actions ─────────────────────────────────────────────────────────── */
+
+  const loadSampleData = () => {
+    const seed = generateSeedData({ today });
+    run(
+      repository.replaceAll(
+        serializePlans(
+          { plans: [seed.plan], studyLog: seed.studyLog, preferences: DEFAULT_PREFERENCES },
+          today,
+        ),
+      ),
+    );
+  };
+
+  const exportJson = () => {
+    const payload = serializePlans(snapshot, new Date().toISOString());
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
+    );
+    const anchor = Object.assign(document.createElement("a"), {
+      href: url,
+      download: exportFilename(today),
+    });
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importJson = (file: File) => {
+    run(
+      file.text().then(async (contents) => {
+        try {
+          await repository.importPlans(parsePlannerJson(contents));
+        } catch (cause) {
+          throw cause instanceof ImportError ? cause : new Error(String(cause));
+        }
+      }),
+    );
+  };
+
+  const deleteResolved = (target: NonNullable<ResolvedSelection>) => {
+    if (target.kind === "course") run(repository.deleteCourse(target.course.id));
+    else if (target.kind === "topic") run(repository.deleteTopic(target.topic.id));
+    else run(repository.deleteExam(target.exam.id));
+    // The thing the inspector was describing is gone; leaving the id behind
+    // would have `resolveSelection` return null anyway, but clearing it here
+    // means the panel empties in the same commit as the delete.
+    workspace.select(null);
+  };
+
+  const selectCourse = (course: Course) => {
+    workspace.setFocus({ kind: "course", courseId: course.id });
+    revealSelection({ kind: "course", id: course.id });
+  };
+  const selectTopic = (_course: Course, topic: Topic) =>
+    revealSelection({ kind: "topic", id: topic.id });
+  const selectExam = (_course: Course, exam: Exam) =>
+    revealSelection({ kind: "exam", id: exam.id });
+
+  /* ─── Keyboard and palette ────────────────────────────────────────────── */
+
+  useKeyboardMap({
+    openPalette: () => workspace.setPaletteOpen(true),
+    focusSearch: () => searchRef.current?.focus(),
+    viewToday: () => workspace.setView("today"),
+    viewTimeline: () => workspace.setView("timeline"),
+    viewOutline: () => workspace.setView("outline"),
+    toggleInspector: workspace.toggleInspector,
+    newItem: () => workspace.setCreating(plan ? "course" : "plan"),
+    deleteSelection: () => {
+      if (workspace.selection) workspace.setPendingDelete(workspace.selection);
+    },
+    // Quick look: Space opens the inspector on whatever is selected, and closes
+    // it again. Doing nothing without a selection is deliberate — opening an
+    // empty panel is not a preview of anything.
+    quickLook: () => {
+      if (workspace.selection) workspace.toggleInspector();
+    },
+  });
+
+  const commands = useMemo(
+    () =>
+      buildCommands({
+        plan,
+        hasData: snapshot.plans.length > 0,
+        shortcut: (id) => shortcutLabel(id, apple),
+        actions: {
+          setView: workspace.setView,
+          focusAll: () => workspace.setFocus({ kind: "all" }),
+          focusBehind: () => workspace.setFocus({ kind: "behind" }),
+          focusSoon: () => workspace.setFocus({ kind: "soon" }),
+          revealCourse: selectCourse,
+          revealTopic: (topic) => revealSelection({ kind: "topic", id: topic.id }),
+          toggleInspector: workspace.toggleInspector,
+          newSemester: () => workspace.setCreating("plan"),
+          newCourse: () => workspace.setCreating("course"),
+          loadSampleData,
+          exportJson,
+        },
+      }),
+    // `plan` and the snapshot are what the list is built from; the action
+    // closures are stable enough that rebuilding on every render would only
+    // cost the palette its memo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [plan, snapshot, apple],
+  );
+
+  /* ─── Render ──────────────────────────────────────────────────────────── */
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden">
+      <AppToolbar
+        ref={searchRef}
+        view={workspace.view}
+        onViewChange={workspace.setView}
+        contentId={contentId}
+        query={workspace.query}
+        onQueryChange={workspace.setQuery}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((open) => !open)}
+        inspectorOpen={workspace.inspectorOpen}
+        onToggleInspector={workspace.toggleInspector}
+        inspectorShortcut={shortcutLabel("toggleInspector", apple)}
+        onNewPlan={() => workspace.setCreating("plan")}
+        onNewCourse={() => workspace.setCreating("course")}
+        newShortcut={shortcutLabel("newItem", apple)}
+        onLoadSampleData={loadSampleData}
+        onExport={exportJson}
+        onImport={importJson}
+        canExport={snapshot.plans.length > 0}
+        isAuthenticated={isAuthenticated}
+        onSignIn={() => void signIn("github")}
+        onSignOut={() => void signOut()}
+      />
+
+      {error ? (
+        <div
+          role="alert"
+          className="flex items-center gap-3 border-b border-separator bg-red/10 px-4 py-2 text-body"
+        >
+          <span className="text-red">{error.message}</span>
+          <Button size="sm" variant="plain" className="ml-auto" onClick={clear}>
+            Dismiss
+          </Button>
+        </div>
+      ) : null}
+
+      <div className="flex min-h-0 flex-1">
+        {sidebarOpen ? (
+          <AppSidebar
+            plans={snapshot.plans}
+            plan={plan}
+            health={health}
+            focus={workspace.focus}
+            selection={workspace.selection}
+            query={workspace.query}
+            onSelectPlan={workspace.setPlan}
+            onNewPlan={() => workspace.setCreating("plan")}
+            onSetFocus={workspace.setFocus}
+            onSelectCourse={selectCourse}
+            onNewCourse={() => workspace.setCreating("course")}
+            onDeleteCourse={(course) =>
+              workspace.setPendingDelete({ kind: "course", id: course.id })
+            }
+          />
+        ) : null}
+
+        <main id={contentId} className="min-w-0 flex-1 overflow-y-auto bg-content">
+          {state.status === "loading" ? (
+            <div className="flex h-full items-center justify-center">
+              <Spinner label="Loading your plan" />
+            </div>
+          ) : !plan ? (
+            <EmptyState
+              title="No semesters yet"
+              description="A semester holds your courses. Add one to get started, or load a full sample semester to see what the app looks like with real material in it."
+              action={
+                <Button variant="accent" leadingIcon={<Plus />} onClick={loadSampleData}>
+                  Load sample data
+                </Button>
+              }
+            />
+          ) : workspace.view === "today" ? (
+            <TodayView
+              courses={focused}
+              health={health}
+              studyLog={snapshot.studyLog}
+              today={today}
+              selectedTopicId={workspace.selection?.kind === "topic" ? workspace.selection.id : null}
+              onSelectTopic={selectTopic}
+              onDeleteTopic={(_course, topic) =>
+                workspace.setPendingDelete({ kind: "topic", id: topic.id })
+              }
+              onGoToOutline={() => workspace.setView("outline")}
+            />
+          ) : workspace.view === "timeline" ? (
+            <TimelineView onGoToOutline={() => workspace.setView("outline")} />
+          ) : (
+            <OutlineView
+              courses={focused}
+              health={health}
+              today={today}
+              query={workspace.query}
+              selectedId={workspace.selection?.id ?? null}
+              onSelectCourse={selectCourse}
+              onSelectTopic={selectTopic}
+              onSelectExam={selectExam}
+              onDeleteTopic={(_course, topic) =>
+                workspace.setPendingDelete({ kind: "topic", id: topic.id })
+              }
+              onNewCourse={() => workspace.setCreating("course")}
+            />
+          )}
+        </main>
+
+        {workspace.inspectorOpen ? (
+          <Inspector
+            selection={selection}
+            health={health}
+            today={today}
+            onDelete={(target) =>
+              workspace.setPendingDelete(
+                target.kind === "course"
+                  ? { kind: "course", id: target.course.id }
+                  : target.kind === "topic"
+                    ? { kind: "topic", id: target.topic.id }
+                    : { kind: "exam", id: target.exam.id },
+              )
+            }
+          />
+        ) : null}
+      </div>
+
+      <CommandPalette
+        open={workspace.paletteOpen}
+        onOpenChange={workspace.setPaletteOpen}
+        commands={commands}
+      />
+
+      <NewPlanSheet
+        open={workspace.creating === "plan"}
+        onOpenChange={(open) => workspace.setCreating(open ? "plan" : null)}
+        onCreate={(input) => run(repository.createPlan(input).then(workspace.setPlan))}
+      />
+
+      <NewCourseSheet
+        open={workspace.creating === "course"}
+        onOpenChange={(open) => workspace.setCreating(open ? "course" : null)}
+        existing={plan?.courses ?? []}
+        onCreate={(input) => {
+          if (!plan) return;
+          run(
+            repository
+              .createCourse(plan.id, input)
+              .then((courseId) => revealSelection({ kind: "course", id: courseId })),
+          );
+        }}
+      />
+
+      <ConfirmDeleteSheet
+        target={pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) workspace.setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          if (pendingDelete) deleteResolved(pendingDelete);
+        }}
+      />
+    </div>
+  );
+}

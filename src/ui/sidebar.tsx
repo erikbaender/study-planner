@@ -15,7 +15,7 @@
  */
 
 import { clsx } from "clsx";
-import type { ReactNode } from "react";
+import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { Badge, ProgressBar } from "./feedback";
 
 export function Sidebar({
@@ -66,33 +66,37 @@ export function SidebarSection({
   );
 }
 
-export function SidebarItem({
-  label,
-  selected,
-  onSelect,
-  icon,
-  dotColor,
-  count,
-  badge,
-  progress,
-  className,
-}: {
-  label: string;
-  selected?: boolean;
-  onSelect: () => void;
-  icon?: ReactNode;
-  /** Course colour, drawn as the leading dot. */
-  dotColor?: string;
-  /** Trailing count, e.g. how many topics are behind. */
-  count?: number;
-  /** Exam countdown. Outlined when the exam date is provisional. */
-  badge?: ReactNode;
-  /** 0–1, or `null` when the course has no measured topics. */
-  progress?: number | null;
-  className?: string;
-}) {
+/**
+ * A row in the source list.
+ *
+ * The `<li>` takes any extra props and forwards its ref so that Radix's
+ * `asChild` can make the whole row a context-menu trigger. Attaching the menu
+ * to an inner wrapper instead would mean right-clicking the row's padding — the
+ * majority of its area — did nothing.
+ */
+export const SidebarItem = forwardRef<
+  HTMLLIElement,
+  {
+    label: string;
+    selected?: boolean;
+    onSelect: () => void;
+    icon?: ReactNode;
+    /** Course colour, drawn as the leading dot. */
+    dotColor?: string;
+    /** Trailing count, e.g. how many topics are behind. */
+    count?: number;
+    /** Exam countdown. Outlined when the exam date is provisional. */
+    badge?: ReactNode;
+    /** 0–1, or `null` when the course has no measured topics. */
+    progress?: number | null;
+    className?: string;
+  } & Omit<ComponentPropsWithoutRef<"li">, "onSelect" | "className">
+>(function SidebarItem(
+  { label, selected, onSelect, icon, dotColor, count, badge, progress, className, ...rest },
+  ref,
+) {
   return (
-    <li>
+    <li ref={ref} {...rest}>
       <button
         type="button"
         onClick={onSelect}
@@ -152,7 +156,7 @@ export function SidebarItem({
       </button>
     </li>
   );
-}
+});
 
 /**
  * The exam countdown badge. Provisional dates are outlined, confirmed ones

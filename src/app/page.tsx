@@ -1,5 +1,5 @@
-import { StudyPlannerApp } from "@/components/StudyPlannerApp";
+import { AppShell } from "@/features/shell/app-shell";
 
 export default function Home() {
-  return <StudyPlannerApp />;
+  return <AppShell />;
 }

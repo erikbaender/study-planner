@@ -411,7 +411,7 @@ phase 5 lands, so `main` is never broken.
 | **0** | ✅ Plan; remove `AGENTS.md` and `REQUIREMENTS.md` | — |
 | **1** | ✅ Domain layer, repository abstraction, new schema, seed generator, delete GitHub import, remove Ionic, Vitest + CI | 2–3 d |
 | **2** | ✅ macOS design system: tokens, materials, typography, primitives on Radix | 2 d |
-| **3** | App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
+| **3** | ✅ App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
 | **4** | Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
 | **5** | Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
 | **6** | Scheduling engine + Today view + Reflow | 3 d |
@@ -502,6 +502,53 @@ can drag: click to jump, drag to scrub, arrows / PageUp / PageDown / Home / End 
 keyboard, committing on release rather than per pixel. The knob is hidden at rest, so forty rows
 still read as progress rather than as a control panel. The `n / m units` readout stays beside it,
 because a bar alone cannot answer "how many are left". It brings the suite to 227.
+
+### 9.3 Phase 3 as delivered
+
+The 600-line interim shell is gone. In its place, `src/features/`:
+
+```
+workspace/  store.ts (Zustand)  scope.ts  keyboard.ts  commands.ts
+shell/      app-shell.tsx  app-sidebar.tsx  app-toolbar.tsx  inspector.tsx
+            command-palette.tsx  sheets.tsx
+today/  timeline/  outline/  topics/
+```
+
+`app-shell.tsx` is wiring only; everything with a decision in it is a pure module beside it,
+which is what keeps this from re-growing into the file it replaced.
+
+**Two axes, not one.** *Focus* is which courses you are looking at — all, Behind, Exams soon, or
+one course. *View* is how they are shown — Today, Timeline, Outline. macOS splits sidebar-source
+from toolbar-presentation the same way. The smart focuses are questions asked of live metrics on
+every render, so a course leaves "Behind" the moment it stops being behind; nothing is filed.
+
+**Inspector (⌘I).** Replaces the modal-per-click pattern entirely. Course, topic and exam each
+get a panel, editable in place, committing on blur rather than per keystroke. It holds to the
+absolute-value/delta rule: dragging progress files a `logStudy` entry for the difference, and
+`completedUnits` is passed through `updateTopic` untouched, so velocity always has a record
+behind it. A selection whose id no longer resolves empties the panel rather than describing
+whatever now occupies that position.
+
+**Command palette (⌘K).** ARIA combobox — focus stays in the field, `aria-activedescendant`
+names the highlighted row. Ranks title-prefix over word-prefix over substring rather than fuzzy
+matching, because with ~400 topics whose names repeat across courses a subsequence matcher
+returns most of them for most queries. Topics are withheld until something is typed.
+
+**Keyboard map.** One table, three consumers: the handler, the menus that print the shortcut, and
+the palette that lists both. Two deviations from §7.4, both because a web page does not get the
+whole keyboard: ⌘N belongs to the browser, so New is ⌥⌘N; Chrome spends ⌥⌘I on its developer
+tools, so the inspector is ⌘I with ⌥⌘I kept as a second chord. Every action is also in ⌘K, which
+is the one path nothing can intercept.
+
+**Views.** Today is real and computed from work already recorded — next exams with on-track
+badges, the courses that will not finish, and a "pick up where you left off" list with the same
+draggable bars, capped at two topics per course so the nearest exam cannot fill every slot.
+Phase 6 adds the scheduler's blocks above it. Outline is disclosure groups per course, collapsed
+when several are in focus, keeping the exam and bulk-paste forms; phase 4 turns the topic list
+into the editable table. Timeline is an honest placeholder — dressing the old Gantt in the new
+design system would only make its faults harder to see.
+
+The suite is **321 tests** across three Vitest projects (`domain`, `ui`, `features`).
 
 ### Traceability to the original audit recommendations
 

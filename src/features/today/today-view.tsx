@@ -1,0 +1,263 @@
+"use client";
+
+/**
+ * Today — the landing view.
+ *
+ * It answers the question the app is opened with: *what should I do now?* Three
+ * cards, in the order the question actually decomposes:
+ *
+ * 1. **What is coming** — the next exams, with how many days and whether the
+ *    course will be ready.
+ * 2. **What is slipping** — the courses that will not finish in time, with the
+ *    size of the gap.
+ * 3. **What to pick up** — the topics already in progress, each with the same
+ *    draggable bar as the outline, so logging today's work happens here rather
+ *    than somewhere else.
+ *
+ * Phase 6 adds the scheduler's blocks for the day above all three, and the
+ * *Reflow* recovery action to card 2. Everything here is computed from work
+ * already recorded, which is why it can exist before the scheduler does.
+ */
+
+import { CalendarCheck } from "lucide-react";
+import type {
+  Course,
+  CourseHealth,
+  StudyLogEntry,
+  Topic,
+} from "@/domain";
+import { Badge, Button, Card, CountdownBadge, EmptyState } from "@/ui";
+import { TopicRow } from "@/features/topics/topic-row";
+
+/** How many topics the "continue" card offers. A list you scroll is a backlog, not a suggestion. */
+const CONTINUE_LIMIT = 8;
+
+/**
+ * And at most this many from any one course. Without it the course with the
+ * nearest exam fills every slot, which is a plan for the week rather than a
+ * shortlist for today, and hides that nine other courses exist.
+ */
+const CONTINUE_PER_COURSE = 2;
+
+export function TodayView({
+  courses,
+  health,
+  studyLog,
+  today,
+  selectedTopicId,
+  onSelectTopic,
+  onDeleteTopic,
+  onGoToOutline,
+}: {
+  courses: readonly Course[];
+  health: Map<string, CourseHealth>;
+  studyLog: readonly StudyLogEntry[];
+  today: string;
+  selectedTopicId: string | null;
+  onSelectTopic: (course: Course, topic: Topic) => void;
+  onDeleteTopic: (course: Course, topic: Topic) => void;
+  onGoToOutline: () => void;
+}) {
+  const exams = courses
+    .flatMap((course) => {
+      const courseHealth = health.get(course.id);
+      return courseHealth?.exam && courseHealth.daysUntilExam !== null
+        ? [{ course, exam: courseHealth.exam, days: courseHealth.daysUntilExam, health: courseHealth }]
+        : [];
+    })
+    .sort((left, right) => left.days - right.days)
+    .slice(0, 3);
+
+  const behind = courses.filter((course) => {
+    const pace = health.get(course.id)?.pace;
+    return pace ? !pace.onTrack : false;
+  });
+
+  const continueTopics = pickUpNext(courses, health, CONTINUE_LIMIT);
+
+  const loggedToday = studyLog
+    .filter((entry) => entry.date === today)
+    .reduce((sum, entry) => sum + entry.units, 0);
+
+  if (courses.length === 0) {
+    return (
+      <EmptyState
+        icon={<CalendarCheck />}
+        title="Nothing in focus"
+        description="No course matches the current focus. Widen it in the sidebar, or add material in the outline."
+        action={
+          <Button variant="accent" onClick={onGoToOutline}>
+            Open the outline
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="mx-auto flex max-w-4xl flex-col gap-4 p-6">
+      <header className="flex flex-wrap items-baseline gap-3">
+        <h2 className="text-title1 font-semibold">{formatToday(today)}</h2>
+        <p className="text-body text-secondary">
+          {loggedToday > 0
+            ? `${loggedToday} units logged today`
+            : // Not "0 units logged" — the day is not over, and a zero reads
+              // like a verdict rather than a starting point.
+              "Nothing logged yet today"}
+        </p>
+      </header>
+
+      <Card className="flex flex-col gap-3">
+        <h3 className="text-title3 font-semibold">Coming up</h3>
+        {exams.length === 0 ? (
+          <p className="text-body text-secondary">
+            No exam dates on the courses in focus. Add one — a provisional window is enough for the
+            app to start planning backwards from it.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {exams.map(({ course, exam, days, health: courseHealth }) => (
+              <li key={exam.id} className="flex items-center gap-3 text-body">
+                <span
+                  aria-hidden="true"
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ background: course.color }}
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="text-tertiary">{course.name} · </span>
+                  {exam.name}
+                </span>
+                {courseHealth.pace ? (
+                  <Badge tone={courseHealth.pace.onTrack ? "green" : "red"}>
+                    {courseHealth.pace.onTrack ? "On track" : "Behind"}
+                  </Badge>
+                ) : null}
+                <span className="w-24 shrink-0 text-right text-callout tabular-nums text-secondary">
+                  {exam.startDate}
+                </span>
+                <CountdownBadge days={days} provisional={exam.status === "provisional"} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {behind.length > 0 ? (
+        <Card className="flex flex-col gap-3">
+          <h3 className="text-title3 font-semibold">Behind</h3>
+          <ul className="flex flex-col gap-1.5">
+            {behind.map((course) => {
+              const pace = health.get(course.id)!.pace!;
+              return (
+                <li key={course.id} className="flex items-center gap-3 text-body">
+                  <span
+                    aria-hidden="true"
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ background: course.color }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{course.name}</span>
+                  <span className="shrink-0 text-callout tabular-nums text-secondary">
+                    {pace.remainingUnits} units left
+                  </span>
+                  <Badge tone="red">
+                    {Number.isFinite(pace.requiredPace)
+                      ? `${Math.ceil(pace.requiredPace)} / day needed`
+                      : "No days left"}
+                  </Badge>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-footnote text-tertiary">
+            Needed pace counts only the days you have marked as study days.
+          </p>
+        </Card>
+      ) : null}
+
+      <Card className="flex flex-col gap-3">
+        <h3 className="text-title3 font-semibold">Pick up where you left off</h3>
+        {continueTopics.length === 0 ? (
+          <p className="text-body text-secondary">
+            Nothing is part-finished. Start anything from the outline and it will appear here.
+          </p>
+        ) : (
+          <ul className="flex flex-col">
+            {continueTopics.map(({ course, topic }) => (
+              <TopicRow
+                key={topic.id}
+                topic={topic}
+                today={today}
+                prefix={course.name}
+                selected={topic.id === selectedTopicId}
+                onSelect={() => onSelectTopic(course, topic)}
+                onDelete={() => onDeleteTopic(course, topic)}
+              />
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * What to offer next.
+ *
+ * Started-but-unfinished topics first, because finishing something in flight
+ * beats opening something new; within that, the courses with the nearest exam
+ * come first. Untouched topics are only offered once there is nothing in
+ * flight — this is a "carry on" list, not a scheduler, and the scheduler in
+ * phase 6 is what will make the ordering answerable properly.
+ */
+function pickUpNext(
+  courses: readonly Course[],
+  health: Map<string, CourseHealth>,
+  limit: number,
+): Array<{ course: Course; topic: Topic }> {
+  const urgency = (course: Course) => health.get(course.id)?.daysUntilExam ?? Infinity;
+
+  const rows = courses.flatMap((course) =>
+    course.topics
+      .filter((topic) => topic.status !== "done" && topic.totalUnits > 0)
+      .map((topic) => ({ course, topic })),
+  );
+
+  const started = rows.filter(
+    ({ topic }) => topic.completedUnits > 0 && topic.completedUnits < topic.totalUnits,
+  );
+  const untouched = rows.filter(({ topic }) => topic.completedUnits === 0);
+
+  const byUrgency = (
+    left: { course: Course; topic: Topic },
+    right: { course: Course; topic: Topic },
+  ) => urgency(left.course) - urgency(right.course) || left.topic.order - right.topic.order;
+
+  return capPerCourse([...started.sort(byUrgency), ...untouched.sort(byUrgency)], limit);
+}
+
+function capPerCourse(
+  rows: Array<{ course: Course; topic: Topic }>,
+  limit: number,
+): Array<{ course: Course; topic: Topic }> {
+  const taken = new Map<string, number>();
+  const kept: Array<{ course: Course; topic: Topic }> = [];
+
+  for (const row of rows) {
+    if (kept.length === limit) break;
+    const used = taken.get(row.course.id) ?? 0;
+    if (used === CONTINUE_PER_COURSE) continue;
+    taken.set(row.course.id, used + 1);
+    kept.push(row);
+  }
+
+  return kept;
+}
+
+/** "Saturday, 1 August" — the date as a person says it, not as a machine stores it. */
+function formatToday(today: string): string {
+  return new Date(`${today}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+}
