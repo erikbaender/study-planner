@@ -382,46 +382,46 @@
  *
  * `saturate()` before `blur()` is what stops blurred content going grey.
  */
+/**
+ * The blur is applied through Tailwind's own `backdrop-*` utilities rather than
+ * by writing `backdrop-filter` here by hand. Written by hand it does not
+ * survive the build: the compiled rule came out carrying only
+ * `-webkit-backdrop-filter`, the unprefixed property having been dropped, so
+ * every material in the app was translucent but never actually blurred. The
+ * one surface that *was* frosted — a timeline label — was the one that happened
+ * to use `backdrop-blur-sm` instead.
+ *
+ * `saturate` is constant across all four; only the radius varies, with how much
+ * of what is behind should survive.
+ */
 @utility material-sidebar {
   background: var(--mac-material-sidebar);
-  backdrop-filter: saturate(180%) blur(30px);
-  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  @apply backdrop-blur-[30px] backdrop-saturate-[1.8];
 }
 
 @utility material-header {
   background: var(--mac-material-header);
-  backdrop-filter: saturate(180%) blur(30px);
-  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  @apply backdrop-blur-[30px] backdrop-saturate-[1.8];
 }
 
+/** A panel you are meant to read, not see past. */
 @utility material-popover {
   background: var(--mac-material-popover);
-  backdrop-filter: saturate(180%) blur(24px);
-  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  @apply backdrop-blur-xl backdrop-saturate-[1.8];
 }
 
-/**
- * The blur radius is the one thing that varies, and it varies with how much of
- * what is behind should survive: an inline label wants you to still read the
- * chart under it, a popover wants the opposite. `saturate()` is constant,
- * because it is what stops any blurred content going grey.
- */
+/** Small labels riding a scrolling canvas: you should still read the chart under them. */
 @utility material-inline {
   background: var(--mac-material-inline);
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  @apply backdrop-blur-md backdrop-saturate-[1.8];
 }
 
+/** A panel *covering* content rather than sitting beside it, on a narrow window. */
 @utility material-overlay {
   background: var(--mac-material-overlay);
-  backdrop-filter: saturate(180%) blur(30px);
-  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  @apply backdrop-blur-[30px] backdrop-saturate-[1.8];
 }
 
-/**
- * Reduced transparency is an accessibility setting, not a preference: users who
- * set it often cannot read text over a blur at all. Fall back to solid.
- */
 @media (prefers-reduced-transparency: reduce) {
   .material-sidebar,
   .material-header,
