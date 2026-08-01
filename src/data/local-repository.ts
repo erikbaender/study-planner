@@ -395,6 +395,36 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
       );
     },
 
+    async reorderTopics(courseId, topicIds) {
+      await commit((snapshot) =>
+        withPlans(
+          snapshot,
+          mapCourse(snapshot, courseId, (course) => {
+            const positions = new Map(topicIds.map((id, index) => [id, index]));
+            // The whole course, or nothing. A partial list would leave two
+            // topics claiming the same position, and the order they then render
+            // in would depend on the sort's stability rather than on anything
+            // the user asked for.
+            if (positions.size !== course.topics.length) {
+              throw new ValidationError("Reorder must list every topic in the course exactly once");
+            }
+            return {
+              ...course,
+              topics: [...course.topics]
+                .map((topic) => {
+                  const order = positions.get(topic.id);
+                  if (order === undefined) {
+                    throw new ValidationError("Topic does not belong to that course");
+                  }
+                  return { ...topic, order };
+                })
+                .sort((left, right) => left.order - right.order),
+            };
+          }),
+        ),
+      );
+    },
+
     /* ------------------------------------------------------------- exams */
 
     createExam(courseId, input: ExamInput) {

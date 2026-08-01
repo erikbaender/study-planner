@@ -277,6 +277,13 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       });
     },
 
+    async reorderTopics(courseId, topicIds) {
+      await client.mutation(api.planner.reorderTopics, {
+        courseId: asId<"courses">(courseId),
+        topicIds: topicIds.map((id) => asId<"topics">(id)),
+      });
+    },
+
     async createExam(courseId, input: ExamInput) {
       return await client.mutation(api.planner.createExam, {
         courseId: asId<"courses">(courseId),

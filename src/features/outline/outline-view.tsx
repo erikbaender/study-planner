@@ -69,7 +69,11 @@ export function OutlineView({
   // Overrides only. The default comes from how many courses are in focus, so
   // narrowing to one course opens it without anyone having to click a triangle.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const defaultOpen = courses.length === 1;
+  // Open when it is the only course in focus, or when it is the one being
+  // inspected — selecting a course in the sidebar should reveal its material,
+  // not leave you hunting for the triangle.
+  const isDefaultOpen = (course: Course) =>
+    courses.length === 1 || course.id === selectedId;
 
   if (courses.length === 0) {
     return (
@@ -95,11 +99,11 @@ export function OutlineView({
           today={today}
           query={query}
           selectedId={selectedId}
-          open={expanded[course.id] ?? defaultOpen}
+          open={expanded[course.id] ?? isDefaultOpen(course)}
           onToggle={() =>
             setExpanded((current) => ({
               ...current,
-              [course.id]: !(current[course.id] ?? defaultOpen),
+              [course.id]: !(current[course.id] ?? isDefaultOpen(course)),
             }))
           }
           onSelectCourse={() => onSelectCourse(course)}

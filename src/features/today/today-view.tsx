@@ -39,6 +39,9 @@ const CONTINUE_LIMIT = 8;
  */
 const CONTINUE_PER_COURSE = 2;
 
+/** How many slipping courses the card names before it starts counting them instead. */
+const BEHIND_LIMIT = 5;
+
 export function TodayView({
   courses,
   health,
@@ -72,6 +75,19 @@ export function TodayView({
     const pace = health.get(course.id)?.pace;
     return pace ? !pace.onTrack : false;
   });
+
+  // Capped: a ten-row list of everything that is slipping is a wall, and the
+  // two courses at the bottom of it are the ones you were never going to reach
+  // today anyway. Sorted by how near the exam is, so the cut falls in the right
+  // place.
+  const behindShown = behind
+    .slice()
+    .sort(
+      (left, right) =>
+        (health.get(left.id)?.daysUntilExam ?? Infinity) -
+        (health.get(right.id)?.daysUntilExam ?? Infinity),
+    )
+    .slice(0, BEHIND_LIMIT);
 
   const continueTopics = pickUpNext(courses, health, CONTINUE_LIMIT);
 
@@ -146,7 +162,7 @@ export function TodayView({
         <Card className="flex flex-col gap-3">
           <h3 className="text-title3 font-semibold">Behind</h3>
           <ul className="flex flex-col gap-1.5">
-            {behind.map((course) => {
+            {behindShown.map((course) => {
               const pace = health.get(course.id)!.pace!;
               return (
                 <li key={course.id} className="flex items-center gap-3 text-body">
@@ -169,7 +185,9 @@ export function TodayView({
             })}
           </ul>
           <p className="text-footnote text-tertiary">
-            Needed pace counts only the days you have marked as study days.
+            {behind.length > behindShown.length
+              ? `${behind.length - behindShown.length} more behind. Needed pace counts only the days you have marked as study days.`
+              : "Needed pace counts only the days you have marked as study days."}
           </p>
         </Card>
       ) : null}

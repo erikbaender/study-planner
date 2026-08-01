@@ -146,10 +146,11 @@ export function AppShell() {
     workspace.select(null);
   };
 
-  const selectCourse = (course: Course) => {
-    workspace.setFocus({ kind: "course", courseId: course.id });
-    revealSelection({ kind: "course", id: course.id });
-  };
+  // Selecting is not scoping. Clicking a course in the sidebar inspects it and
+  // opens its section in the outline; it does not hide the other nine. Narrowing
+  // to one course is what the Focus rows are for, and conflating the two is how
+  // a sidebar click becomes something you undo.
+  const selectCourse = (course: Course) => revealSelection({ kind: "course", id: course.id });
   const selectTopic = (_course: Course, topic: Topic) =>
     revealSelection({ kind: "topic", id: topic.id });
   const selectExam = (_course: Course, exam: Exam) =>

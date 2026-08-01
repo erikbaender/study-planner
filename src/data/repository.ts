@@ -145,6 +145,8 @@ export interface PlannerRepository {
   updateTopic(topicId: EntityId, patch: TopicPatch): Promise<void>;
   deleteTopic(topicId: EntityId): Promise<void>;
   setTopicDependencies(topicId: EntityId, dependencyIds: EntityId[]): Promise<void>;
+  /** New order for every topic in the course. Partial lists are rejected, not merged. */
+  reorderTopics(courseId: EntityId, topicIds: EntityId[]): Promise<void>;
 
   createStudyBlock(input: StudyBlockInput): Promise<EntityId>;
   updateStudyBlock(

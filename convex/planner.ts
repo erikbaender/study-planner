@@ -339,6 +339,22 @@ export const reorderCourses = mutation({
   },
 });
 
+export const reorderTopics = mutation({
+  args: { courseId: v.id("courses"), topicIds: v.array(v.id("topics")) },
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    await assertCourseOwner(ctx, args.courseId, userId);
+    const now = Date.now();
+    for (const [index, topicId] of args.topicIds.entries()) {
+      const { topic } = await assertTopicOwner(ctx, topicId, userId);
+      if (topic.courseId !== args.courseId) {
+        throw new Error("Topic does not belong to that course");
+      }
+      await ctx.db.patch(topicId, { order: index, updatedAt: now });
+    }
+  },
+});
+
 /* ------------------------------------------------------------------ exams */
 
 export const createExam = mutation({
