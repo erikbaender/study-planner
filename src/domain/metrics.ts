@@ -198,6 +198,38 @@ export function projectFinishDate(options: {
   return null;
 }
 
+/**
+ * Consecutive study days ending today (or yesterday) with work logged.
+ *
+ * Days that are not study days do not break it — taking your scheduled Sunday
+ * off is not falling off the wagon, and a streak that punished it would train
+ * exactly the wrong habit. Today not being logged *yet* does not break it
+ * either: the day is not over, and a counter that resets every morning is one
+ * nobody would trust by lunchtime.
+ */
+export function studyStreak(
+  log: readonly StudyLogEntry[],
+  today: IsoDate,
+  calendar: StudyCalendar,
+  maxDays = 365,
+): number {
+  const logged = new Set(log.filter((entry) => entry.units > 0).map((entry) => entry.date));
+
+  let streak = 0;
+  let cursor = today;
+
+  for (let elapsed = 0; elapsed < maxDays; elapsed += 1) {
+    if (isStudyDay(cursor, calendar)) {
+      if (logged.has(cursor)) streak += 1;
+      else if (cursor !== today) break;
+      else if (streak > 0) break;
+    }
+    cursor = addDays(cursor, -1);
+  }
+
+  return streak;
+}
+
 export type CourseHealth = {
   courseId: string;
   progress: Progress;

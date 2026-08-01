@@ -235,7 +235,9 @@ describe("Inspector", () => {
       );
 
       expect(screen.getByText("Provisional")).toBeInTheDocument();
-      expect(screen.getByText("2026-06-14")).toBeInTheDocument();
+      // The window's end is the field that makes it provisional, so it is
+      // editable rather than merely reported.
+      expect(screen.getByLabelText("Window ends")).toHaveValue("2026-06-14");
       expect(screen.getByText(/counts backwards from the/)).toBeInTheDocument();
     });
   });

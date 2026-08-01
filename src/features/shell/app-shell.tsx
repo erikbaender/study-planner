@@ -76,7 +76,15 @@ export function AppShell() {
 
   const contentId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  /**
+   * Both side panels start closed on a narrow window and open on a wide one.
+   * A 390px phone has room for exactly one column, and a sidebar that takes
+   * two-thirds of it is not a sidebar. Read once, because a resize mid-session
+   * is a deliberate act and should not throw away what the user has opened.
+   */
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => typeof window === "undefined" || window.innerWidth >= 1024,
+  );
 
   const workspace = useWorkspace();
   const apple = useMemo(() => isApplePlatform(), []);
@@ -244,8 +252,16 @@ export function AppShell() {
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {sidebarOpen ? (
+          // Overlaid on a narrow window, in the flow on a wide one: at 390px
+          // there is no room for two columns, and pushing the content off the
+          // screen is worse than covering it.
+          //
+          // Opaque while overlaid. The sidebar's material is translucent by
+          // design, which is right beside content and unreadable on top of it —
+          // the wrapper supplies a backing so the blur has something to blur.
+          <div className="absolute inset-y-0 left-0 z-30 flex bg-window shadow-popover lg:static lg:z-auto lg:bg-transparent lg:shadow-none">
           <AppSidebar
             plans={snapshot.plans}
             plan={plan}
@@ -262,6 +278,7 @@ export function AppShell() {
               workspace.setPendingDelete({ kind: "course", id: course.id })
             }
           />
+          </div>
         ) : null}
 
         <main id={contentId} className="min-w-0 flex-1 overflow-y-auto bg-content">
@@ -322,6 +339,7 @@ export function AppShell() {
         </main>
 
         {workspace.inspectorOpen ? (
+          <div className="absolute inset-y-0 right-0 z-30 flex bg-window shadow-popover lg:static lg:z-auto lg:bg-transparent lg:shadow-none">
           <Inspector
             selection={selection}
             health={health}
@@ -336,6 +354,7 @@ export function AppShell() {
               )
             }
           />
+          </div>
         ) : null}
       </div>
 

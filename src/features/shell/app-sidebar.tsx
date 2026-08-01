@@ -157,6 +157,7 @@ export function AppSidebar({
                     <CountdownBadge
                       days={courseHealth.daysUntilExam}
                       provisional={exam.status === "provisional"}
+                      atRisk={isBehind(courseHealth)}
                     />
                   ) : undefined
                 }

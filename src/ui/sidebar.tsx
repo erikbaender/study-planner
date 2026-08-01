@@ -15,6 +15,7 @@
  */
 
 import { clsx } from "clsx";
+import { AlertTriangle } from "lucide-react";
 import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { Badge, ProgressBar } from "./feedback";
 
@@ -165,17 +166,26 @@ export const SidebarItem = forwardRef<
 export function CountdownBadge({
   days,
   provisional,
+  atRisk,
 }: {
   days: number;
   provisional?: boolean;
+  /** The course will not be finished in time. Shown, and said, rather than left to the colour. */
+  atRisk?: boolean;
 }) {
-  const tone = days <= 3 ? "red" : days <= 10 ? "orange" : "neutral";
+  // At risk overrides the distance: an exam six weeks away that you will not be
+  // ready for is the more urgent fact, and "6w" in grey says the opposite.
+  const tone = atRisk ? "red" : days <= 3 ? "red" : days <= 10 ? "orange" : "neutral";
   return (
     <Badge tone={tone} variant={provisional ? "outline" : "solid"}>
       <span className="sr-only">
         {provisional ? "Provisional exam, " : "Exam in "}
         {days} days
+        {atRisk ? ", not on track" : ""}
       </span>
+      {atRisk ? (
+        <AlertTriangle aria-hidden="true" className="size-2.5" strokeWidth={3} />
+      ) : null}
       <span aria-hidden="true">{days}d</span>
     </Badge>
   );

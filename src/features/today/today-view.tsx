@@ -27,7 +27,7 @@ import type {
   Topic,
 } from "@/domain";
 import type { PlannerSnapshot, StudyBlock } from "@/domain";
-import { countStudyDays, isStudyDay } from "@/domain";
+import { countStudyDays, isStudyDay, studyStreak, velocity, VELOCITY_WINDOW_DAYS } from "@/domain";
 import { Badge, Button, Card, CountdownBadge, EmptyState } from "@/ui";
 import { TopicRow } from "@/features/topics/topic-row";
 import { PlanningActions } from "@/features/planning/planning-actions";
@@ -96,6 +96,12 @@ export function TodayView({
 
   const plannedToday = todaysWork(courses, today, snapshot);
 
+  // Measured over the whole plan rather than the focus: a pace figure that
+  // changed when you clicked a sidebar row would be describing the filter
+  // rather than the person.
+  const pace = velocity(snapshot.studyLog, today, snapshot.preferences, VELOCITY_WINDOW_DAYS);
+  const streak = studyStreak(snapshot.studyLog, today, snapshot.preferences);
+
   const continueTopics = pickUpNext(courses, health, CONTINUE_LIMIT);
 
   const loggedToday = studyLog
@@ -128,6 +134,25 @@ export function TodayView({
               // like a verdict rather than a starting point.
               "Nothing logged yet today"}
         </p>
+        <dl className="ml-auto flex items-baseline gap-5">
+          <div className="flex items-baseline gap-1.5">
+            <dt className="text-callout text-tertiary">Pace</dt>
+            <dd className="text-body tabular-nums">
+              {pace > 0
+                ? `${pace.toFixed(1)} / day`
+                : // No work in the window is not a pace of zero, it is no
+                  // measurement. A "0.0 / day" here would be a verdict drawn
+                  // from an empty week.
+                  "not measured yet"}
+            </dd>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <dt className="text-callout text-tertiary">Streak</dt>
+            <dd className="text-body tabular-nums">
+              {streak > 0 ? `${streak} day${streak === 1 ? "" : "s"}` : "—"}
+            </dd>
+          </div>
+        </dl>
       </header>
 
       <Card className="flex flex-col gap-3">

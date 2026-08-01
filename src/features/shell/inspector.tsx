@@ -554,6 +554,28 @@ function ExamInspector({
   exam: Exam;
   onDelete: () => void;
 }) {
+  const repository = useRepository();
+  const { run } = usePlannerErrors();
+
+  /**
+   * The window's end is what makes an exam provisional, so it is the only
+   * control offered: a separate "provisional" switch could be set to disagree
+   * with the dates, and then the app would be holding two answers to one
+   * question.
+   */
+  const patch = (changes: Partial<{ name: string; startDate: string; endDate?: string }>) =>
+    run(
+      repository.updateExam(exam.id, {
+        name: exam.name,
+        kind: exam.kind,
+        startDate: exam.startDate,
+        endDate: exam.endDate,
+        status: exam.status,
+        notes: exam.notes,
+        ...changes,
+      }),
+    );
+
   return (
     <>
       <Header kind="Exam">
@@ -564,26 +586,35 @@ function ExamInspector({
       <Separator />
 
       <Section>
-        <Row label="Date">{exam.startDate}</Row>
-        {exam.status === "provisional" ? (
-          <>
-            <Row label="Window ends">{exam.endDate ?? "Open"}</Row>
-            <Row label="Certainty">
-              <Badge tone="orange" variant="outline">
-                Provisional
-              </Badge>
-            </Row>
-            <p className="text-callout text-secondary">
-              Planning counts backwards from the <em>start</em> of the window. Preparing for the
-              far end is how an announced window turns into a missed exam.
-            </p>
-          </>
-        ) : (
-          <Row label="Certainty">
+        <DraftText label="Name" value={exam.name} onCommit={(name) => name && patch({ name })} />
+        <TextField
+          label="Date"
+          type="date"
+          value={exam.startDate}
+          onChange={(event) => event.target.value && patch({ startDate: event.target.value })}
+        />
+        <TextField
+          label="Window ends"
+          type="date"
+          hint="Leave empty for a confirmed date. Filling it in marks the exam provisional."
+          value={exam.endDate ?? ""}
+          onChange={(event) => patch({ endDate: event.target.value || undefined })}
+        />
+        <Row label="Certainty">
+          {exam.status === "provisional" ? (
+            <Badge tone="orange" variant="outline">
+              Provisional
+            </Badge>
+          ) : (
             <Badge tone="green">Confirmed</Badge>
-          </Row>
-        )}
-        <Row label="Kind">{exam.kind}</Row>
+          )}
+        </Row>
+        {exam.status === "provisional" ? (
+          <p className="text-callout text-secondary">
+            Planning counts backwards from the <em>start</em> of the window. Preparing for the far
+            end is how an announced window turns into a missed exam.
+          </p>
+        ) : null}
       </Section>
 
       <Separator />

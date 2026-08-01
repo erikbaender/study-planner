@@ -210,6 +210,7 @@ function CourseSection({
           <CountdownBadge
             days={health.daysUntilExam}
             provisional={health.exam.status === "provisional"}
+            atRisk={Boolean(health.pace && !health.pace.onTrack)}
           />
         ) : null}
       </header>
