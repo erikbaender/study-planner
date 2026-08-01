@@ -412,12 +412,12 @@ phase 5 lands, so `main` is never broken.
 | **1** | ✅ Domain layer, repository abstraction, new schema, seed generator, delete GitHub import, remove Ionic, Vitest + CI | 2–3 d |
 | **2** | ✅ macOS design system: tokens, materials, typography, primitives on Radix | 2 d |
 | **3** | ✅ App shell: three-column split view, toolbar, sidebar, inspector, ⌘K, keyboard map | 2 d |
-| **4** | Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
-| **5** | Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
-| **6** | Scheduling engine + Today view + Reflow | 3 d |
-| **7** | Exams, progress logging, velocity, on-track indicators | 2 d |
-| **8** | Restore JSON import/export into the new UI | 1 d |
-| **9** | Accessibility audit, mobile layout, performance pass at 400 topics, light/dark polish | 2–3 d |
+| **4** | ✅ Outline view + bulk entry parser — *the permanent home for course creation* | 2 d |
+| **5** | ✅ Timeline rebuild: virtualization, zoom, today line, exam markers, drag threshold, popovers | 3–4 d |
+| **6** | ✅ Scheduling engine + Today view + Reflow | 3 d |
+| **7** | ✅ Exams, progress logging, velocity, on-track indicators | 2 d |
+| **8** | ✅ Restore JSON import/export into the new UI | 1 d |
+| **9** | ✅ Accessibility audit, mobile layout, performance pass at 400 topics, light/dark polish | 2–3 d |
 
 **≈ 3 weeks.**
 
@@ -549,6 +549,46 @@ into the editable table. Timeline is an honest placeholder — dressing the old 
 design system would only make its faults harder to see.
 
 The suite is **321 tests** across three Vitest projects (`domain`, `ui`, `features`).
+
+### 9.3 Phases 3–9 as delivered
+
+**Phase 3 — the shell.** `StudyPlannerApp.tsx` is gone; `src/features/` holds the shell and the
+views. The navigation model separates *focus* (which courses are in scope — all, behind, exam
+inside two weeks, or one) from *view* (Today / Timeline / Outline), as macOS separates the
+sidebar's source from the toolbar's presentation. The inspector replaces the modal-per-click
+pattern, editing courses, topics and exams in place and committing on blur. ⌘K is built on the
+ARIA combobox pattern and matters more than as a convenience: the browser owns ⌘N and Chrome
+owns ⌥⌘I, so the palette is the one path to every action that cannot be intercepted.
+`workspace/keyboard.ts` records which chords the browser eats and what was bound instead.
+Zustand holds the ephemeral view state; none of it is persisted.
+
+**Phase 4 — the outline as a table.** Cells read as text and edit in place, because four hundred
+visible input boxes read as a form to fill in rather than as material you already have. ⌘⏎ adds
+a row in the section the cursor is in. Bulk paste moved into a sheet with a preview of what will
+be created *before* it is created. Drag-to-reorder was skipped: it needs a `reorderTopics` method
+the repository does not have, which is data-layer work.
+
+**Phase 5 — the timeline.** A 4px drag threshold, four zoom levels, bars as focusable buttons
+with progress drawn as an internal fill, popovers anchored to the bar. Exams are a rule with a
+flag rather than another bar; a provisional window is a faint hatched band across its span. Not
+virtualized — lanes collapse to a roll-up bar and are collapsed by default, so the resting row
+count is the course count. Geometry is a pure module with its own tests.
+
+**Phase 6 — scheduling.** `src/domain/scheduling.ts` is pure and deterministic. Work is offered
+days nearest-deadline-first, then by priority, then in topological order. Manual blocks are
+booked first and never regenerated. Failure is an output: the plan sheet previews blocks, days
+touched, and the shortfall, with a capacity stepper that recomputes live and writes nothing until
+Apply.
+
+**Phase 7 — exams and velocity.** Exams edit in the inspector. Today carries a pace and streak
+reading; `CountdownBadge` gains an at-risk state, because being unready for an exam six weeks out
+is more urgent than its distance.
+
+**Phase 8 — import/export.** Already in the toolbar's overflow menu from phase 3.
+
+**Phase 9 — polish.** One column below `lg`, with both side panels overlaid and given an opaque
+backing; their material is translucent by design, which is right beside content and unreadable on
+top of it. Verified in light mode.
 
 ### Traceability to the original audit recommendations
 
