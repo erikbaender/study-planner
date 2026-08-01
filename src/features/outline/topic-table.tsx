@@ -22,10 +22,12 @@ import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import { UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
-import { ContextMenu, IconButton, ProgressBar, ProgressSlider } from "@/ui";
+import { ContextMenu, DropdownMenu, IconButton } from "@/ui";
+import { TopicProgressCell } from "@/features/topics/progress-cell";
 
 /** Name · progress · done/total · unit · actions. Declared once; the header and the rows share it. */
-const COLUMNS = "grid grid-cols-[minmax(6rem,1fr)_11rem_7.5rem_5.5rem_1.75rem] items-center gap-3";
+const COLUMNS =
+  "grid grid-cols-[minmax(6rem,1fr)_11rem_7rem_3.5rem_5.5rem_1.75rem] items-center gap-3";
 
 export function TopicTable({
   course,
@@ -56,6 +58,7 @@ export function TopicTable({
         <span>Topic</span>
         <span>Progress</span>
         <span className="text-right">Done</span>
+        <span>Total</span>
         <span>Unit</span>
         <span />
       </div>
@@ -142,7 +145,10 @@ function TopicTableRow({
       ]}
     >
       <li
-        onFocusCapture={onSelect}
+        // Deliberately *not* selecting on focus. It used to, and dragging the
+        // progress bar therefore opened the inspector mid-drag, which narrowed
+        // the content column, which moved the bar out from under the pointer.
+        // Selection is an explicit act: the name, the ⋯ menu, or right-click.
         className={clsx(
           COLUMNS,
           "group rounded-control px-2 py-0.5",
@@ -156,32 +162,14 @@ function TopicTableRow({
           onAddRow={onAddRow}
         />
 
-        {topic.totalUnits > 0 ? (
-          <ProgressSlider
-            value={topic.completedUnits}
-            max={topic.totalUnits}
-            label={`${topic.name} progress`}
-            valueText={(value) => `${value} of ${topic.totalUnits} ${unit}`}
-            tint={topic.color || course.color}
-            onCommit={(units) =>
-              run(
-                repository.logStudy({
-                  topicId: topic.id,
-                  date: today,
-                  units: units - topic.completedUnits,
-                }),
-              )
-            }
-          />
-        ) : (
-          // No size, no scale: an unsized topic has nothing to slide along, and
-          // inventing a denominator would be the interface guessing.
-          <ProgressBar ratio={null} label={`${topic.name} progress`} size="sm" />
-        )}
+        <TopicProgressCell
+          topic={topic}
+          today={today}
+          tint={topic.color || course.color}
+          readoutClassName="text-right text-callout tabular-nums whitespace-nowrap text-secondary"
+        />
 
-        <span className="flex items-baseline justify-end gap-1 text-callout tabular-nums whitespace-nowrap text-secondary">
-          {topic.completedUnits}
-          <span className="text-tertiary">/</span>
+        <span className="flex items-baseline gap-1">
           <Cell
             label={`Total ${unit} in ${topic.name}`}
             value={String(topic.totalUnits)}
@@ -213,14 +201,26 @@ function TopicTableRow({
           ))}
         </select>
 
-        {/* Present at all times rather than mounted on hover, so it stays
-            reachable from the keyboard; only its opacity is conditional. */}
-        <IconButton
-          size="sm"
-          label={`Show ${topic.name} in the inspector`}
-          icon={<MoreHorizontal />}
-          onClick={onSelect}
-          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+        {/* A ⋯ is a menu everywhere else on the platform, so it opens one
+            rather than quietly doing a single thing. Present at all times so it
+            stays reachable from the keyboard; only its opacity is conditional. */}
+        <DropdownMenu
+          align="end"
+          label={`Actions for ${topic.name}`}
+          items={[
+            { label: "Show in inspector", onSelect },
+            { label: "New topic below", shortcut: "⌘⏎", onSelect: onAddRow },
+            { type: "separator" },
+            { label: "Delete topic", danger: true, onSelect: onDelete },
+          ]}
+          trigger={
+            <IconButton
+              size="sm"
+              label={`Actions for ${topic.name}`}
+              icon={<MoreHorizontal />}
+              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+            />
+          }
         />
       </li>
     </ContextMenu>

@@ -22,7 +22,8 @@ describe("the workspace store", () => {
   it("drops focus and selection when the semester changes", () => {
     // Every id in either belongs to the semester being left. Carrying them
     // across would leave the inspector describing something from elsewhere.
-    useWorkspace.getState().setFocus({ kind: "course", courseId: "course_1" });
+    useWorkspace.getState().setFocus({ kind: "behind" });
+    useWorkspace.getState().toggleCourseHidden("course_1");
     useWorkspace.getState().select({ kind: "topic", id: "topic_1" });
 
     useWorkspace.getState().setPlan("plan_2");
@@ -30,7 +31,31 @@ describe("the workspace store", () => {
     const state = useWorkspace.getState();
     expect(state.planId).toBe("plan_2");
     expect(state.focus).toEqual({ kind: "all" });
+    expect(state.hiddenCourseIds).toEqual([]);
     expect(state.selection).toBeNull();
+  });
+
+  it("lets isolate replace itself and switch off", () => {
+    useWorkspace.getState().toggleCourseIsolated("course_1");
+    expect(useWorkspace.getState().isolatedCourseId).toBe("course_1");
+
+    // Only one at a time: isolating a second replaces the first rather than
+    // adding to it.
+    useWorkspace.getState().toggleCourseIsolated("course_2");
+    expect(useWorkspace.getState().isolatedCourseId).toBe("course_2");
+
+    useWorkspace.getState().toggleCourseIsolated("course_2");
+    expect(useWorkspace.getState().isolatedCourseId).toBeNull();
+  });
+
+  it("drops the isolation when the isolated course is hidden", () => {
+    // The two switches would otherwise disagree, and the view would be showing
+    // a course the sidebar says is hidden.
+    useWorkspace.getState().toggleCourseIsolated("course_1");
+    useWorkspace.getState().toggleCourseHidden("course_1");
+
+    expect(useWorkspace.getState().isolatedCourseId).toBeNull();
+    expect(useWorkspace.getState().hiddenCourseIds).toEqual(["course_1"]);
   });
 
   it("keeps the view when the semester changes", () => {

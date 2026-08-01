@@ -40,15 +40,14 @@ export const VIEW_LABELS: Record<ViewId, string> = {
 /**
  * Which courses are in scope.
  *
- * The two smart focuses are questions rather than folders — "what is behind"
- * and "what is coming" — which is why they are resolved against live metrics on
- * every render instead of being stored as membership.
+ * Questions rather than folders — "what is behind", "what is coming" — resolved
+ * against live metrics on every render instead of stored as membership.
+ *
+ * There is deliberately no "one course" focus. Picking a single course is what
+ * *isolate* does, and having two mechanisms for the same thing is how the
+ * sidebar ended up being a selector that also filtered.
  */
-export type Focus =
-  | { kind: "all" }
-  | { kind: "behind" }
-  | { kind: "soon" }
-  | { kind: "course"; courseId: EntityId };
+export type Focus = { kind: "all" } | { kind: "behind" } | { kind: "soon" };
 
 /** What the inspector is describing. Independent of focus: you can inspect a topic in one course while focused on all of them. */
 export type Selection =
@@ -62,6 +61,18 @@ export type WorkspaceState = {
   planId: EntityId | null;
   view: ViewId;
   focus: Focus;
+  /**
+   * Courses the sidebar has switched off. A filter, not a property of the
+   * course — nothing is written to the repository, and reopening the app shows
+   * everything again.
+   */
+  hiddenCourseIds: EntityId[];
+  /**
+   * Show only this one, whatever else is hidden. At most one at a time, because
+   * "isolate two things" is just "hide the rest", which the other control
+   * already does.
+   */
+  isolatedCourseId: EntityId | null;
   selection: Selection;
   inspectorOpen: boolean;
   paletteOpen: boolean;
@@ -79,6 +90,10 @@ export type WorkspaceState = {
   setPlan: (planId: EntityId | null) => void;
   setView: (view: ViewId) => void;
   setFocus: (focus: Focus) => void;
+  toggleCourseHidden: (courseId: EntityId) => void;
+  toggleCourseIsolated: (courseId: EntityId) => void;
+  hideAllCourses: (courseIds: EntityId[]) => void;
+  showAllCourses: () => void;
   select: (selection: Selection) => void;
   setInspectorOpen: (open: boolean) => void;
   toggleInspector: () => void;
@@ -94,6 +109,8 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   planId: null,
   view: "today",
   focus: { kind: "all" },
+  hiddenCourseIds: [],
+  isolatedCourseId: null,
   selection: null,
   // Closed by default. An inspector that opens itself on load takes a third of
   // the window away from someone who has not asked a question yet.
@@ -105,9 +122,34 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
 
   // Switching semester drops both focus and selection, because every id in
   // them belongs to the semester being left.
-  setPlan: (planId) => set({ planId, focus: { kind: "all" }, selection: null }),
+  setPlan: (planId) =>
+    set({
+      planId,
+      focus: { kind: "all" },
+      hiddenCourseIds: [],
+      isolatedCourseId: null,
+      selection: null,
+    }),
   setView: (view) => set({ view }),
   setFocus: (focus) => set({ focus }),
+
+  toggleCourseHidden: (courseId) =>
+    set((state) => ({
+      hiddenCourseIds: state.hiddenCourseIds.includes(courseId)
+        ? state.hiddenCourseIds.filter((id) => id !== courseId)
+        : [...state.hiddenCourseIds, courseId],
+      // Hiding the isolated course is a contradiction; the hide wins, because
+      // it is the control that was just used.
+      isolatedCourseId: state.isolatedCourseId === courseId ? null : state.isolatedCourseId,
+    })),
+
+  toggleCourseIsolated: (courseId) =>
+    set((state) => ({
+      isolatedCourseId: state.isolatedCourseId === courseId ? null : courseId,
+    })),
+
+  hideAllCourses: (courseIds) => set({ hiddenCourseIds: [...courseIds], isolatedCourseId: null }),
+  showAllCourses: () => set({ hiddenCourseIds: [], isolatedCourseId: null }),
   select: (selection) => set({ selection }),
   setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),
   toggleInspector: () => set((state) => ({ inspectorOpen: !state.inspectorOpen })),

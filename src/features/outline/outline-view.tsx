@@ -16,7 +16,7 @@
  */
 
 import { useState } from "react";
-import { ChevronRight, ClipboardPaste, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, ClipboardPaste, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
@@ -36,6 +36,7 @@ import {
   Button,
   Card,
   CountdownBadge,
+  DropdownMenu,
   EmptyState,
   IconButton,
   ProgressBar,
@@ -60,6 +61,7 @@ export function OutlineView({
   onSelectTopic,
   onSelectExam,
   onDeleteTopic,
+  onDeleteCourse,
   onNewCourse,
 }: {
   courses: readonly Course[];
@@ -72,6 +74,7 @@ export function OutlineView({
   onSelectTopic: (course: Course, topic: Topic) => void;
   onSelectExam: (course: Course, exam: Exam) => void;
   onDeleteTopic: (course: Course, topic: Topic) => void;
+  onDeleteCourse: (course: Course) => void;
   onNewCourse: () => void;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -115,6 +118,7 @@ export function OutlineView({
           onSelectTopic={(topic) => onSelectTopic(course, topic)}
           onSelectExam={(exam) => onSelectExam(course, exam)}
           onDeleteTopic={(topic) => onDeleteTopic(course, topic)}
+          onDeleteCourse={() => onDeleteCourse(course)}
         />
       ))}
     </div>
@@ -134,6 +138,7 @@ function CourseSection({
   onSelectTopic,
   onSelectExam,
   onDeleteTopic,
+  onDeleteCourse,
 }: {
   course: Course;
   health: CourseHealth | undefined;
@@ -147,6 +152,7 @@ function CourseSection({
   onSelectTopic: (topic: Topic) => void;
   onSelectExam: (exam: Exam) => void;
   onDeleteTopic: (topic: Topic) => void;
+  onDeleteCourse: () => void;
 }) {
   const repository = useRepository();
   const { run } = usePlannerErrors();
@@ -170,24 +176,20 @@ function CourseSection({
   return (
     <Card className="flex flex-col gap-3">
       <header className="flex items-center gap-3">
+        {/* The heading is the disclosure control, both ways. It used to open the
+            course and then do nothing on a second click, because the click was
+            wired to selection instead — a triangle that only turns one way.
+            Inspecting the course is now what the ⋯ menu is for. */}
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          aria-label={`${open ? "Collapse" : "Expand"} ${course.name}`}
-          className="flex size-5 shrink-0 items-center justify-center rounded-chip text-secondary hover:bg-fill"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-chip text-left"
         >
           <ChevronRight
             aria-hidden="true"
-            className={`size-3.5 transition-transform duration-150 ease-mac ${open ? "rotate-90" : ""}`}
+            className={`size-3.5 shrink-0 text-secondary transition-transform duration-150 ease-mac ${open ? "rotate-90" : ""}`}
           />
-        </button>
-        <button
-          type="button"
-          onClick={onSelectCourse}
-          aria-current={course.id === selectedId ? "true" : undefined}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-chip text-left"
-        >
           <span
             aria-hidden="true"
             className="size-2.5 shrink-0 rounded-full"
@@ -213,6 +215,25 @@ function CourseSection({
             atRisk={Boolean(health.pace && !health.pace.onTrack)}
           />
         ) : null}
+
+        <DropdownMenu
+          align="end"
+          label={`Actions for ${course.name}`}
+          items={[
+            { label: "Show in inspector", onSelect: onSelectCourse },
+            { label: "Add topic", icon: <Plus />, onSelect: () => addRow(undefined) },
+            { type: "separator" },
+            { label: "Delete course", icon: <Trash2 />, danger: true, onSelect: onDeleteCourse },
+          ]}
+          trigger={
+            <IconButton
+              size="sm"
+              label={`Actions for ${course.name}`}
+              icon={<MoreHorizontal />}
+              aria-current={course.id === selectedId ? "true" : undefined}
+            />
+          }
+        />
       </header>
 
       {open ? (

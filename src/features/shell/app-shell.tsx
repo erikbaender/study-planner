@@ -92,9 +92,15 @@ export function AppShell() {
   const plan =
     snapshot.plans.find((candidate) => candidate.id === workspace.planId) ?? snapshot.plans[0];
   const health = useMemo(() => healthByCourse(plan, snapshot, today), [plan, snapshot, today]);
+  // Every view draws exactly this list. The sidebar's switches and the focus
+  // rows are filters over the whole workspace, not navigation into part of it.
   const focused = useMemo(
-    () => coursesInFocus(plan, workspace.focus, health),
-    [plan, workspace.focus, health],
+    () =>
+      coursesInFocus(plan, workspace.focus, health, {
+        hiddenCourseIds: workspace.hiddenCourseIds,
+        isolatedCourseId: workspace.isolatedCourseId,
+      }),
+    [plan, workspace.focus, health, workspace.hiddenCourseIds, workspace.isolatedCourseId],
   );
   const selection = useMemo(
     () => resolveSelection(plan, workspace.selection),
@@ -268,16 +274,17 @@ export function AppShell() {
             plan={plan}
             health={health}
             focus={workspace.focus}
-            selection={workspace.selection}
+            hiddenCourseIds={workspace.hiddenCourseIds}
+            isolatedCourseId={workspace.isolatedCourseId}
             query={workspace.query}
             onSelectPlan={workspace.setPlan}
             onNewPlan={() => workspace.setCreating("plan")}
             onSetFocus={workspace.setFocus}
-            onSelectCourse={selectCourse}
+            onToggleHidden={(course) => workspace.toggleCourseHidden(course.id)}
+            onToggleIsolated={(course) => workspace.toggleCourseIsolated(course.id)}
+            onHideAll={() => workspace.hideAllCourses((plan?.courses ?? []).map((c) => c.id))}
+            onShowAll={workspace.showAllCourses}
             onNewCourse={() => workspace.setCreating("course")}
-            onDeleteCourse={(course) =>
-              workspace.setPendingDelete({ kind: "course", id: course.id })
-            }
           />
           </div>
         ) : null}
@@ -333,6 +340,9 @@ export function AppShell() {
               onSelectExam={selectExam}
               onDeleteTopic={(_course, topic) =>
                 workspace.setPendingDelete({ kind: "topic", id: topic.id })
+              }
+              onDeleteCourse={(course) =>
+                workspace.setPendingDelete({ kind: "course", id: course.id })
               }
               onNewCourse={() => workspace.setCreating("course")}
             />

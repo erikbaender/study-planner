@@ -32,6 +32,7 @@ export function ProgressSlider({
   value,
   max,
   onCommit,
+  onPreview,
   label,
   valueText,
   tint,
@@ -45,6 +46,13 @@ export function ProgressSlider({
   max: number;
   /** Fired on release with the new absolute value. */
   onCommit: (value: number) => void;
+  /**
+   * Fired continuously while dragging, with the value under the pointer, and
+   * with `null` once the store has caught up. Callers use it to keep a readout
+   * in step with the bar — a number that only moves on release makes the drag
+   * a guess.
+   */
+  onPreview?: (value: number | null) => void;
   /** Announced name, e.g. "Glycolysis progress". */
   label: string;
   /** Announced value, e.g. "60 of 91 slides". Falls back to a percentage. */
@@ -80,10 +88,18 @@ export function ProgressSlider({
       max={max}
       step={step}
       disabled={disabled}
-      onValueChange={([next]) => setDraft(next)}
+      onValueChange={([next]) => {
+        setDraft(next);
+        onPreview?.(next);
+      }}
       onValueCommit={([next]) => {
         setDraft(next);
+        onPreview?.(next);
         if (next !== value) onCommit(next);
+        // Nothing moved, so nothing is in flight and the readout should go back
+        // to reading the store rather than waiting for a change that will not
+        // arrive.
+        else onPreview?.(null);
       }}
       className={clsx(
         // The hit area is taller than the bar it draws. A 6px-tall target is

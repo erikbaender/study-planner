@@ -16,9 +16,9 @@
 
 import { clsx } from "clsx";
 import { MoreHorizontal } from "lucide-react";
-import { usePlannerErrors, useRepository } from "@/data/use-repository";
-import { UNIT_LABELS, topicProgress, type Topic } from "@/domain";
-import { ContextMenu, IconButton, ProgressBar, ProgressSlider } from "@/ui";
+import type { Topic } from "@/domain";
+import { ContextMenu, DropdownMenu, IconButton } from "@/ui";
+import { TopicProgressCell } from "@/features/topics/progress-cell";
 
 export function TopicRow({
   topic,
@@ -36,11 +36,6 @@ export function TopicRow({
   onSelect: () => void;
   onDelete: () => void;
 }) {
-  const repository = useRepository();
-  const { run } = usePlannerErrors();
-  const progress = topicProgress(topic);
-  const unit = UNIT_LABELS[topic.unit].plural;
-
   return (
     <ContextMenu
       items={[
@@ -65,60 +60,30 @@ export function TopicRow({
           {topic.name}
         </button>
 
-        {topic.totalUnits > 0 ? (
-          <>
-            <ProgressSlider
-              value={topic.completedUnits}
-              max={topic.totalUnits}
-              label={`${topic.name} progress`}
-              valueText={(value) => `${value} of ${topic.totalUnits} ${unit}`}
-              tint={topic.color || undefined}
-              className="w-48 shrink-0"
-              // The slider says where the topic *is*; the log records what
-              // changed today. Dragging backwards to correct an over-log is the
-              // same operation with a negative delta, which the repository
-              // already accepts.
-              onCommit={(units) =>
-                run(
-                  repository.logStudy({
-                    topicId: topic.id,
-                    date: today,
-                    units: units - topic.completedUnits,
-                  }),
-                )
-              }
-            />
-            {/* Fixed width and no wrapping: "107 / 128 slides" breaking onto a
-                second line would make one row taller than its neighbours, and a
-                list of forty topics would comb. */}
-            <span className="w-32 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary">
-              {topic.completedUnits} / {topic.totalUnits} {unit}
-            </span>
-          </>
-        ) : (
-          // Nothing to slide along: an unsized topic has no scale, and inventing
-          // one would be the interface guessing.
-          <>
-            <ProgressBar
-              ratio={progress.ratio}
-              label={`${topic.name} progress`}
-              size="sm"
-              className="w-48 shrink-0"
-            />
-            <span className="w-32 shrink-0 text-right text-callout whitespace-nowrap text-tertiary">
-              No size set
-            </span>
-          </>
-        )}
+        <TopicProgressCell
+          topic={topic}
+          today={today}
+          tint={topic.color || undefined}
+          sliderClassName="w-48 shrink-0"
+          readoutClassName="w-32 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary"
+        />
 
-        {/* Kept in the DOM at all times rather than mounted on hover, so it is
-            reachable by keyboard; only its opacity is conditional. */}
-        <IconButton
-          size="sm"
-          label={`Show ${topic.name} in the inspector`}
-          icon={<MoreHorizontal />}
-          onClick={onSelect}
-          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+        <DropdownMenu
+          align="end"
+          label={`Actions for ${topic.name}`}
+          items={[
+            { label: "Show in inspector", onSelect },
+            { type: "separator" },
+            { label: "Delete topic", danger: true, onSelect: onDelete },
+          ]}
+          trigger={
+            <IconButton
+              size="sm"
+              label={`Actions for ${topic.name}`}
+              icon={<MoreHorizontal />}
+              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+            />
+          }
         />
       </li>
     </ContextMenu>

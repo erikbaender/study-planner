@@ -108,14 +108,25 @@ describe("coursesInFocus", () => {
     ]);
   });
 
-  it("narrows to one course by id", () => {
-    const target = plan.courses[2];
-    expect(coursesInFocus(plan, { kind: "course", courseId: target.id }, health)).toEqual([target]);
+  it("drops hidden courses", () => {
+    const hidden = { hiddenCourseIds: [plan.courses[0].id], isolatedCourseId: null };
+    expect(coursesInFocus(plan, { kind: "all" }, health, hidden).map((c) => c.name)).toEqual([
+      "Anatomy",
+      "Physio",
+    ]);
   });
 
-  it("returns nothing rather than throwing when the focused course is gone", () => {
-    // Deleting the focused course must empty the view, not crash it.
-    expect(coursesInFocus(plan, { kind: "course", courseId: "deleted" }, health)).toEqual([]);
+  it("lets isolate override both the hidden list and the focus", () => {
+    // Otherwise isolating an on-track course while "Behind" is selected shows
+    // nothing, which reads as a broken button rather than as a filter.
+    const target = plan.courses[2];
+    const visibility = { hiddenCourseIds: [target.id], isolatedCourseId: target.id };
+    expect(coursesInFocus(plan, { kind: "behind" }, health, visibility)).toEqual([target]);
+  });
+
+  it("shows nothing when an isolated course has been deleted", () => {
+    const visibility = { hiddenCourseIds: [], isolatedCourseId: "gone" };
+    expect(coursesInFocus(plan, { kind: "all" }, health, visibility)).toEqual([]);
   });
 
   it("returns nothing when there is no plan at all", () => {

@@ -16,48 +16,64 @@
  * competing with the courses for the eye.
  */
 
-import { AlertTriangle, CalendarClock, ChevronsUpDown, Layers, Plus, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  ChevronsUpDown,
+  Eye,
+  EyeOff,
+  Focus as FocusIcon,
+  Layers,
+  Plus,
+} from "lucide-react";
+import { clsx } from "clsx";
 import type { Course, CourseHealth, Plan } from "@/domain";
 import { courseProgress } from "@/domain";
 import {
-  ContextMenu,
   CountdownBadge,
   DropdownMenu,
   IconButton,
+  ProgressBar,
   Sidebar,
   SidebarItem,
   SidebarSection,
   Tooltip,
 } from "@/ui";
 import { hasExamSoon, isBehind, matchesQuery } from "@/features/workspace/scope";
-import type { Focus, Selection } from "@/features/workspace/store";
+import type { Focus } from "@/features/workspace/store";
 
 export function AppSidebar({
   plans,
   plan,
   health,
   focus,
-  selection,
+  hiddenCourseIds,
+  isolatedCourseId,
   query,
   onSelectPlan,
   onNewPlan,
   onSetFocus,
-  onSelectCourse,
+  onToggleHidden,
+  onToggleIsolated,
+  onHideAll,
+  onShowAll,
   onNewCourse,
-  onDeleteCourse,
 }: {
   plans: readonly Plan[];
   plan: Plan | undefined;
   health: Map<string, CourseHealth>;
   focus: Focus;
-  selection: Selection;
+  hiddenCourseIds: readonly string[];
+  isolatedCourseId: string | null;
   query: string;
   onSelectPlan: (planId: string) => void;
   onNewPlan: () => void;
   onSetFocus: (focus: Focus) => void;
-  onSelectCourse: (course: Course) => void;
+  onToggleHidden: (course: Course) => void;
+  onToggleIsolated: (course: Course) => void;
+  onHideAll: () => void;
+  onShowAll: () => void;
   onNewCourse: () => void;
-  onDeleteCourse: (course: Course) => void;
 }) {
   const courses = plan?.courses ?? [];
   const behindCount = courses.filter((course) => isBehind(health.get(course.id))).length;
@@ -119,58 +135,135 @@ export function AppSidebar({
       <SidebarSection
         title="Courses"
         action={
-          <Tooltip content="New course">
-            <IconButton size="sm" label="New course" icon={<Plus />} onClick={onNewCourse} />
-          </Tooltip>
+          <span className="flex items-center gap-0.5">
+            <Tooltip content="Show every course">
+              <IconButton size="sm" label="Show every course" icon={<Eye />} onClick={onShowAll} />
+            </Tooltip>
+            <Tooltip content="Hide every course">
+              <IconButton size="sm" label="Hide every course" icon={<EyeOff />} onClick={onHideAll} />
+            </Tooltip>
+            <Tooltip content="New course">
+              <IconButton size="sm" label="New course" icon={<Plus />} onClick={onNewCourse} />
+            </Tooltip>
+          </span>
         }
       >
-        {visible.map((course) => {
-          const courseHealth = health.get(course.id);
-          const exam = courseHealth?.exam;
-
-          return (
-            <ContextMenu
-              key={course.id}
-              items={[
-                {
-                  label: `Delete ${course.name}`,
-                  icon: <Trash2 />,
-                  danger: true,
-                  onSelect: () => onDeleteCourse(course),
-                },
-              ]}
-            >
-              {/* The row itself is the trigger, so right-clicking anywhere in
-                  it opens the menu — including its padding, which is most of
-                  its area. */}
-              <SidebarItem
-                label={course.name}
-                dotColor={course.color}
-                progress={courseProgress(course).ratio}
-                selected={
-                  focus.kind === "course" && focus.courseId === course.id
-                    ? true
-                    : selection?.kind === "course" && selection.id === course.id
-                }
-                badge={
-                  exam && courseHealth?.daysUntilExam !== null ? (
-                    <CountdownBadge
-                      days={courseHealth.daysUntilExam}
-                      provisional={exam.status === "provisional"}
-                      atRisk={isBehind(courseHealth)}
-                    />
-                  ) : undefined
-                }
-                onSelect={() => onSelectCourse(course)}
-              />
-            </ContextMenu>
-          );
-        })}
+        {visible.map((course) => (
+          <CourseFilterRow
+            key={course.id}
+            course={course}
+            health={health.get(course.id)}
+            hidden={hiddenCourseIds.includes(course.id)}
+            isolated={isolatedCourseId === course.id}
+            dimmed={isolatedCourseId !== null && isolatedCourseId !== course.id}
+            onToggleHidden={() => onToggleHidden(course)}
+            onToggleIsolated={() => onToggleIsolated(course)}
+          />
+        ))}
       </SidebarSection>
 
       {courses.length > 0 && visible.length === 0 ? (
         <p className="px-2 text-callout text-tertiary">No course matches “{query.trim()}”.</p>
       ) : null}
     </Sidebar>
+  );
+}
+
+/**
+ * A course in the source list.
+ *
+ * Not a selectable row. Selecting a course here used to narrow every view to
+ * it, which made the sidebar a navigation control that also filtered — two jobs
+ * competing in one click. It is now purely a filter, with the two switches that
+ * filtering actually needs:
+ *
+ * - **hide** removes the course from all three views;
+ * - **isolate** shows only that course, overriding both the hidden list and the
+ *   focus. One at a time, because isolating two things is just hiding the rest.
+ *
+ * The course's own details live in the inspector, reached from the outline or
+ * from ⌘K — where they belong, since that is a question about one course rather
+ * than about what you are looking at.
+ */
+function CourseFilterRow({
+  course,
+  health,
+  hidden,
+  isolated,
+  dimmed,
+  onToggleHidden,
+  onToggleIsolated,
+}: {
+  course: Course;
+  health: CourseHealth | undefined;
+  hidden: boolean;
+  isolated: boolean;
+  /** Something else is isolated, so this row is out of scope without being hidden. */
+  dimmed: boolean;
+  onToggleHidden: () => void;
+  onToggleIsolated: () => void;
+}) {
+  const off = hidden || dimmed;
+
+  return (
+    <li className="group/row flex flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill">
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span
+          aria-hidden="true"
+          className={clsx("size-2.5 shrink-0 rounded-full", off && "opacity-40")}
+          style={{ background: course.color }}
+        />
+        <span className={clsx("min-w-0 flex-1 truncate text-body", off && "text-tertiary")}>
+          {course.name}
+        </span>
+
+        {/* The switches sit where the countdown does and trade places with it on
+            hover, rather than taking a permanent column: at rest the row should
+            read as a course, not as a control panel. */}
+        <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover/row:opacity-100 focus-within:opacity-100">
+          <Tooltip content={isolated ? "Stop isolating" : "Show only this course"}>
+            <IconButton
+              size="sm"
+              label={isolated ? `Stop isolating ${course.name}` : `Show only ${course.name}`}
+              aria-pressed={isolated}
+              icon={<FocusIcon />}
+              className={isolated ? "text-accent" : undefined}
+              onClick={onToggleIsolated}
+            />
+          </Tooltip>
+          <Tooltip content={hidden ? "Show this course" : "Hide this course"}>
+            <IconButton
+              size="sm"
+              label={hidden ? `Show ${course.name}` : `Hide ${course.name}`}
+              aria-pressed={hidden}
+              icon={hidden ? <EyeOff /> : <Eye />}
+              onClick={onToggleHidden}
+            />
+          </Tooltip>
+        </span>
+
+        <span className="shrink-0 group-hover/row:hidden">
+          {isolated ? (
+            <FocusIcon aria-hidden="true" className="size-3.5 text-accent" />
+          ) : hidden ? (
+            <EyeOff aria-label={`${course.name} is hidden`} className="size-3.5 text-tertiary" />
+          ) : health?.exam && health.daysUntilExam !== null ? (
+            <CountdownBadge
+              days={health.daysUntilExam}
+              provisional={health.exam.status === "provisional"}
+              atRisk={isBehind(health)}
+            />
+          ) : null}
+        </span>
+      </span>
+
+      <ProgressBar
+        ratio={courseProgress(course).ratio}
+        label={`${course.name} progress`}
+        size="sm"
+        tint={course.color}
+        className={off ? "opacity-40" : undefined}
+      />
+    </li>
   );
 }
