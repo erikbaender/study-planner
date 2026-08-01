@@ -284,6 +284,7 @@ export function AppShell() {
               courses={focused}
               health={health}
               studyLog={snapshot.studyLog}
+              snapshot={snapshot}
               today={today}
               selectedTopicId={workspace.selection?.kind === "topic" ? workspace.selection.id : null}
               onSelectTopic={selectTopic}
@@ -307,6 +308,7 @@ export function AppShell() {
               health={health}
               today={today}
               query={workspace.query}
+              snapshot={snapshot}
               selectedId={workspace.selection?.id ?? null}
               onSelectCourse={selectCourse}
               onSelectTopic={selectTopic}

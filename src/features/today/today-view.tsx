@@ -26,8 +26,11 @@ import type {
   StudyLogEntry,
   Topic,
 } from "@/domain";
+import type { PlannerSnapshot, StudyBlock } from "@/domain";
+import { countStudyDays, isStudyDay } from "@/domain";
 import { Badge, Button, Card, CountdownBadge, EmptyState } from "@/ui";
 import { TopicRow } from "@/features/topics/topic-row";
+import { PlanningActions } from "@/features/planning/planning-actions";
 
 /** How many topics the "continue" card offers. A list you scroll is a backlog, not a suggestion. */
 const CONTINUE_LIMIT = 8;
@@ -46,6 +49,7 @@ export function TodayView({
   courses,
   health,
   studyLog,
+  snapshot,
   today,
   selectedTopicId,
   onSelectTopic,
@@ -55,6 +59,7 @@ export function TodayView({
   courses: readonly Course[];
   health: Map<string, CourseHealth>;
   studyLog: readonly StudyLogEntry[];
+  snapshot: PlannerSnapshot;
   today: string;
   selectedTopicId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
@@ -89,6 +94,8 @@ export function TodayView({
     )
     .slice(0, BEHIND_LIMIT);
 
+  const plannedToday = todaysWork(courses, today, snapshot);
+
   const continueTopics = pickUpNext(courses, health, CONTINUE_LIMIT);
 
   const loggedToday = studyLog
@@ -122,6 +129,44 @@ export function TodayView({
               "Nothing logged yet today"}
         </p>
       </header>
+
+      <Card className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="text-title3 font-semibold">Today’s plan</h3>
+          {plannedToday.length > 0 ? (
+            <span className="text-callout tabular-nums text-secondary">
+              {plannedToday.reduce((sum, row) => sum + row.units, 0)} units across{" "}
+              {plannedToday.length} topic{plannedToday.length === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          <span className="ml-auto">
+            <PlanningActions size="sm" courses={courses} snapshot={snapshot} today={today} />
+          </span>
+        </div>
+        {plannedToday.length === 0 ? (
+          <p className="text-body text-secondary">
+            {isStudyDay(today, snapshot.preferences)
+              ? "Nothing is scheduled for today. Reflow builds a plan from what is left and how long there is to do it."
+              : // A day off is not an empty day. Saying "nothing scheduled"
+                // would read as a failure to plan rather than as a rest day.
+                "Today is not one of your study days."}
+          </p>
+        ) : (
+          <ul className="flex flex-col">
+            {plannedToday.map(({ course, topic, units }) => (
+              <TopicRow
+                key={topic.id}
+                topic={topic}
+                today={today}
+                prefix={`${course.name} · ${units} today`}
+                selected={topic.id === selectedTopicId}
+                onSelect={() => onSelectTopic(course, topic)}
+                onDelete={() => onDeleteTopic(course, topic)}
+              />
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <Card className="flex flex-col gap-3">
         <h3 className="text-title3 font-semibold">Coming up</h3>
@@ -160,7 +205,12 @@ export function TodayView({
 
       {behind.length > 0 ? (
         <Card className="flex flex-col gap-3">
-          <h3 className="text-title3 font-semibold">Behind</h3>
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-title3 font-semibold">Behind</h3>
+            <span className="ml-auto">
+              <PlanningActions size="sm" courses={behind} snapshot={snapshot} today={today} />
+            </span>
+          </div>
           <ul className="flex flex-col gap-1.5">
             {behindShown.map((course) => {
               const pace = health.get(course.id)!.pace!;
@@ -216,6 +266,40 @@ export function TodayView({
       </Card>
     </div>
   );
+}
+
+/**
+ * What the scheduler has put in today.
+ *
+ * A block spans several days and carries the units it means to cover across all
+ * of them, so today's share is that total divided by the block's *study* days —
+ * dividing by calendar days would quietly under-count every block that spans a
+ * weekend, and the number is the one thing the card exists to state.
+ */
+function todaysWork(
+  courses: readonly Course[],
+  today: string,
+  snapshot: PlannerSnapshot,
+): Array<{ course: Course; topic: Topic; units: number }> {
+  const rows: Array<{ course: Course; topic: Topic; units: number }> = [];
+
+  for (const course of courses) {
+    for (const topic of course.topics) {
+      for (const block of topic.blocks) {
+        if (block.startDate > today || block.endDate < today) continue;
+        rows.push({ course, topic, units: unitsToday(block, snapshot) });
+      }
+    }
+  }
+
+  return rows;
+}
+
+function unitsToday(block: StudyBlock, snapshot: PlannerSnapshot): number {
+  const planned = block.plannedUnits ?? 0;
+  if (planned === 0) return 0;
+  const days = countStudyDays(block.startDate, block.endDate, snapshot.preferences);
+  return Math.max(1, Math.round(planned / Math.max(days, 1)));
 }
 
 /**

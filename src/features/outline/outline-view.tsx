@@ -26,6 +26,7 @@ import {
   UNIT_LABELS,
   type Course,
   type CourseHealth,
+  type PlannerSnapshot,
   type Exam,
   type Topic,
   type Unit,
@@ -45,6 +46,7 @@ import {
   Tooltip,
 } from "@/ui";
 import { TopicTable } from "./topic-table";
+import { AutoPlanButton } from "@/features/planning/planning-actions";
 import { matchesQuery } from "@/features/workspace/scope";
 
 export function OutlineView({
@@ -52,6 +54,7 @@ export function OutlineView({
   health,
   today,
   query,
+  snapshot,
   selectedId,
   onSelectCourse,
   onSelectTopic,
@@ -62,6 +65,7 @@ export function OutlineView({
   courses: readonly Course[];
   health: Map<string, CourseHealth>;
   today: string;
+  snapshot: PlannerSnapshot;
   query: string;
   selectedId: string | null;
   onSelectCourse: (course: Course) => void;
@@ -98,6 +102,7 @@ export function OutlineView({
           health={health.get(course.id)}
           today={today}
           query={query}
+          snapshot={snapshot}
           selectedId={selectedId}
           open={expanded[course.id] ?? isDefaultOpen(course)}
           onToggle={() =>
@@ -121,6 +126,7 @@ function CourseSection({
   health,
   today,
   query,
+  snapshot,
   selectedId,
   open,
   onToggle,
@@ -133,6 +139,7 @@ function CourseSection({
   health: CourseHealth | undefined;
   today: string;
   query: string;
+  snapshot: PlannerSnapshot;
   selectedId: string | null;
   open: boolean;
   onToggle: () => void;
@@ -250,6 +257,9 @@ function CourseSection({
             >
               Paste outline
             </Button>
+            <span className="ml-auto">
+              <AutoPlanButton course={course} snapshot={snapshot} today={today} />
+            </span>
           </div>
 
           <BulkEntrySheet

@@ -1,7 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { assessCourse, DEFAULT_PREFERENCES, type Course, type CourseHealth } from "@/domain";
+import {
+  assessCourse,
+  DEFAULT_PREFERENCES,
+  EMPTY_SNAPSHOT,
+  type Course,
+  type CourseHealth,
+} from "@/domain";
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
 import { TodayView } from "./today-view";
 
@@ -37,6 +43,7 @@ function renderToday(
       courses={courses}
       health={healthOf(courses)}
       studyLog={studyLog}
+      snapshot={{ ...EMPTY_SNAPSHOT, studyLog: [...studyLog] }}
       today={TODAY}
       selectedTopicId={null}
       onSelectTopic={vi.fn()}
@@ -181,6 +188,7 @@ describe("TodayView", () => {
         courses={[]}
         health={new Map()}
         studyLog={[]}
+        snapshot={EMPTY_SNAPSHOT}
         today={TODAY}
         selectedTopicId={null}
         onSelectTopic={vi.fn()}
