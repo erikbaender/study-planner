@@ -309,7 +309,7 @@ function CourseLane({
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          className="sticky left-0 z-10 flex h-full items-center gap-1.5 rounded-r-control bg-content/90 pr-3 pl-2 text-left backdrop-blur-sm hover:bg-fill"
+          className="material-inline sticky left-0 z-10 flex h-full items-center gap-1.5 rounded-r-control pr-3 pl-2 text-left hover:bg-fill"
         >
           <ChevronRight
             aria-hidden="true"
@@ -400,7 +400,7 @@ function TopicLane({
 }) {
   return (
     <div className="relative" style={{ height: ROW_HEIGHT }}>
-      <span className="sticky left-0 z-10 float-left max-w-40 truncate bg-content/80 pr-2 pl-8 text-caption text-tertiary backdrop-blur-sm">
+      <span className="material-inline sticky left-0 z-10 float-left max-w-40 truncate rounded-r-chip pr-2 pl-8 text-caption text-tertiary">
         {topic.name}
       </span>
       {topic.blocks.map((block) => (

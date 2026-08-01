@@ -125,7 +125,7 @@ export function Sheet({
           className={clsx(
             "fixed top-0 left-1/2 z-50 w-[calc(100vw-2rem)] -translate-x-1/2",
             widths[width],
-            "mt-0 rounded-b-sheet bg-content shadow-sheet",
+            "material-overlay mt-0 rounded-b-sheet shadow-sheet",
             "flex max-h-[85vh] flex-col overflow-hidden",
             "data-[state=open]:animate-sheet-in data-[state=closed]:animate-sheet-out",
           )}
@@ -320,7 +320,7 @@ export function Tooltip({
           sideOffset={6}
           collisionPadding={8}
           className={clsx(
-            "z-50 rounded-chip bg-raised px-1.5 py-0.5 text-callout text-label shadow-popover",
+            "material-popover z-50 rounded-chip px-1.5 py-0.5 text-callout text-label shadow-popover",
             "inset-ring inset-ring-[var(--mac-separator-strong)]",
             "data-[state=delayed-open]:animate-fade-in",
           )}

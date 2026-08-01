@@ -258,10 +258,11 @@ export function AppShell() {
           // there is no room for two columns, and pushing the content off the
           // screen is worse than covering it.
           //
-          // Opaque while overlaid. The sidebar's material is translucent by
-          // design, which is right beside content and unreadable on top of it —
-          // the wrapper supplies a backing so the blur has something to blur.
-          <div className="absolute inset-y-0 left-0 z-30 flex bg-window shadow-popover lg:static lg:z-auto lg:bg-transparent lg:shadow-none">
+          // Frosted while overlaid, transparent when in the flow. The sidebar's
+          // own material is tuned for a surface with nothing behind it and goes
+          // unreadable on top of content; `material-overlay` is the denser
+          // recipe for a panel that covers rather than abuts.
+          <div className="absolute inset-y-0 left-0 z-30 flex material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none">
           <AppSidebar
             plans={snapshot.plans}
             plan={plan}
@@ -339,7 +340,7 @@ export function AppShell() {
         </main>
 
         {workspace.inspectorOpen ? (
-          <div className="absolute inset-y-0 right-0 z-30 flex bg-window shadow-popover lg:static lg:z-auto lg:bg-transparent lg:shadow-none">
+          <div className="absolute inset-y-0 right-0 z-30 flex material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none">
           <Inspector
             selection={selection}
             health={health}

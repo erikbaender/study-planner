@@ -60,6 +60,13 @@
   --mac-material-sidebar: rgba(246, 246, 246, 0.72);
   --mac-material-header: rgba(255, 255, 255, 0.72);
   --mac-material-popover: rgba(250, 250, 250, 0.86);
+  /* Small labels that ride a scrolling canvas — timeline lane names. Thinner
+     than a popover, because what is behind them is content worth glimpsing. */
+  --mac-material-inline: rgba(255, 255, 255, 0.82);
+  /* A panel covering content rather than sitting beside it, on a narrow window.
+     Denser than the sidebar's own material, which is tuned for a surface with
+     nothing behind it. */
+  --mac-material-overlay: rgba(248, 248, 248, 0.94);
   --mac-material-scrim: rgba(0, 0, 0, 0.24);
 
   /* Status. Darkened from the palette in `src/domain/palette.ts`, which is
@@ -107,6 +114,8 @@
   --mac-material-sidebar: rgba(38, 38, 40, 0.72);
   --mac-material-header: rgba(42, 42, 44, 0.72);
   --mac-material-popover: rgba(48, 48, 50, 0.84);
+  --mac-material-inline: rgba(30, 30, 30, 0.8);
+  --mac-material-overlay: rgba(32, 32, 34, 0.94);
   --mac-material-scrim: rgba(0, 0, 0, 0.42);
 
   /* Brightened: the light-mode variants are unreadable on #1e1e1e. */
@@ -392,13 +401,33 @@
 }
 
 /**
+ * The blur radius is the one thing that varies, and it varies with how much of
+ * what is behind should survive: an inline label wants you to still read the
+ * chart under it, a popover wants the opposite. `saturate()` is constant,
+ * because it is what stops any blurred content going grey.
+ */
+@utility material-inline {
+  background: var(--mac-material-inline);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+}
+
+@utility material-overlay {
+  background: var(--mac-material-overlay);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+}
+
+/**
  * Reduced transparency is an accessibility setting, not a preference: users who
  * set it often cannot read text over a blur at all. Fall back to solid.
  */
 @media (prefers-reduced-transparency: reduce) {
   .material-sidebar,
   .material-header,
-  .material-popover {
+  .material-popover,
+  .material-inline,
+  .material-overlay {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -411,8 +440,13 @@
     background: var(--mac-content-alt);
   }
 
-  .material-popover {
+  .material-popover,
+  .material-overlay {
     background: var(--mac-raised);
+  }
+
+  .material-inline {
+    background: var(--mac-content);
   }
 }
 
