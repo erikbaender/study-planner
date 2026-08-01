@@ -293,7 +293,14 @@ export function AppShell() {
               onGoToOutline={() => workspace.setView("outline")}
             />
           ) : workspace.view === "timeline" ? (
-            <TimelineView onGoToOutline={() => workspace.setView("outline")} />
+            <TimelineView
+              courses={focused}
+              health={health}
+              today={today}
+              selectedId={workspace.selection?.id ?? null}
+              onSelectTopic={selectTopic}
+              onGoToOutline={() => workspace.setView("outline")}
+            />
           ) : (
             <OutlineView
               courses={focused}
