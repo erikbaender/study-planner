@@ -125,7 +125,7 @@ export function buildCommands(options: {
       id: "data:sample",
       group: "Actions",
       title: "Load sample data",
-      subtitle: "Replaces everything with a generated semester",
+      subtitle: "Choose from the available sample semesters",
       keywords: "demo seed example",
       run: actions.loadSampleData,
     },

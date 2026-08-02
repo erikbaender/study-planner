@@ -20,6 +20,7 @@ import type {
   Exam,
   IsoDate,
   Plan,
+  Preferences,
   StudyBlock,
   StudyLogEntry,
   Topic,
@@ -184,6 +185,8 @@ export type SeedOptions = {
 export type SeedData = {
   plan: Plan;
   studyLog: StudyLogEntry[];
+  /** Optional scenario settings. Omitted fixtures leave the user's settings alone. */
+  preferences?: Preferences;
 };
 
 export function generateSeedData(options: SeedOptions): SeedData {

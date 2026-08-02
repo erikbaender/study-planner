@@ -11,9 +11,86 @@
  */
 
 import { useState } from "react";
-import { applePalette, leastUsedColor, type Course } from "@/domain";
+import {
+  applePalette,
+  leastUsedColor,
+  SAMPLE_DATASETS,
+  type Course,
+  type SampleDatasetId,
+} from "@/domain";
 import { Button, Sheet, TextField } from "@/ui";
 import type { ResolvedSelection } from "@/features/workspace/scope";
+
+export function SampleDataSheet({
+  open,
+  onOpenChange,
+  hasData,
+  onLoad,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  hasData: boolean;
+  onLoad: (datasetId: SampleDatasetId) => void;
+}) {
+  const [selectedId, setSelectedId] = useState<SampleDatasetId>(SAMPLE_DATASETS[0].id);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    setSelectedId(SAMPLE_DATASETS[0].id);
+  }
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Load sample data"
+      description={
+        hasData
+          ? "Choose a dataset. Loading it replaces your current semesters and study history."
+          : "Choose a dataset to explore the planner with a complete semester."
+      }
+      footer={
+        <>
+          <Button onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            variant={hasData ? "danger" : "accent"}
+            onClick={() => {
+              onLoad(selectedId);
+              onOpenChange(false);
+            }}
+          >
+            {hasData ? "Replace data" : "Load sample"}
+          </Button>
+        </>
+      }
+    >
+      <div role="radiogroup" aria-label="Sample dataset" className="flex flex-col gap-2">
+        {SAMPLE_DATASETS.map((dataset) => {
+          const selected = dataset.id === selectedId;
+          return (
+            <button
+              key={dataset.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => setSelectedId(dataset.id)}
+              className={
+                selected
+                  ? "rounded-control bg-accent/12 p-3 text-left inset-ring-2 inset-ring-accent"
+                  : "rounded-control bg-fill p-3 text-left inset-ring inset-ring-separator hover:bg-fill-strong"
+              }
+            >
+              <span className="block text-body font-semibold">{dataset.name}</span>
+              <span className="mt-0.5 block text-callout text-secondary">
+                {dataset.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </Sheet>
+  );
+}
 
 export function NewPlanSheet({
   open,

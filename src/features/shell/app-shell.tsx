@@ -29,10 +29,11 @@ import { usePlannerErrors, usePlannerState, useRepository } from "@/data/use-rep
 import {
   DEFAULT_PREFERENCES,
   EMPTY_SNAPSHOT,
-  generateSeedData,
+  generateSampleDataset,
   toIsoDate,
   type Course,
   type Exam,
+  type SampleDatasetId,
   type Topic,
 } from "@/domain";
 import {
@@ -46,7 +47,7 @@ import { AppSidebar } from "./app-sidebar";
 import { AppToolbar } from "./app-toolbar";
 import { CommandPalette } from "./command-palette";
 import { Inspector } from "./inspector";
-import { ConfirmDeleteSheet, NewCourseSheet, NewPlanSheet } from "./sheets";
+import { ConfirmDeleteSheet, NewCourseSheet, NewPlanSheet, SampleDataSheet } from "./sheets";
 import { OutlineView } from "@/features/outline/outline-view";
 import { TimelineView } from "@/features/timeline/timeline-view";
 import { TodayView } from "@/features/today/today-view";
@@ -85,6 +86,7 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(
     () => typeof window === "undefined" || window.innerWidth >= 1024,
   );
+  const [sampleDataOpen, setSampleDataOpen] = useState(false);
 
   const workspace = useWorkspace();
   const apple = useMemo(() => isApplePlatform(), []);
@@ -113,15 +115,20 @@ export function AppShell() {
 
   /* ─── Actions ─────────────────────────────────────────────────────────── */
 
-  const loadSampleData = () => {
-    const seed = generateSeedData({ today });
+  const loadSampleData = (datasetId: SampleDatasetId) => {
+    const seed = generateSampleDataset(datasetId, today);
+    const preferences = seed.preferences;
     run(
       repository.replaceAll(
         serializePlans(
-          { plans: [seed.plan], studyLog: seed.studyLog, preferences: DEFAULT_PREFERENCES },
+          {
+            plans: [seed.plan],
+            studyLog: seed.studyLog,
+            preferences: preferences ?? DEFAULT_PREFERENCES,
+          },
           today,
         ),
-      ),
+      ).then(() => (preferences ? repository.savePreferences(preferences) : undefined)),
     );
   };
 
@@ -207,7 +214,7 @@ export function AppShell() {
           toggleInspector: workspace.toggleInspector,
           newSemester: () => workspace.setCreating("plan"),
           newCourse: () => workspace.setCreating("course"),
-          loadSampleData,
+          loadSampleData: () => setSampleDataOpen(true),
           exportJson,
         },
       }),
@@ -237,7 +244,7 @@ export function AppShell() {
         onNewPlan={() => workspace.setCreating("plan")}
         onNewCourse={() => workspace.setCreating("course")}
         newShortcut={shortcutLabel("newItem", apple)}
-        onLoadSampleData={loadSampleData}
+        onLoadSampleData={() => setSampleDataOpen(true)}
         onExport={exportJson}
         onImport={importJson}
         canExport={snapshot.plans.length > 0}
@@ -299,7 +306,11 @@ export function AppShell() {
               title="No semesters yet"
               description="A semester holds your courses. Add one to get started, or load a full sample semester to see what the app looks like with real material in it."
               action={
-                <Button variant="accent" leadingIcon={<Plus />} onClick={loadSampleData}>
+                <Button
+                  variant="accent"
+                  leadingIcon={<Plus />}
+                  onClick={() => setSampleDataOpen(true)}
+                >
                   Load sample data
                 </Button>
               }
@@ -373,6 +384,13 @@ export function AppShell() {
         open={workspace.paletteOpen}
         onOpenChange={workspace.setPaletteOpen}
         commands={commands}
+      />
+
+      <SampleDataSheet
+        open={sampleDataOpen}
+        onOpenChange={setSampleDataOpen}
+        hasData={snapshot.plans.length > 0}
+        onLoad={loadSampleData}
       />
 
       <NewPlanSheet
