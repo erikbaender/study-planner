@@ -22,7 +22,6 @@ import {
   ChevronsUpDown,
   Eye,
   EyeOff,
-  Focus as FocusIcon,
   Layers,
   Plus,
 } from "lucide-react";
@@ -48,7 +47,6 @@ export function AppSidebar({
   health,
   focus,
   hiddenCourseIds,
-  isolatedCourseId,
   query,
   onSelectPlan,
   onNewPlan,
@@ -56,7 +54,6 @@ export function AppSidebar({
   onDeletePlan,
   onSetFocus,
   onToggleHidden,
-  onToggleIsolated,
   onHideAll,
   onShowAll,
   onNewCourse,
@@ -66,7 +63,6 @@ export function AppSidebar({
   health: Map<string, CourseHealth>;
   focus: Focus;
   hiddenCourseIds: readonly string[];
-  isolatedCourseId: string | null;
   query: string;
   onSelectPlan: (planId: string) => void;
   onNewPlan: () => void;
@@ -74,7 +70,6 @@ export function AppSidebar({
   onDeletePlan: () => void;
   onSetFocus: (focus: Focus) => void;
   onToggleHidden: (course: Course) => void;
-  onToggleIsolated: (course: Course) => void;
   onHideAll: () => void;
   onShowAll: () => void;
   onNewCourse: () => void;
@@ -82,7 +77,9 @@ export function AppSidebar({
   const courses = plan?.courses ?? [];
   const behindCount = courses.filter((course) => isBehind(health.get(course.id))).length;
   const soonCount = courses.filter((course) => hasExamSoon(health.get(course.id))).length;
-  const visible = courses.filter((course) => matchesQuery(query, course.name, course.code));
+  const visible = courses
+    .filter((course) => matchesQuery(query, course.name, course.code))
+    .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
 
   return (
     <Sidebar label="Courses">
@@ -164,10 +161,7 @@ export function AppSidebar({
             course={course}
             health={health.get(course.id)}
             hidden={hiddenCourseIds.includes(course.id)}
-            isolated={isolatedCourseId === course.id}
-            dimmed={isolatedCourseId !== null && isolatedCourseId !== course.id}
             onToggleHidden={() => onToggleHidden(course)}
-            onToggleIsolated={() => onToggleIsolated(course)}
           />
         ))}
       </SidebarSection>
@@ -187,9 +181,8 @@ export function AppSidebar({
  * competing in one click. It is now purely a filter, with the two switches that
  * filtering actually needs:
  *
- * - **hide** removes the course from all three views;
- * - **isolate** shows only that course, overriding both the hidden list and the
- *   focus. One at a time, because isolating two things is just hiding the rest.
+ * **Hide** removes the course from all three views. Its icon describes the
+ * action it will take, matching the global show-all and hide-all controls.
  *
  * The course's own details live in the inspector, reached from the outline or
  * from ⌘K — where they belong, since that is a question about one course rather
@@ -199,21 +192,14 @@ function CourseFilterRow({
   course,
   health,
   hidden,
-  isolated,
-  dimmed,
   onToggleHidden,
-  onToggleIsolated,
 }: {
   course: Course;
   health: CourseHealth | undefined;
   hidden: boolean;
-  isolated: boolean;
-  /** Something else is isolated, so this row is out of scope without being hidden. */
-  dimmed: boolean;
   onToggleHidden: () => void;
-  onToggleIsolated: () => void;
 }) {
-  const off = hidden || dimmed;
+  const off = hidden;
 
   return (
     <li className="group/row flex flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill">
@@ -227,43 +213,37 @@ function CourseFilterRow({
           {course.name}
         </span>
 
-        {/* The switches sit where the countdown does and trade places with it on
-            hover, rather than taking a permanent column: at rest the row should
-            read as a course, not as a control panel. */}
-        <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover/row:opacity-100 focus-within:opacity-100">
-          <Tooltip content={isolated ? "Stop isolating" : "Show only this course"}>
-            <IconButton
-              size="sm"
-              label={isolated ? `Stop isolating ${course.name}` : `Show only ${course.name}`}
-              aria-pressed={isolated}
-              icon={<FocusIcon />}
-              className={isolated ? "text-accent" : undefined}
-              onClick={onToggleIsolated}
-            />
-          </Tooltip>
-          <Tooltip content={hidden ? "Show this course" : "Hide this course"}>
-            <IconButton
-              size="sm"
-              label={hidden ? `Show ${course.name}` : `Hide ${course.name}`}
-              aria-pressed={hidden}
-              icon={hidden ? <EyeOff /> : <Eye />}
-              onClick={onToggleHidden}
-            />
-          </Tooltip>
-        </span>
-
-        <span className="shrink-0 group-hover/row:hidden">
-          {isolated ? (
-            <FocusIcon aria-hidden="true" className="size-3.5 text-accent" />
-          ) : hidden ? (
-            <EyeOff aria-label={`${course.name} is hidden`} className="size-3.5 text-tertiary" />
-          ) : health?.exam && health.daysUntilExam !== null ? (
-            <CountdownBadge
-              days={health.daysUntilExam}
-              provisional={health.exam.status === "provisional"}
-              atRisk={isBehind(health)}
-            />
+        {/* The countdown never swaps out. The action grows into the row on its
+            right, which naturally pushes the countdown left while keeping the
+            button anchored. This single layout has no competing hover layers
+            for Chromium or Radix focus to leave stale after a state update. */}
+        <span className="flex shrink-0 items-center justify-end gap-0.5">
+          {health?.exam && health.daysUntilExam !== null ? (
+            <span className={clsx("shrink-0", hidden && "opacity-40")}>
+              <CountdownBadge
+                days={health.daysUntilExam}
+                provisional={health.exam.status === "provisional"}
+                atRisk={isBehind(health)}
+              />
+            </span>
           ) : null}
+
+          <span className="flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity] duration-100 ease-mac pointer-events-none group-hover/row:w-control group-hover/row:opacity-100 group-hover/row:pointer-events-auto group-focus-within/row:w-control group-focus-within/row:opacity-100 group-focus-within/row:pointer-events-auto">
+            <Tooltip content={hidden ? "Show this course" : "Hide this course"}>
+              <IconButton
+                size="sm"
+                label={hidden ? `Show ${course.name}` : `Hide ${course.name}`}
+                icon={hidden ? <Eye /> : <EyeOff />}
+                // A pointer click gives the button DOM focus. If it keeps that
+                // focus, the keyboard-only `focus-within` reveal survives long
+                // after the pointer leaves this row. Pointer users already
+                // have hover; keyboard activation does not fire pointer-up and
+                // therefore keeps the action visible as intended.
+                onPointerUp={(event) => event.currentTarget.blur()}
+                onClick={onToggleHidden}
+              />
+            </Tooltip>
+          </span>
         </span>
       </span>
 

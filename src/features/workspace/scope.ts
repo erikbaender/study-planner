@@ -62,33 +62,21 @@ export function hasExamSoon(health: CourseHealth | undefined, within = EXAM_SOON
 /** What the sidebar's two switches have been set to. */
 export type Visibility = {
   hiddenCourseIds: readonly string[];
-  isolatedCourseId: string | null;
 };
 
 /**
  * The courses every view draws, in one place.
  *
- * Three filters, applied in a fixed order because they answer different
- * questions and the order is what makes them predictable:
- *
- * 1. **Isolate** wins outright. "Show me only this" is an override, so it beats
- *    both the hidden list and the smart focus — otherwise isolating a course
- *    that happens to be on track while *Behind* is selected would show nothing,
- *    which reads as a broken button.
- * 2. **Focus** narrows to a question about the plan.
- * 3. **Hidden** removes what has been switched off.
+ * Focus first narrows to a question about the plan, then hidden courses are
+ * removed from the result.
  */
 export function coursesInFocus(
   plan: Plan | undefined,
   focus: Focus,
   health: Map<string, CourseHealth>,
-  visibility: Visibility = { hiddenCourseIds: [], isolatedCourseId: null },
+  visibility: Visibility = { hiddenCourseIds: [] },
 ): Course[] {
   const courses = plan?.courses ?? [];
-
-  if (visibility.isolatedCourseId) {
-    return courses.filter((course) => course.id === visibility.isolatedCourseId);
-  }
 
   const matching =
     focus.kind === "all"

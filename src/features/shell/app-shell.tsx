@@ -102,9 +102,8 @@ export function AppShell() {
     () =>
       coursesInFocus(plan, workspace.focus, health, {
         hiddenCourseIds: workspace.hiddenCourseIds,
-        isolatedCourseId: workspace.isolatedCourseId,
       }),
-    [plan, workspace.focus, health, workspace.hiddenCourseIds, workspace.isolatedCourseId],
+    [plan, workspace.focus, health, workspace.hiddenCourseIds],
   );
   const selection = useMemo(
     () => resolveSelection(plan, workspace.selection),
@@ -284,7 +283,6 @@ export function AppShell() {
             health={health}
             focus={workspace.focus}
             hiddenCourseIds={workspace.hiddenCourseIds}
-            isolatedCourseId={workspace.isolatedCourseId}
             query={workspace.query}
             onSelectPlan={workspace.setPlan}
             onNewPlan={() => workspace.setCreating("plan")}
@@ -292,7 +290,6 @@ export function AppShell() {
             onDeletePlan={() => setDeletePlanOpen(true)}
             onSetFocus={workspace.setFocus}
             onToggleHidden={(course) => workspace.toggleCourseHidden(course.id)}
-            onToggleIsolated={(course) => workspace.toggleCourseIsolated(course.id)}
             onHideAll={() => workspace.hideAllCourses((plan?.courses ?? []).map((c) => c.id))}
             onShowAll={workspace.showAllCourses}
             onNewCourse={() => workspace.setCreating("course")}

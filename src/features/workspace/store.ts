@@ -17,7 +17,7 @@
  * The two axes are deliberately separate:
  *
  * - **focus** is *which courses you are looking at* — all of them, the ones that
- *   are behind, or a single course.
+ *   are behind, or the ones with exams soon.
  * - **view** is *how they are shown* — Today, Timeline, or Outline.
  *
  * macOS splits these the same way: the sidebar picks the source, the toolbar
@@ -43,9 +43,8 @@ export const VIEW_LABELS: Record<ViewId, string> = {
  * Questions rather than folders — "what is behind", "what is coming" — resolved
  * against live metrics on every render instead of stored as membership.
  *
- * There is deliberately no "one course" focus. Picking a single course is what
- * *isolate* does, and having two mechanisms for the same thing is how the
- * sidebar ended up being a selector that also filtered.
+ * There is deliberately no "one course" focus: the sidebar filters visibility
+ * without turning course rows into navigation.
  */
 export type Focus = { kind: "all" } | { kind: "behind" } | { kind: "soon" };
 
@@ -67,12 +66,6 @@ export type WorkspaceState = {
    * everything again.
    */
   hiddenCourseIds: EntityId[];
-  /**
-   * Show only this one, whatever else is hidden. At most one at a time, because
-   * "isolate two things" is just "hide the rest", which the other control
-   * already does.
-   */
-  isolatedCourseId: EntityId | null;
   selection: Selection;
   inspectorOpen: boolean;
   paletteOpen: boolean;
@@ -91,7 +84,6 @@ export type WorkspaceState = {
   setView: (view: ViewId) => void;
   setFocus: (focus: Focus) => void;
   toggleCourseHidden: (courseId: EntityId) => void;
-  toggleCourseIsolated: (courseId: EntityId) => void;
   hideAllCourses: (courseIds: EntityId[]) => void;
   showAllCourses: () => void;
   select: (selection: Selection) => void;
@@ -110,7 +102,6 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   view: "today",
   focus: { kind: "all" },
   hiddenCourseIds: [],
-  isolatedCourseId: null,
   selection: null,
   // Closed by default. An inspector that opens itself on load takes a third of
   // the window away from someone who has not asked a question yet.
@@ -127,7 +118,6 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
       planId,
       focus: { kind: "all" },
       hiddenCourseIds: [],
-      isolatedCourseId: null,
       selection: null,
     }),
   setView: (view) => set({ view }),
@@ -138,18 +128,10 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
       hiddenCourseIds: state.hiddenCourseIds.includes(courseId)
         ? state.hiddenCourseIds.filter((id) => id !== courseId)
         : [...state.hiddenCourseIds, courseId],
-      // Hiding the isolated course is a contradiction; the hide wins, because
-      // it is the control that was just used.
-      isolatedCourseId: state.isolatedCourseId === courseId ? null : state.isolatedCourseId,
     })),
 
-  toggleCourseIsolated: (courseId) =>
-    set((state) => ({
-      isolatedCourseId: state.isolatedCourseId === courseId ? null : courseId,
-    })),
-
-  hideAllCourses: (courseIds) => set({ hiddenCourseIds: [...courseIds], isolatedCourseId: null }),
-  showAllCourses: () => set({ hiddenCourseIds: [], isolatedCourseId: null }),
+  hideAllCourses: (courseIds) => set({ hiddenCourseIds: [...courseIds] }),
+  showAllCourses: () => set({ hiddenCourseIds: [] }),
   select: (selection) => set({ selection }),
   setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),
   toggleInspector: () => set((state) => ({ inspectorOpen: !state.inspectorOpen })),

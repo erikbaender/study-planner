@@ -35,29 +35,6 @@ describe("the workspace store", () => {
     expect(state.selection).toBeNull();
   });
 
-  it("lets isolate replace itself and switch off", () => {
-    useWorkspace.getState().toggleCourseIsolated("course_1");
-    expect(useWorkspace.getState().isolatedCourseId).toBe("course_1");
-
-    // Only one at a time: isolating a second replaces the first rather than
-    // adding to it.
-    useWorkspace.getState().toggleCourseIsolated("course_2");
-    expect(useWorkspace.getState().isolatedCourseId).toBe("course_2");
-
-    useWorkspace.getState().toggleCourseIsolated("course_2");
-    expect(useWorkspace.getState().isolatedCourseId).toBeNull();
-  });
-
-  it("drops the isolation when the isolated course is hidden", () => {
-    // The two switches would otherwise disagree, and the view would be showing
-    // a course the sidebar says is hidden.
-    useWorkspace.getState().toggleCourseIsolated("course_1");
-    useWorkspace.getState().toggleCourseHidden("course_1");
-
-    expect(useWorkspace.getState().isolatedCourseId).toBeNull();
-    expect(useWorkspace.getState().hiddenCourseIds).toEqual(["course_1"]);
-  });
-
   it("keeps the view when the semester changes", () => {
     // The view is how you look at things, not what you are looking at.
     useWorkspace.getState().setView("outline");

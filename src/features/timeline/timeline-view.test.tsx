@@ -2,9 +2,12 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { course as makeCourse, topic as makeTopic } from "@/test/factories";
+import type { StudyBlockInput } from "@/data/repository";
 import { TimelineView } from "./timeline-view";
 
-const repository = { createStudyBlock: vi.fn(() => Promise.resolve()) };
+const repository = {
+  createStudyBlock: vi.fn<(input: StudyBlockInput) => Promise<void>>(() => Promise.resolve()),
+};
 const run = vi.fn((promise: Promise<unknown>) => promise);
 
 vi.mock("@/data/use-repository", () => ({
