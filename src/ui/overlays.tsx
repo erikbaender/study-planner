@@ -28,9 +28,8 @@ import {
   Popover as RadixPopover,
   Tooltip as RadixTooltip,
 } from "radix-ui";
-import { Check, X } from "lucide-react";
+import { Check } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import { IconButton } from "./button";
 
 /* ─── Popover ───────────────────────────────────────────────────────────── */
 
@@ -105,7 +104,12 @@ export function Sheet({
   /** Optional supporting line. Also becomes the dialog's accessible description. */
   description?: string;
   children: ReactNode;
-  footer?: ReactNode;
+  /**
+   * Required. A sheet must offer a way out of itself, and since there is no
+   * close button it has to be here — the same reason `EmptyState` takes its
+   * action as a required prop.
+   */
+  footer: ReactNode;
   trigger?: ReactNode;
   width?: "sm" | "md" | "lg";
 }) {
@@ -130,27 +134,27 @@ export function Sheet({
             "data-[state=open]:animate-sheet-in data-[state=closed]:animate-sheet-out",
           )}
         >
-          <header className="flex items-start gap-3 px-5 pt-4 pb-3">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <RadixDialog.Title className="text-title3 font-semibold">{title}</RadixDialog.Title>
-              {description ? (
-                <RadixDialog.Description className="text-callout text-secondary">
-                  {description}
-                </RadixDialog.Description>
-              ) : null}
-            </div>
-            <RadixDialog.Close asChild className="ml-auto">
-              <IconButton label="Close" size="sm" icon={<X />} />
-            </RadixDialog.Close>
+          {/*
+            No close button. A sheet's footer already carries Cancel, and a ✕ in
+            the corner is a second control for the same thing — which on macOS a
+            sheet does not have, because it is attached to the document rather
+            than being a window of its own. Escape and a click outside still
+            dismiss it.
+          */}
+          <header className="flex flex-col gap-0.5 px-5 pt-4 pb-3">
+            <RadixDialog.Title className="text-title3 font-semibold">{title}</RadixDialog.Title>
+            {description ? (
+              <RadixDialog.Description className="text-callout text-secondary">
+                {description}
+              </RadixDialog.Description>
+            ) : null}
           </header>
           <div className="flex-1 overflow-y-auto px-5 pb-4">{children}</div>
-          {footer ? (
-            // Buttons right-aligned, confirm last: the macOS order, and the
-            // reverse of the Windows one.
-            <footer className="flex items-center justify-end gap-2 border-t border-separator px-5 py-3">
-              {footer}
-            </footer>
-          ) : null}
+          {/* Buttons right-aligned, confirm last: the macOS order, and the
+              reverse of the Windows one. */}
+          <footer className="flex items-center justify-end gap-2 border-t border-separator px-5 py-3">
+            {footer}
+          </footer>
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

@@ -68,9 +68,11 @@ export function NewPlanSheet({
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
-        {/* Submitting on Enter needs a real submit button in the form; the
-            footer's lives outside it, where Radix puts sheet actions. */}
-        <button type="submit" className="sr-only">
+        {/* Submitting on Enter needs a real submit button inside the form; the
+            footer's lives outside it, where Radix puts sheet actions. Hidden
+            from the accessibility tree as well as from view, or the sheet
+            announces two Create buttons — it is a mechanism, not a control. */}
+        <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only">
           Create
         </button>
       </form>
@@ -167,7 +169,7 @@ export function NewCourseSheet({
             ))}
           </div>
         </div>
-        <button type="submit" className="sr-only">
+        <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only">
           Create
         </button>
       </form>

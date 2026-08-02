@@ -59,7 +59,12 @@ describe("Sheet", () => {
         trigger={<Button>New course</Button>}
         title="New course"
         description="Courses group the topics you work through."
-        footer={<Button variant="accent">Create</Button>}
+        footer={
+          <>
+            <Button onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="accent">Create</Button>
+          </>
+        }
       >
         <TextField label="Name" />
       </Sheet>
@@ -90,15 +95,18 @@ describe("Sheet", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it("closes from its own close button", async () => {
+  it("has no close button, because the footer already offers a way out", async () => {
+    // A ✕ in the corner is a second control for what Cancel already does, and a
+    // macOS sheet has none — it is attached to the document rather than being a
+    // window of its own.
     const user = userEvent.setup();
     render(<Harness />);
 
     await user.click(screen.getByRole("button", { name: "New course" }));
     await screen.findByRole("dialog");
-    await user.click(screen.getByRole("button", { name: "Close" }));
 
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 });
 
