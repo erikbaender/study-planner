@@ -284,25 +284,32 @@
 
   /* A sheet is hinged to the top of the window, so it slides out of the title
      bar rather than scaling up from the centre. */
+  /**
+   * Y only. The sheet is centred with Tailwind's `-translate-x-1/2`, which in v4
+   * compiles to the standalone `translate` property rather than to `transform` —
+   * and the two compose. A `translate(-50%, …)` here therefore *added* to the
+   * centring, so the sheet animated in half a width to the left and jumped into
+   * place the moment the animation stopped applying.
+   */
   @keyframes sheet-in {
     from {
       opacity: 0;
-      transform: translate(-50%, -100%);
+      transform: translateY(-100%);
     }
     to {
       opacity: 1;
-      transform: translate(-50%, 0);
+      transform: translateY(0);
     }
   }
 
   @keyframes sheet-out {
     from {
       opacity: 1;
-      transform: translate(-50%, 0);
+      transform: translateY(0);
     }
     to {
       opacity: 0;
-      transform: translate(-50%, -100%);
+      transform: translateY(-100%);
     }
   }
 }
