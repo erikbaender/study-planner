@@ -16,10 +16,106 @@ import {
   leastUsedColor,
   SAMPLE_DATASETS,
   type Course,
+  type Plan,
   type SampleDatasetId,
 } from "@/domain";
 import { Button, Sheet, TextField } from "@/ui";
 import type { ResolvedSelection } from "@/features/workspace/scope";
+
+export function EditPlanSheet({
+  plan,
+  open,
+  onOpenChange,
+  onSave,
+}: {
+  plan: Plan | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (input: { name: string; notes?: string; startDate?: string; endDate?: string }) => void;
+}) {
+  const [draft, setDraft] = useState(() => ({
+    name: plan?.name ?? "",
+    notes: plan?.notes ?? "",
+    startDate: plan?.startDate ?? "",
+    endDate: plan?.endDate ?? "",
+  }));
+  const [identity, setIdentity] = useState(`${plan?.id ?? ""}:${open}`);
+  const nextIdentity = `${plan?.id ?? ""}:${open}`;
+  if (identity !== nextIdentity) {
+    setIdentity(nextIdentity);
+    setDraft({
+      name: plan?.name ?? "",
+      notes: plan?.notes ?? "",
+      startDate: plan?.startDate ?? "",
+      endDate: plan?.endDate ?? "",
+    });
+  }
+
+  const invalid =
+    draft.name.trim() === "" ||
+    Boolean(draft.startDate && draft.endDate && draft.endDate < draft.startDate);
+  const submit = () => {
+    if (invalid) return;
+    onSave({
+      name: draft.name.trim(),
+      notes: draft.notes.trim() || undefined,
+      startDate: draft.startDate || undefined,
+      endDate: draft.endDate || undefined,
+    });
+    onOpenChange(false);
+  };
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Edit semester"
+      description="Change the semester name, dates, or notes."
+      footer={
+        <>
+          <Button onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="accent" disabled={invalid} onClick={submit}>Save</Button>
+        </>
+      }
+    >
+      <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+        <TextField label="Name" autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+        <div className="grid grid-cols-2 gap-2">
+          <TextField label="Starts" type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} />
+          <TextField label="Ends" type="date" value={draft.endDate} hint={invalid && draft.name.trim() !== "" ? "Must be after the start" : undefined} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} />
+        </div>
+        <TextField label="Notes" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} />
+        <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only">Save</button>
+      </form>
+    </Sheet>
+  );
+}
+
+export function ConfirmPlanDeleteSheet({
+  plan,
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  plan: Plan | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const count = plan?.courses.length ?? 0;
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      width="sm"
+      title={plan ? `Delete “${plan.name}”?` : "Delete semester?"}
+      description={count === 0 ? "This semester has no courses." : `Its ${count} course${count === 1 ? "" : "s"} and all their study data go with it.`}
+      footer={<><Button onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="danger" onClick={() => { onConfirm(); onOpenChange(false); }}>Delete</Button></>}
+    >
+      <p className="text-body text-secondary">This cannot be undone.</p>
+    </Sheet>
+  );
+}
 
 export function SampleDataSheet({
   open,

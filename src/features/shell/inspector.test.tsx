@@ -14,6 +14,7 @@ const repository = {
   updateCourse: vi.fn(() => Promise.resolve()),
   updateTopic: vi.fn(() => Promise.resolve()),
   logStudy: vi.fn(() => Promise.resolve()),
+  setTopicDependencies: vi.fn(() => Promise.resolve()),
 };
 const run = vi.fn();
 
@@ -134,6 +135,23 @@ describe("Inspector", () => {
       await user.tab();
 
       expect(repository.updateTopic).not.toHaveBeenCalled();
+    });
+
+    it("lets a prerequisite be added", async () => {
+      const prerequisite = makeTopic({ name: "Cell biology" });
+      const dependentCourse = makeCourse({ topics: [prerequisite, topic] });
+      const user = userEvent.setup();
+      render(
+        <Inspector
+          selection={{ kind: "topic", course: dependentCourse, topic }}
+          health={healthFor(dependentCourse)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("checkbox", { name: "Cell biology" }));
+      expect(repository.setTopicDependencies).toHaveBeenCalledWith(topic.id, [prerequisite.id]);
     });
   });
 

@@ -47,7 +47,7 @@ import { AppSidebar } from "./app-sidebar";
 import { AppToolbar } from "./app-toolbar";
 import { CommandPalette } from "./command-palette";
 import { Inspector } from "./inspector";
-import { ConfirmDeleteSheet, NewCourseSheet, NewPlanSheet, SampleDataSheet } from "./sheets";
+import { ConfirmDeleteSheet, ConfirmPlanDeleteSheet, EditPlanSheet, NewCourseSheet, NewPlanSheet, SampleDataSheet } from "./sheets";
 import { OutlineView } from "@/features/outline/outline-view";
 import { TimelineView } from "@/features/timeline/timeline-view";
 import { TodayView } from "@/features/today/today-view";
@@ -87,6 +87,8 @@ export function AppShell() {
     () => typeof window === "undefined" || window.innerWidth >= 1024,
   );
   const [sampleDataOpen, setSampleDataOpen] = useState(false);
+  const [editPlanOpen, setEditPlanOpen] = useState(false);
+  const [deletePlanOpen, setDeletePlanOpen] = useState(false);
 
   const workspace = useWorkspace();
   const apple = useMemo(() => isApplePlatform(), []);
@@ -286,6 +288,8 @@ export function AppShell() {
             query={workspace.query}
             onSelectPlan={workspace.setPlan}
             onNewPlan={() => workspace.setCreating("plan")}
+            onEditPlan={() => setEditPlanOpen(true)}
+            onDeletePlan={() => setDeletePlanOpen(true)}
             onSetFocus={workspace.setFocus}
             onToggleHidden={(course) => workspace.toggleCourseHidden(course.id)}
             onToggleIsolated={(course) => workspace.toggleCourseIsolated(course.id)}
@@ -397,6 +401,25 @@ export function AppShell() {
         open={workspace.creating === "plan"}
         onOpenChange={(open) => workspace.setCreating(open ? "plan" : null)}
         onCreate={(input) => run(repository.createPlan(input).then(workspace.setPlan))}
+      />
+
+      <EditPlanSheet
+        plan={plan}
+        open={editPlanOpen}
+        onOpenChange={setEditPlanOpen}
+        onSave={(input) => { if (plan) run(repository.updatePlan(plan.id, input)); }}
+      />
+
+      <ConfirmPlanDeleteSheet
+        plan={plan}
+        open={deletePlanOpen}
+        onOpenChange={setDeletePlanOpen}
+        onConfirm={() => {
+          if (!plan) return;
+          const nextPlan = snapshot.plans.find((candidate) => candidate.id !== plan.id);
+          run(repository.deletePlan(plan.id).then(() => workspace.setPlan(nextPlan?.id ?? null)));
+          workspace.select(null);
+        }}
       />
 
       <NewCourseSheet

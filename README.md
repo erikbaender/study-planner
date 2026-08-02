@@ -8,16 +8,14 @@ The MVP implementation includes:
 
 - Next.js App Router project scaffolded with pnpm.
 - Apple-inspired responsive planner UI.
-- Plan, course, topic, milestone, and topic-range data structures.
-- Interactive Gantt chart bars that can be dragged or resized by day.
+- Semester, course, topic, exam, and study-block data structures.
+- Interactive timeline blocks that can be created, dragged, or resized by day.
 - Versioned JSON export and create-only JSON import helpers.
 - Authenticated Convex persistence with local fallback for development.
 - GitHub OAuth via Convex Auth.
-- Planner CRUD for plans, courses, topics, milestones, topic ranges, and within-course dependencies.
+- Planner CRUD for semesters, courses, topics, exams, study blocks, and within-course dependencies.
 - Delete confirmations and empty states for sparse or freshly reset accounts.
-- Server-side GitHub issue preview/import for reference repositories such as `erikbaender/mhh`.
-
-The development account has been populated with the corrected `erikbaender/mhh` GitHub sample import: 89 dated issues grouped into 7 source-language courses, with 34 `Teil ...` progress subissues skipped.
+- Built-in sample semesters for exploring the planner without entering data first.
 
 ## Development
 
@@ -69,28 +67,6 @@ pnpm exec convex env set AUTH_GITHUB_SECRET <github-oauth-client-secret>
 ```
 
 Convex Auth also requires JWT signing environment variables before production OAuth is complete. Follow the Convex Auth manual setup guide to set `JWT_PRIVATE_KEY` and `JWKS` on the Convex deployment.
-
-## GitHub Issue Import
-
-Authenticated imports can use a Convex-side token so the browser does not need to hold a GitHub access token:
-
-```bash
-pnpm exec convex env set GITHUB_IMPORT_TOKEN <github-issues-read-token>
-```
-
-To import real Gantt ranges from GitHub Projects v2 fields, also configure a token that can read Projects v2 data:
-
-```bash
-pnpm exec convex env set GITHUB_PROJECTS_TOKEN <github-projects-read-token>
-```
-
-The importer preserves GitHub issue titles, milestones, labels, and body text as source data. German study-plan issue content should stay German; the app should not translate it during import.
-
-Progress subissues named like `Teil ...` are skipped when they do not contain a date range. They were used to track partial progress within real issues and should not become standalone study topics.
-
-When available, the importer reads GitHub Projects v2 `Start date` and `Target date` fields for topic study ranges. Milestone due dates are kept as course milestones and are not used as topic-range fallbacks.
-
-The GitHub import modal previews issue counts and course grouping before creating a plan. In authenticated mode, preview and import both use the Convex-side token when the token field is left empty.
 
 ## Reports
 

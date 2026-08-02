@@ -34,6 +34,7 @@ import { useRef, useState } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   addDays,
+  clampDate,
   differenceInDays,
   maxDate,
   minDate,
@@ -48,6 +49,7 @@ import {
 import { Badge, Button, ContextMenu, EmptyState, SegmentedControl } from "@/ui";
 import {
   daysMoved,
+  dateAt,
   PX_PER_DAY,
   ticksFor,
   timelineRange,
@@ -295,7 +297,6 @@ function CourseLane({
   onToggle: () => void;
   onSelectTopic: (topic: Topic) => void;
 }) {
-  const scheduled = course.topics.filter((topic) => topic.blocks.length > 0);
   const span = rollUpSpan(course);
 
   return (
@@ -354,14 +355,13 @@ function CourseLane({
       </div>
 
       {open ? (
-        scheduled.length === 0 ? (
+        course.topics.length === 0 ? (
           <p className="sticky left-0 max-w-md px-8 pb-2 text-callout text-tertiary">
-            Nothing scheduled in this course yet. Phase 6 plans it automatically; until then, drag
-            on a lane to place a block by hand.
+            This course has no topics yet. Add material in the outline before placing study blocks.
           </p>
         ) : (
           <div className="pb-1">
-            {scheduled.map((topic) => (
+            {course.topics.map((topic) => (
               <TopicLane
                 key={topic.id}
                 course={course}
@@ -397,14 +397,79 @@ function TopicLane({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const repository = useRepository();
+  const { run } = usePlannerErrors();
+  const laneRef = useRef<HTMLDivElement>(null);
+  const [draft, setDraft] = useState<{ startDate: IsoDate; endDate: IsoDate } | null>(null);
+
+  const startCreate = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const lane = laneRef.current;
+    if (!lane) return;
+
+    event.preventDefault();
+    const bounds = lane.getBoundingClientRect();
+    const dateUnderPointer = (clientX: number) =>
+      clampDate(dateAt(clientX - bounds.left, range.start, zoom), range.start, range.end);
+    const origin = dateUnderPointer(event.clientX);
+    let latest = { startDate: origin, endDate: origin };
+    setDraft(latest);
+
+    const move = (pointer: PointerEvent) => {
+      const current = dateUnderPointer(pointer.clientX);
+      latest = {
+        startDate: minDate(origin, current),
+        endDate: maxDate(origin, current),
+      };
+      setDraft(latest);
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDraft(null);
+      run(
+        repository.createStudyBlock({
+          topicId: topic.id,
+          startDate: latest.startDate,
+          endDate: latest.endDate,
+          source: "manual",
+        }),
+      );
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   return (
-    <div className="relative" style={{ height: ROW_HEIGHT }}>
+    <div
+      ref={laneRef}
+      data-topic-lane={topic.id}
+      onPointerDown={startCreate}
+      className="relative cursor-crosshair hover:bg-fill/30"
+      style={{ height: ROW_HEIGHT }}
+      title={`Drag to place a study block for ${topic.name}`}
+    >
       {/* Centred on the row rather than floated at its top, so it lines up with
           the bar it names; `text-callout` on `text-secondary` rather than a
           10px tertiary, which was too faint to read against a busy canvas. */}
-      <span className="material-inline sticky left-0 z-20 float-left flex h-full max-w-44 items-center truncate rounded-r-chip pr-2 pl-8 text-callout text-secondary">
+      <span
+        onPointerDown={(event) => event.stopPropagation()}
+        className="material-inline sticky left-0 z-20 float-left flex h-full max-w-44 cursor-default items-center truncate rounded-r-chip pr-2 pl-8 text-callout text-secondary"
+      >
         {topic.name}
       </span>
+      {draft ? (
+        <span
+          aria-hidden="true"
+          style={{
+            left: xOf(draft.startDate, range.start, zoom),
+            width: Math.max(widthOf(draft.startDate, draft.endDate, zoom), 6),
+          }}
+          className="pointer-events-none absolute top-1 h-4 rounded-chip border border-dashed border-accent bg-accent/10"
+        />
+      ) : null}
       {topic.blocks.map((block) => (
         <BlockBar
           key={block.id}

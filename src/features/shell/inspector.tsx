@@ -44,6 +44,7 @@ import {
 import {
   Badge,
   Button,
+  Checkbox,
   ProgressBar,
   ProgressSlider,
   SelectField,
@@ -74,8 +75,8 @@ export function Inspector({
     >
       {selection === null ? (
         <p className="px-4 py-6 text-body text-secondary">
-          Nothing selected. Pick a course in the sidebar or a topic in the outline to see and edit
-          its details here.
+          Nothing selected. Choose Show in inspector from a course’s actions menu, or select a
+          topic or exam in the outline.
         </p>
       ) : selection.kind === "course" ? (
         <CourseInspector
@@ -364,6 +365,7 @@ function TopicInspector({
   const { run } = usePlannerErrors();
   const progress = topicProgress(topic);
   const unitLabel = UNIT_LABELS[topic.unit].plural;
+  const dependencyCandidates = course.topics.filter((candidate) => candidate.id !== topic.id);
 
   /**
    * Every edit sends the whole topic back, because `updateTopic` takes a
@@ -508,11 +510,35 @@ function TopicInspector({
             </option>
           ))}
         </SelectField>
-        <Row label="Depends on">
-          {topic.dependencyIds.length === 0
-            ? "Nothing"
-            : `${topic.dependencyIds.length} topic${topic.dependencyIds.length === 1 ? "" : "s"}`}
-        </Row>
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1 text-callout font-medium text-secondary">Depends on</legend>
+          {dependencyCandidates.length === 0 ? (
+            <span className="text-body text-secondary">No other topics in this course</span>
+          ) : (
+            <div className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded-control bg-fill p-2">
+              {dependencyCandidates.map((candidate) => {
+                const checked = topic.dependencyIds.includes(candidate.id);
+                return (
+                  <Checkbox
+                    key={candidate.id}
+                    label={candidate.name}
+                    checked={checked}
+                    onCheckedChange={() =>
+                      run(
+                        repository.setTopicDependencies(
+                          topic.id,
+                          checked
+                            ? topic.dependencyIds.filter((id) => id !== candidate.id)
+                            : [...topic.dependencyIds, candidate.id],
+                        ),
+                      )
+                    }
+                  />
+                );
+              })}
+            </div>
+          )}
+        </fieldset>
         <Row label="Blocks">
           {topic.blocks.length === 0
             ? "Not scheduled"

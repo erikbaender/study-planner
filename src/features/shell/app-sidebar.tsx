@@ -52,6 +52,8 @@ export function AppSidebar({
   query,
   onSelectPlan,
   onNewPlan,
+  onEditPlan,
+  onDeletePlan,
   onSetFocus,
   onToggleHidden,
   onToggleIsolated,
@@ -68,6 +70,8 @@ export function AppSidebar({
   query: string;
   onSelectPlan: (planId: string) => void;
   onNewPlan: () => void;
+  onEditPlan: () => void;
+  onDeletePlan: () => void;
   onSetFocus: (focus: Focus) => void;
   onToggleHidden: (course: Course) => void;
   onToggleIsolated: (course: Course) => void;
@@ -94,6 +98,12 @@ export function AppSidebar({
           })),
           ...(plans.length > 0 ? [{ type: "separator" as const }] : []),
           { label: "New semester…", icon: <Plus />, onSelect: onNewPlan },
+          ...(plan
+            ? [
+                { label: "Edit semester…", onSelect: onEditPlan },
+                { label: "Delete semester…", danger: true, onSelect: onDeletePlan },
+              ]
+            : []),
         ]}
         trigger={
           <button
