@@ -23,7 +23,7 @@
 
 import { clsx } from "clsx";
 import { Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   applePalette,
@@ -53,6 +53,10 @@ import {
   TextField,
 } from "@/ui";
 import type { ResolvedSelection } from "@/features/workspace/scope";
+import {
+  CompletionCheckbox,
+  triggerCompletionAnimation,
+} from "@/features/topics/progress-cell";
 
 export function Inspector({
   selection,
@@ -366,6 +370,9 @@ function TopicInspector({
   const progress = topicProgress(topic);
   const unitLabel = UNIT_LABELS[topic.unit].plural;
   const dependencyCandidates = course.topics.filter((candidate) => candidate.id !== topic.id);
+  const [preview, setPreview] = useState<number | null>(null);
+  const completionCheckboxRef = useRef<HTMLInputElement>(null);
+  const shown = preview ?? topic.completedUnits;
 
   /**
    * Every edit sends the whole topic back, because `updateTopic` takes a
@@ -449,29 +456,77 @@ function TopicInspector({
 
         {topic.totalUnits > 0 ? (
           <>
+            <div
+              className="topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1"
+              style={{ "--topic-completion-color": course.color } as CSSProperties}
+            >
             <ProgressSlider
+              className="min-w-0 flex-1"
               value={topic.completedUnits}
               max={topic.totalUnits}
               label={`${topic.name} progress`}
               valueText={(units) => `${units} of ${topic.totalUnits} ${unitLabel}`}
-              tint={topic.color || course.color}
-              onCommit={(units) =>
+              tint={course.color}
+              onPreview={(units) => {
+                if (units !== null && units >= topic.totalUnits && shown < topic.totalUnits) {
+                  triggerCompletionAnimation(completionCheckboxRef.current, "slider");
+                } else if (units !== null && units < topic.totalUnits && shown >= topic.totalUnits) {
+                  triggerCompletionAnimation(completionCheckboxRef.current, "slider", false);
+                }
+                setPreview(units);
+              }}
+              onCommit={(units) => {
+                setPreview(units);
                 run(
                   repository.logStudy({
                     topicId: topic.id,
                     date: today,
                     units: units - topic.completedUnits,
                   }),
-                )
-              }
+                );
+              }}
             />
-            <Row label="Done">
-              {topic.completedUnits} / {topic.totalUnits} {unitLabel}
-            </Row>
+            <CompletionCheckbox
+              inputRef={completionCheckboxRef}
+              topicId={topic.id}
+              topicName={topic.name}
+              checked={shown >= topic.totalUnits}
+              onChange={(checked) => {
+                const units = checked ? topic.totalUnits : 0;
+                setPreview(units);
+                run(
+                  repository.logStudy({
+                    topicId: topic.id,
+                    date: today,
+                    units: units - shown,
+                  }),
+                );
+              }}
+            />
+            </div>
+            <span className="block text-right text-callout tabular-nums text-secondary">
+              {shown} / {topic.totalUnits} {unitLabel}
+            </span>
           </>
         ) : (
           <>
-            <ProgressBar ratio={progress.ratio} label={`${topic.name} progress`} />
+            <div
+              className="topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1"
+              style={{ "--topic-completion-color": course.color } as CSSProperties}
+            >
+              <ProgressBar
+                className="min-w-0 flex-1"
+                ratio={progress.ratio}
+                label={`${topic.name} progress`}
+              />
+              <CompletionCheckbox
+                topicId={topic.id}
+                topicName={topic.name}
+                checked={false}
+                disabled
+              />
+            </div>
+            <span className="block text-right text-callout text-tertiary">No size set</span>
             <p className="text-callout text-tertiary">
               Give this topic a size and the bar becomes draggable — that is also what lets the app
               work out whether the course will be finished in time.

@@ -124,7 +124,7 @@ export function TopicProgressCell({
   );
 }
 
-function CompletionCheckbox({
+export function CompletionCheckbox({
   inputRef,
   topicId,
   topicName,
@@ -177,7 +177,7 @@ function CompletionCheckbox({
   );
 }
 
-function triggerCompletionAnimation(
+export function triggerCompletionAnimation(
   control: HTMLInputElement | null,
   source: "checkbox" | "slider",
   animateCompletion = true,

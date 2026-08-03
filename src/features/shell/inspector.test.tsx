@@ -84,6 +84,25 @@ describe("Inspector", () => {
       expect(repository.updateTopic).not.toHaveBeenCalled();
     });
 
+    it("keeps the completion checkbox synchronized with inspector progress", async () => {
+      const user = userEvent.setup();
+      renderTopic();
+
+      const checkbox = screen.getByRole("checkbox", { name: "Mark Glycolysis as done" });
+      expect(checkbox).not.toBeChecked();
+      await user.click(checkbox);
+
+      expect(repository.logStudy).toHaveBeenCalledWith({
+        topicId: topic.id,
+        date: TODAY,
+        units: 60,
+      });
+      expect(checkbox).toBeChecked();
+      expect(checkbox.closest(".topic-completion-row")).toHaveStyle({
+        "--topic-completion-color": course.color,
+      });
+    });
+
     it("passes completedUnits through untouched when something else is edited", async () => {
       // `updateTopic` takes a whole topic, so every edit resends the field.
       // Resending anything other than the current value would silently
