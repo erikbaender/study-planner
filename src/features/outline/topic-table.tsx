@@ -18,16 +18,15 @@
  */
 
 import { clsx } from "clsx";
-import { MoreHorizontal } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import { UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
-import { ContextMenu, DropdownMenu, IconButton, Select } from "@/ui";
+import { ContextMenu, Select } from "@/ui";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
 
-/** Name · total · unit · actions · readout · progress · done. */
+/** Name · total · unit · readout · progress · done. */
 const COLUMNS =
-  "grid grid-cols-[minmax(6rem,1fr)_3.5rem_5.5rem_1.75rem_7rem_11rem_1.25rem] items-center gap-3";
+  "grid grid-cols-[minmax(6rem,1fr)_3.5rem_5.5rem_7rem_11rem_1.25rem] items-center gap-3";
 
 export function TopicTable({
   course,
@@ -58,7 +57,6 @@ export function TopicTable({
         <span>Topic</span>
         <span>Total</span>
         <span>Unit</span>
-        <span />
         <span className="text-right">Done</span>
         <span>Progress</span>
         <span />
@@ -190,28 +188,6 @@ function TopicTableRow({
             "hover:bg-fill-strong focus:bg-content focus:text-label",
           )}
           options={UNITS.map((candidate) => ({ value: candidate, label: UNIT_LABELS[candidate].plural }))}
-        />
-
-        {/* A ⋯ is a menu everywhere else on the platform, so it opens one
-            rather than quietly doing a single thing. Present at all times so it
-            stays reachable from the keyboard; only its opacity is conditional. */}
-        <DropdownMenu
-          align="end"
-          label={`Actions for ${topic.name}`}
-          items={[
-            { label: "Show in inspector", onSelect },
-            { label: "New topic below", shortcut: "⌘⏎", onSelect: onAddRow },
-            { type: "separator" },
-            { label: "Delete topic", danger: true, onSelect: onDelete },
-          ]}
-          trigger={
-            <IconButton
-              size="sm"
-              label={`Actions for ${topic.name}`}
-              icon={<MoreHorizontal />}
-              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-            />
-          }
         />
 
         <TopicProgressCell

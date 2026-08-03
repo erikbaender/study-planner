@@ -676,7 +676,7 @@ function ExamInspector({
         />
         <Row label="Certainty">
           {exam.status === "provisional" ? (
-            <Badge tone="orange" variant="outline">
+            <Badge tone="orange">
               Provisional
             </Badge>
           ) : (

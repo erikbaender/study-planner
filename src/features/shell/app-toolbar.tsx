@@ -202,7 +202,7 @@ export const AppToolbar = forwardRef<
         }}
       />
 
-      <Badge tone={props.isAuthenticated ? "green" : "neutral"} variant="outline">
+      <Badge tone={props.isAuthenticated ? "green" : "neutral"}>
         {props.isAuthenticated ? "Synced" : "This device"}
       </Badge>
 

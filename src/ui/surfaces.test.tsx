@@ -40,6 +40,16 @@ describe("Badge", () => {
     render(<Badge tone="red">3 behind</Badge>);
     expect(screen.getByText("3 behind")).toBeInTheDocument();
   });
+
+  it("always uses a transparent fill and tone-colored border and text", () => {
+    render(<Badge tone="green">On track</Badge>);
+    expect(screen.getByText("On track")).toHaveClass(
+      "bg-transparent",
+      "border-current",
+      "text-green",
+    );
+    expect(screen.getByText("On track")).not.toHaveClass("text-white");
+  });
 });
 
 describe("EmptyState", () => {

@@ -325,7 +325,7 @@ function CourseLane({
           />
           <span className="max-w-40 truncate text-callout font-medium">{course.name}</span>
           {health?.pace && !health.pace.onTrack ? (
-            <Badge tone="red" variant="outline">
+            <Badge tone="red">
               Behind
             </Badge>
           ) : null}

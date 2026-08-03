@@ -177,7 +177,7 @@ export function CountdownBadge({
   // ready for is the more urgent fact, and "6w" in grey says the opposite.
   const tone = atRisk ? "red" : days <= 3 ? "red" : days <= 10 ? "orange" : "neutral";
   return (
-    <Badge tone={tone} variant={provisional ? "outline" : "solid"}>
+    <Badge tone={tone}>
       <span className="sr-only">
         {provisional ? "Provisional exam, " : "Exam in "}
         {days} days

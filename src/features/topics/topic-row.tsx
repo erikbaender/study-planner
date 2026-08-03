@@ -7,7 +7,7 @@
  * object in both places and behaving differently in each is how two lists of
  * the same thing drift apart.
  *
- * Name · draggable progress · count · ⋯. The name is the click target that
+ * Name · draggable progress · count. The name is the click target that
  * selects the row into the inspector; the slider is a sibling rather than a
  * child of it, because a slider nested inside a `<button>` is invalid markup
  * and unreachable from the keyboard. The whole `<li>` is the context-menu
@@ -15,10 +15,9 @@
  */
 
 import { clsx } from "clsx";
-import { MoreHorizontal } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { Topic } from "@/domain";
-import { ContextMenu, DropdownMenu, IconButton } from "@/ui";
+import { ContextMenu } from "@/ui";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
 
 export function TopicRow({
@@ -66,24 +65,6 @@ export function TopicRow({
           {prefix ? <span className="text-tertiary">{prefix} · </span> : null}
           {topic.name}
         </button>
-
-        <DropdownMenu
-          align="end"
-          label={`Actions for ${topic.name}`}
-          items={[
-            { label: "Show in inspector", onSelect },
-            { type: "separator" },
-            { label: "Delete topic", danger: true, onSelect: onDelete },
-          ]}
-          trigger={
-            <IconButton
-              size="sm"
-              label={`Actions for ${topic.name}`}
-              icon={<MoreHorizontal />}
-              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-            />
-          }
-        />
 
         <TopicProgressCell
           topic={topic}

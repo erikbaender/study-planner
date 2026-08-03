@@ -16,7 +16,7 @@
  */
 
 import { useState } from "react";
-import { ChevronRight, ClipboardPaste, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, ClipboardPaste, Plus, Trash2 } from "lucide-react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
@@ -35,8 +35,8 @@ import {
   Badge,
   Button,
   Card,
+  ContextMenu,
   CountdownBadge,
-  DropdownMenu,
   EmptyState,
   IconButton,
   ProgressBar,
@@ -174,12 +174,20 @@ function CourseSection({
     );
 
   return (
-    <Card className="flex flex-col gap-3">
+    <ContextMenu
+      items={[
+        { label: "Show in inspector", onSelect: onSelectCourse },
+        { label: "Add topic", icon: <Plus />, onSelect: () => addRow(undefined) },
+        { type: "separator" },
+        { label: "Delete course", icon: <Trash2 />, danger: true, onSelect: onDeleteCourse },
+      ]}
+    >
+      <Card className="flex flex-col gap-3">
       <header className="flex items-center gap-3">
         {/* The heading is the disclosure control, both ways. It used to open the
             course and then do nothing on a second click, because the click was
             wired to selection instead — a triangle that only turns one way.
-            Inspecting the course is now what the ⋯ menu is for. */}
+            Inspecting the course is available from the right-click menu. */}
         <button
           type="button"
           onClick={onToggle}
@@ -216,24 +224,6 @@ function CourseSection({
           />
         ) : null}
 
-        <DropdownMenu
-          align="end"
-          label={`Actions for ${course.name}`}
-          items={[
-            { label: "Show in inspector", onSelect: onSelectCourse },
-            { label: "Add topic", icon: <Plus />, onSelect: () => addRow(undefined) },
-            { type: "separator" },
-            { label: "Delete course", icon: <Trash2 />, danger: true, onSelect: onDeleteCourse },
-          ]}
-          trigger={
-            <IconButton
-              size="sm"
-              label={`Actions for ${course.name}`}
-              icon={<MoreHorizontal />}
-              aria-current={course.id === selectedId ? "true" : undefined}
-            />
-          }
-        />
       </header>
 
       {open ? (
@@ -295,7 +285,8 @@ function CourseSection({
           />
         </>
       ) : null}
-    </Card>
+      </Card>
+    </ContextMenu>
   );
 }
 
@@ -345,7 +336,7 @@ function ExamRow({
                   : exam.startDate}
               </span>
               {exam.status === "provisional" ? (
-                <Badge tone="orange" variant="outline">
+                <Badge tone="orange">
                   Provisional
                 </Badge>
               ) : null}
