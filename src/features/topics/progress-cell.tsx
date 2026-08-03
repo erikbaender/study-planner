@@ -190,7 +190,14 @@ export function triggerCompletionAnimation(
       .filter((checkbox) => checkbox.dataset.topicId === topicId)
       .map((checkbox) => checkbox.closest<HTMLElement>(".topic-completion-row"))
       .filter((candidate): candidate is HTMLElement => candidate !== null);
-  for (const currentRow of currentRows()) {
+  const topicRows = currentRows();
+  const courseId = row.dataset.courseId;
+  const courseRows = courseId
+    ? [...document.querySelectorAll<HTMLElement>(".course-completion-row")].filter(
+        (candidate) => candidate.dataset.courseId === courseId,
+      )
+    : [];
+  for (const currentRow of [...new Set([...topicRows, ...courseRows])]) {
     if (animateCompletion) currentRow.dataset.completionAnimating = "true";
     else delete currentRow.dataset.completionAnimating;
     currentRow.dataset.completionTrigger = source;

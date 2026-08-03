@@ -146,6 +146,7 @@ function TopicTableRow({
       ]}
     >
       <li
+        data-course-id={course.id}
         // Deliberately *not* selecting on focus. It used to, and dragging the
         // progress bar therefore opened the inspector mid-drag, which narrowed
         // the content column, which moved the bar out from under the pointer.

@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { assessCourse, DEFAULT_PREFERENCES } from "@/domain";
-import { course as makeCourse, exam as makeExam, plan as makePlan } from "@/test/factories";
+import { course as makeCourse, exam as makeExam, plan as makePlan, topic as makeTopic } from "@/test/factories";
 import { TooltipProvider } from "@/ui";
 import { AppSidebar } from "./app-sidebar";
 
@@ -90,5 +90,40 @@ describe("AppSidebar course visibility", () => {
       .map((row) => row.textContent)
       .filter((text) => text === "anatomy" || text === "Physiology");
     expect(rows).toEqual([expect.stringContaining("anatomy"), expect.stringContaining("Physiology")]);
+  });
+
+  it("highlights a course when all sized topics are complete", () => {
+    const course = makeCourse({
+      name: "Finished course",
+      color: "#ff3b30",
+      topics: [makeTopic({ totalUnits: 10, completedUnits: 10 })],
+    });
+    const plan = makePlan({ courses: [course] });
+
+    render(
+      <TooltipProvider>
+        <AppSidebar
+          plans={[plan]}
+          plan={plan}
+          health={new Map()}
+          focus={{ kind: "all" }}
+          hiddenCourseIds={[]}
+          query=""
+          onSelectPlan={vi.fn()}
+          onNewPlan={vi.fn()}
+          onEditPlan={vi.fn()}
+          onDeletePlan={vi.fn()}
+          onSetFocus={vi.fn()}
+          onToggleHidden={vi.fn()}
+          onHideAll={vi.fn()}
+          onShowAll={vi.fn()}
+          onNewCourse={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const row = screen.getByText("Finished course").closest("li");
+    expect(row).toHaveAttribute("data-course-completed", "true");
+    expect(row).toHaveStyle({ "--topic-completion-color": "#ff3b30" });
   });
 });

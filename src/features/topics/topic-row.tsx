@@ -26,6 +26,7 @@ export function TopicRow({
   today,
   selected,
   prefix,
+  courseId,
   courseColor,
   onSelect,
   onDelete,
@@ -35,6 +36,7 @@ export function TopicRow({
   selected?: boolean;
   /** Shown before the name — the section in the outline, the course in Today. */
   prefix?: string;
+  courseId: string;
   courseColor: string;
   onSelect: () => void;
   onDelete: () => void;
@@ -48,6 +50,7 @@ export function TopicRow({
       ]}
     >
       <li
+        data-course-id={courseId}
         className={clsx(
           "topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1",
           selected ? "bg-accent-soft" : "hover:bg-fill",

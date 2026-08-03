@@ -183,6 +183,7 @@ export function TodayView({
                 key={topic.id}
                 topic={topic}
                 today={today}
+                courseId={course.id}
                 courseColor={course.color}
                 prefix={`${course.name} · ${units} today`}
                 selected={topic.id === selectedTopicId}
@@ -281,6 +282,7 @@ export function TodayView({
                 key={topic.id}
                 topic={topic}
                 today={today}
+                courseId={course.id}
                 courseColor={course.color}
                 prefix={course.name}
                 selected={topic.id === selectedTopicId}

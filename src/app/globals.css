@@ -101,7 +101,12 @@
   animation: topic-completion-outline var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="off"] {
+.course-completion-row[data-completion-animating="true"] {
+  animation: topic-completion-outline var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="off"],
+.course-completion-row[data-completion-direction="off"] {
   animation: topic-completion-row-out var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
@@ -141,9 +146,17 @@ span:has(> .topic-progress-thumb) {
   background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
 }
 
+.course-completion-row[data-course-completed="true"] {
+  background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+}
+
 /* The same semantic hover fill used by unfinished rows, layered over the
    completion tint instead of replacing it. This keeps the hover delta equal. */
 .topic-completion-row:has(.topic-completion-checkbox:checked):hover {
+  background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
+}
+
+.course-completion-row[data-course-completed="true"]:hover {
   background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
 }
 
@@ -165,7 +178,12 @@ span:has(> .topic-progress-thumb) {
     animation: none;
     box-shadow: 0 0 0 1px var(--topic-completion-color);
   }
-  .topic-completion-row[data-completion-direction="off"] {
+  .course-completion-row[data-completion-animating="true"] {
+    animation: none;
+    box-shadow: 0 0 0 1px var(--topic-completion-color);
+  }
+  .topic-completion-row[data-completion-direction="off"],
+  .course-completion-row[data-completion-direction="off"] {
     animation: none;
   }
   .topic-completion-row[data-completion-direction] .topic-completion-checkmark {

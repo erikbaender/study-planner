@@ -26,6 +26,7 @@ import {
   Plus,
 } from "lucide-react";
 import { clsx } from "clsx";
+import type { CSSProperties } from "react";
 import type { Course, CourseHealth, Plan } from "@/domain";
 import { courseProgress } from "@/domain";
 import {
@@ -205,9 +206,17 @@ function CourseFilterRow({
   onToggleHidden: () => void;
 }) {
   const off = hidden;
+  const completed =
+    course.topics.length > 0 &&
+    course.topics.every((topic) => topic.totalUnits > 0 && topic.completedUnits >= topic.totalUnits);
 
   return (
-    <li className="group/row flex flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill">
+    <li
+      data-course-id={course.id}
+      data-course-completed={completed ? "true" : undefined}
+      className="course-completion-row group/row flex flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill"
+      style={{ "--topic-completion-color": course.color } as CSSProperties}
+    >
       <span className="flex min-w-0 items-center gap-1.5">
         <span
           aria-hidden="true"

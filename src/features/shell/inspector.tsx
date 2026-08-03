@@ -458,6 +458,7 @@ function TopicInspector({
           <>
             <div
               className="topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1"
+              data-course-id={course.id}
               style={{ "--topic-completion-color": course.color } as CSSProperties}
             >
             <ProgressSlider
@@ -512,6 +513,7 @@ function TopicInspector({
           <>
             <div
               className="topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1"
+              data-course-id={course.id}
               style={{ "--topic-completion-color": course.color } as CSSProperties}
             >
               <ProgressBar
