@@ -198,8 +198,14 @@ export function triggerCompletionAnimation(
       )
     : [];
   for (const currentRow of [...new Set([...topicRows, ...courseRows])]) {
+    // Re-applying the same data attributes does not restart a CSS animation.
+    // Clear the previous run and force one layout read before setting the new
+    // direction, so repeated completions always produce a visible flash.
+    delete currentRow.dataset.completionAnimating;
+    delete currentRow.dataset.completionTrigger;
+    delete currentRow.dataset.completionDirection;
+    void currentRow.offsetWidth;
     if (animateCompletion) currentRow.dataset.completionAnimating = "true";
-    else delete currentRow.dataset.completionAnimating;
     currentRow.dataset.completionTrigger = source;
     currentRow.dataset.completionDirection = animateCompletion ? "on" : "off";
   }
