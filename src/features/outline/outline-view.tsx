@@ -533,14 +533,9 @@ function BulkEntrySheet({
           label="Unit for lines that do not name one"
           fieldClassName="max-w-64"
           value={unit}
-          onChange={(event) => setUnit(event.target.value as Unit)}
-        >
-          {UNITS.map((candidate) => (
-            <option key={candidate} value={candidate}>
-              {UNIT_LABELS[candidate].plural}
-            </option>
-          ))}
-        </SelectField>
+          onValueChange={(value) => setUnit(value as Unit)}
+          options={UNITS.map((candidate) => ({ value: candidate, label: UNIT_LABELS[candidate].plural }))}
+        />
 
         {parsed.issues.length > 0 ? (
           <ul role="alert" className="flex flex-col gap-0.5 text-footnote text-red">

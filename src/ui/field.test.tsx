@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import { SelectField, TextArea, TextField } from "./field";
 
 describe("Field wiring", () => {
@@ -60,12 +61,30 @@ describe("Field wiring", () => {
   });
 
   it("applies the same wiring to a select", () => {
+    render(<SelectField label="Semester" defaultValue="ws" options={[
+      { value: "ws", label: "Winter" },
+      { value: "ss", label: "Summer" },
+    ]} />);
+    expect(screen.getByRole("combobox", { name: "Semester" })).toHaveTextContent("Winter");
+  });
+
+  it("opens a custom menu and reports the selected value", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
     render(
-      <SelectField label="Semester" defaultValue="ws">
-        <option value="ws">Winter</option>
-        <option value="ss">Summer</option>
-      </SelectField>,
+      <SelectField
+        label="Semester"
+        value="ws"
+        onValueChange={onValueChange}
+        options={[
+          { value: "ws", label: "Winter" },
+          { value: "ss", label: "Summer" },
+        ]}
+      />,
     );
-    expect(screen.getByRole("combobox", { name: "Semester" })).toHaveValue("ws");
+
+    await user.click(screen.getByRole("combobox", { name: "Semester" }));
+    await user.click(screen.getByRole("option", { name: "Summer" }));
+    expect(onValueChange).toHaveBeenCalledWith("ss");
   });
 });

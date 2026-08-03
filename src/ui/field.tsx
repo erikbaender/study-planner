@@ -15,12 +15,12 @@
  */
 
 import { clsx } from "clsx";
+import { Check, ChevronDown } from "lucide-react";
+import { Select as RadixSelect } from "radix-ui";
 import {
-  forwardRef,
   useId,
-  type InputHTMLAttributes,
+  forwardRef, type InputHTMLAttributes,
   type ReactNode,
-  type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
 
@@ -159,20 +159,97 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
   );
 });
 
-type SelectFieldProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "id"> & Common;
+export type SelectOption = {
+  value: string;
+  label: ReactNode;
+  disabled?: boolean;
+};
 
-/**
- * A native `<select>`, styled as a macOS pop-up button.
- *
- * Radix's Select is used elsewhere for menus that need rich rows, but a plain
- * list of options is one case where the native control is strictly better: it
- * gets the platform's own picker on touch devices, type-ahead for free, and it
- * cannot be clipped by an overflow container.
- */
-export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(function SelectField(
-  { label, hint, error, orientation, hideLabel, fieldClassName, className, children, ...props },
-  ref,
-) {
+type SelectProps = {
+  options: readonly SelectOption[];
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  id?: string;
+  "aria-label"?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
+  className?: string;
+};
+
+/** A menu-backed picker whose surface and rows match the app's context menus. */
+export function Select({
+  options,
+  value,
+  defaultValue,
+  onValueChange,
+  placeholder,
+  disabled,
+  id,
+  className,
+  ...aria
+}: SelectProps) {
+  return (
+    <RadixSelect.Root value={value} defaultValue={defaultValue} onValueChange={onValueChange} disabled={disabled}>
+      <RadixSelect.Trigger
+        id={id}
+        className={clsx(
+          CONTROL,
+          "flex h-control-lg items-center justify-between bg-control px-2 text-left",
+          "hover:bg-control-hover data-[state=open]:bg-control-hover",
+          className,
+        )}
+        {...aria}
+      >
+        <RadixSelect.Value placeholder={placeholder} />
+        <RadixSelect.Icon asChild>
+          <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-secondary" />
+        </RadixSelect.Icon>
+      </RadixSelect.Trigger>
+      <RadixSelect.Portal>
+        <RadixSelect.Content
+          position="popper"
+          sideOffset={4}
+          collisionPadding={12}
+          className={clsx(
+            "material-popover z-50 min-w-44 rounded-control p-1 shadow-popover",
+            "inset-ring inset-ring-[var(--mac-separator-strong)]",
+            "origin-(--radix-select-content-transform-origin)",
+            "data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out",
+          )}
+        >
+          <RadixSelect.Viewport>
+            {options.map((option) => (
+              <RadixSelect.Item
+                key={option.value}
+                value={option.value}
+                disabled={option.disabled}
+                className={clsx(
+                  "relative flex h-6 cursor-default items-center rounded-[4px] py-0 pr-7 pl-2 text-body select-none",
+                  "outline-none data-highlighted:bg-accent data-highlighted:text-on-accent",
+                  "data-disabled:pointer-events-none data-disabled:opacity-40",
+                )}
+              >
+                <RadixSelect.ItemText>{option.label}</RadixSelect.ItemText>
+                <RadixSelect.ItemIndicator className="absolute right-2">
+                  <Check className="size-3" strokeWidth={3} />
+                </RadixSelect.ItemIndicator>
+              </RadixSelect.Item>
+            ))}
+          </RadixSelect.Viewport>
+        </RadixSelect.Content>
+      </RadixSelect.Portal>
+    </RadixSelect.Root>
+  );
+}
+
+type SelectFieldProps = SelectProps & Common;
+
+export function SelectField({
+  label, hint, error, orientation, hideLabel, fieldClassName, className, ...props
+}: SelectFieldProps) {
   return (
     <Field
       label={label}
@@ -183,41 +260,14 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(funct
       className={fieldClassName}
     >
       {({ id, describedBy, invalid }) => (
-        <div className="relative">
-          <select
-            ref={ref}
-            id={id}
-            aria-describedby={describedBy}
-            aria-invalid={invalid || undefined}
-            className={clsx(
-              CONTROL,
-              "h-control-lg appearance-none bg-control pr-7 pl-2",
-              "hover:bg-control-hover",
-              className,
-            )}
-            {...props}
-          >
-            {children}
-          </select>
-          {/* The chevron pair macOS uses for pop-up buttons, drawn rather than
-              iconified so it scales with the control and never mis-centres. */}
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 right-2 flex flex-col justify-center gap-[3px] text-secondary"
-          >
-            <Chevron className="rotate-180" />
-            <Chevron />
-          </span>
-        </div>
+        <Select
+          id={id}
+          aria-describedby={describedBy}
+          aria-invalid={invalid || undefined}
+          className={className}
+          {...props}
+        />
       )}
     </Field>
-  );
-});
-
-function Chevron({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 8 5" className={clsx("h-[5px] w-2 fill-current", className)}>
-      <path d="M4 5 0 0h8z" />
-    </svg>
   );
 }

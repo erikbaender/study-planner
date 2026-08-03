@@ -22,7 +22,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import { UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
-import { ContextMenu, DropdownMenu, IconButton } from "@/ui";
+import { ContextMenu, DropdownMenu, IconButton, Select } from "@/ui";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
 
 /** Name · total · unit · actions · readout · progress · done. */
@@ -179,22 +179,17 @@ function TopicTableRow({
           />
         </span>
 
-        <select
+        <Select
           aria-label={`Unit for ${topic.name}`}
           value={topic.unit}
-          onChange={(event) => patch({ unit: event.target.value as Unit })}
+          onValueChange={(unit) => patch({ unit: unit as Unit })}
           className={clsx(
-            "-mx-1 h-6 w-full appearance-none rounded-chip bg-transparent px-1",
+            "-mx-1 h-6 w-full rounded-chip bg-transparent px-1",
             "text-callout text-secondary",
             "hover:bg-fill-strong focus:bg-content focus:text-label",
           )}
-        >
-          {UNITS.map((candidate) => (
-            <option key={candidate} value={candidate}>
-              {UNIT_LABELS[candidate].plural}
-            </option>
-          ))}
-        </select>
+          options={UNITS.map((candidate) => ({ value: candidate, label: UNIT_LABELS[candidate].plural }))}
+        />
 
         {/* A ⋯ is a menu everywhere else on the platform, so it opens one
             rather than quietly doing a single thing. Present at all times so it

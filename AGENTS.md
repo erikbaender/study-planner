@@ -2,11 +2,21 @@
 
 ## Running the app
 
-- Run the development server on the standard port with `pnpm dev` (port 3000).
-- If port 3000 is occupied by an existing app process, stop that exact process and restart the current checkout on port 3000. Do not work around it with another port, a temporary project copy, or a separate deployment.
-- Leave the development server running on port 3000 after implementation and verification so the user can inspect the app. Do not close the server as part of cleanup or handoff.
-- Start the final handoff server as a process that survives the agent turn. A tool-managed terminal/PTY session is not sufficient because it may be terminated when the turn ends. Use a persistent process manager such as a transient user service (`systemd-run --user`) when available.
-- Immediately before the final response, verify both that the persistent process is still active and that `http://localhost:3000` returns a successful response. Do not claim that the server is running based only on its startup output.
+- Port 3000 is shared across worktrees, and only one worktree can own the development server at a time. Do not start a second server on another port, use a temporary project copy, or create a separate deployment.
+- The shared server is the `study-planner-dev.service` systemd user service. Do not run `pnpm dev` directly in a tool-managed terminal or PTY.
+- Before browser work, check whether the service is active, its `WorkingDirectory` equals the current worktree, and `http://localhost:3000` responds successfully. A healthy service for a different worktree must not be reused.
+- If the current worktree already owns a healthy service, leave it running. Otherwise claim port 3000 for the current worktree by stopping `study-planner-dev.service` and starting it again as a transient user service from the current worktree:
+
+  ```bash
+  systemctl --user stop study-planner-dev.service
+  systemd-run --user --unit=study-planner-dev --collect --property="WorkingDirectory=$PWD" /bin/bash -lc 'exec pnpm dev'
+  ```
+
+- If port 3000 is held by an unmanaged process after stopping the service, identify that exact listener and its working directory. Stop it only when it is a development server for this repository; never kill an unidentified or unrelated process. Then run the claim command again.
+- After claiming the server, wait until `http://localhost:3000` responds successfully. Use `journalctl --user -u study-planner-dev.service -n 100` to diagnose startup failures.
+- Treat claiming the server as a transfer of ownership: another agent may subsequently claim it for another worktree. Re-check ownership and health immediately before browser verification and again immediately before the final response.
+- Leave the service running after implementation and verification so the user can inspect the app. Do not stop it as part of cleanup or handoff.
+- Do not claim that the server is running based only on startup output. At handoff, verify that `study-planner-dev.service` is active, that its `WorkingDirectory` is the current worktree, and that `http://localhost:3000` returns a successful response.
 
 ## UI animation consistency
 

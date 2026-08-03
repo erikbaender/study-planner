@@ -10,7 +10,8 @@
 export { Button, ButtonRow, FileButton, IconButton, buttonClasses } from "./button";
 export type { ButtonSize, ButtonVariant } from "./button";
 
-export { Field, SelectField, TextArea, TextField } from "./field";
+export { Field, Select, SelectField, TextArea, TextField } from "./field";
+export type { SelectOption } from "./field";
 
 export { SegmentedControl } from "./segmented-control";
 export type { Segment } from "./segmented-control";

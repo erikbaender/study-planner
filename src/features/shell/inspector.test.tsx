@@ -91,7 +91,8 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       renderTopic();
 
-      await user.selectOptions(screen.getByLabelText("Priority"), "high");
+      await user.click(screen.getByRole("combobox", { name: "Priority" }));
+      await user.click(screen.getByRole("option", { name: "High" }));
 
       expect(repository.updateTopic).toHaveBeenCalledWith(
         topic.id,

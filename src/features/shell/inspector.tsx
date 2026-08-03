@@ -442,14 +442,9 @@ function TopicInspector({
             label="Unit"
             fieldClassName="flex-1"
             value={topic.unit}
-            onChange={(event) => patch({ unit: event.target.value as Unit })}
-          >
-            {UNITS.map((unit) => (
-              <option key={unit} value={unit}>
-                {UNIT_LABELS[unit].plural}
-              </option>
-            ))}
-          </SelectField>
+            onValueChange={(value) => patch({ unit: value as Unit })}
+            options={UNITS.map((unit) => ({ value: unit, label: UNIT_LABELS[unit].plural }))}
+          />
         </div>
 
         {topic.totalUnits > 0 ? (
@@ -491,25 +486,21 @@ function TopicInspector({
         <SelectField
           label="Status"
           value={topic.status}
-          onChange={(event) => patch({ status: event.target.value as TopicStatus })}
-        >
-          {TOPIC_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {status[0].toUpperCase() + status.slice(1)}
-            </option>
-          ))}
-        </SelectField>
+          onValueChange={(value) => patch({ status: value as TopicStatus })}
+          options={TOPIC_STATUSES.map((status) => ({
+            value: status,
+            label: status[0].toUpperCase() + status.slice(1),
+          }))}
+        />
         <SelectField
           label="Priority"
           value={topic.priority}
-          onChange={(event) => patch({ priority: event.target.value as Priority })}
-        >
-          {PRIORITIES.map((priority) => (
-            <option key={priority} value={priority}>
-              {priority[0].toUpperCase() + priority.slice(1)}
-            </option>
-          ))}
-        </SelectField>
+          onValueChange={(value) => patch({ priority: value as Priority })}
+          options={PRIORITIES.map((priority) => ({
+            value: priority,
+            label: priority[0].toUpperCase() + priority.slice(1),
+          }))}
+        />
         <fieldset className="flex flex-col gap-1.5">
           <legend className="mb-1 text-callout font-medium text-secondary">Depends on</legend>
           {dependencyCandidates.length === 0 ? (
