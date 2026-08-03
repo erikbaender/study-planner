@@ -1,5 +1,186 @@
 @import "tailwindcss";
 
+:root {
+  --topic-motion-duration: 240ms;
+  --topic-motion-curve: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@keyframes topic-completion-outline {
+  0% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--topic-completion-color) 80%, transparent);
+  }
+  45% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 18%, transparent);
+    box-shadow: 0 0 0 2px var(--topic-completion-color);
+  }
+  100% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+}
+
+@keyframes topic-completion-row-out {
+  0% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+  35% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 18%, transparent);
+    box-shadow: 0 0 0 2px var(--topic-completion-color);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+}
+
+@keyframes topic-completion-checkmark {
+  0% {
+    opacity: 0;
+    scale: 0.75;
+  }
+  65% {
+    opacity: 1;
+    scale: 1.35;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes topic-completion-checkmark-out {
+  0% {
+    opacity: 1;
+    scale: 1;
+  }
+  35% {
+    opacity: 1;
+    scale: 1.15;
+  }
+  100% {
+    opacity: 0;
+    scale: 0.75;
+  }
+}
+
+@keyframes topic-completion-fill {
+  0% {
+    opacity: 1;
+    scale: 0;
+  }
+  55% {
+    scale: 1.14;
+  }
+  75% {
+    scale: 0.94;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes topic-completion-fill-out {
+  0% {
+    opacity: 1;
+    scale: 1;
+  }
+  45% {
+    opacity: 1;
+    scale: 1.06;
+  }
+  100% {
+    opacity: 0;
+    scale: 0;
+  }
+}
+
+.topic-completion-row[data-completion-animating="true"] {
+  animation: topic-completion-outline var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="off"] {
+  animation: topic-completion-row-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="on"] .topic-completion-checkmark {
+  /* Control motion is intentionally shorter than the surrounding row pulse. */
+  animation: topic-completion-checkmark var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="off"] .topic-completion-checkmark {
+  animation: topic-completion-checkmark-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="on"] .topic-completion-fill {
+  animation: topic-completion-fill var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="off"] .topic-completion-fill {
+  animation: topic-completion-fill-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-progress-range {
+  transition: right var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+span:has(> .topic-progress-thumb) {
+  transition: left var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/* A click benefits from visible travel; a drag must remain under the cursor.
+   Re-targeting a long transition on every pointer event feels like input lag. */
+[data-progress-dragging="true"] .topic-progress-range,
+[data-progress-dragging="true"] span:has(> .topic-progress-thumb) {
+  transition: none;
+}
+
+.topic-completion-row:has(.topic-completion-checkbox:checked) {
+  background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+}
+
+/* The same semantic hover fill used by unfinished rows, layered over the
+   completion tint instead of replacing it. This keeps the hover delta equal. */
+.topic-completion-row:has(.topic-completion-checkbox:checked):hover {
+  background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
+}
+
+.topic-completion-fill {
+  background-color: var(--topic-completion-color);
+  transform-origin: center;
+}
+
+.topic-completion-checkbox:focus-visible {
+  outline-color: var(--topic-completion-color);
+}
+
+.topic-completion-checkmark {
+  color: var(--mac-completion-mark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topic-completion-row[data-completion-animating="true"] {
+    animation: none;
+    box-shadow: 0 0 0 1px var(--topic-completion-color);
+  }
+  .topic-completion-row[data-completion-direction="off"] {
+    animation: none;
+  }
+  .topic-completion-row[data-completion-direction] .topic-completion-checkmark {
+    animation: none;
+  }
+
+  .topic-completion-row[data-completion-direction] .topic-completion-fill {
+    animation: none;
+  }
+  .topic-progress-range,
+  span:has(> .topic-progress-thumb) {
+    transition: none;
+  }
+}
+
 /**
  * macOS-derived design tokens.
  *
@@ -75,6 +256,7 @@
   --mac-orange: #b25000;
   --mac-green: #1d7f36;
   --mac-blue: #0066cc;
+  --mac-completion-mark: #1e1e1e;
 
   --mac-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.1);
   --mac-shadow-popover:
@@ -123,6 +305,7 @@
   --mac-orange: #ff9f0a;
   --mac-green: #32d74b;
   --mac-blue: #64d2ff;
+  --mac-completion-mark: #1e1e1e;
 
   --mac-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
   --mac-shadow-popover:

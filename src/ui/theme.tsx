@@ -36,12 +36,14 @@ export type ResolvedAppearance = "light" | "dark";
 
 export const APPEARANCE_STORAGE_KEY = "planner.appearance";
 export const ACCENT_STORAGE_KEY = "planner.accent";
+export const ANIMATION_SPEED_STORAGE_KEY = "planner.animationSpeed";
+export const BASE_TOPIC_MOTION_MS = 240;
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
-type Settings = { appearance: Appearance; accent: string };
+type Settings = { appearance: Appearance; accent: string; animationSpeed: number };
 
-const DEFAULTS: Settings = { appearance: "system", accent: DEFAULT_COLOR };
+const DEFAULTS: Settings = { appearance: "system", accent: DEFAULT_COLOR, animationSpeed: 0.5 };
 
 /* ─── The store ─────────────────────────────────────────────────────────── */
 
@@ -61,15 +63,24 @@ function isPaletteColor(value: string): boolean {
   return applePalette.some((color) => color.value === value);
 }
 
+function parseAnimationSpeed(value: string | null): number {
+  const speed = Number(value);
+  return Number.isFinite(speed) && speed >= 0.25 && speed <= 0.75
+    ? speed
+    : DEFAULTS.animationSpeed;
+}
+
 function readStorage(): Settings {
   try {
     const appearance = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
     const accent = window.localStorage.getItem(ACCENT_STORAGE_KEY);
+    const animationSpeed = window.localStorage.getItem(ANIMATION_SPEED_STORAGE_KEY);
     return {
       appearance: isAppearance(appearance) ? appearance : DEFAULTS.appearance,
       // An unknown colour falls back rather than being applied: the accent also
       // has to supply a legible foreground, and only palette colours state one.
       accent: accent && isPaletteColor(accent) ? accent : DEFAULTS.accent,
+      animationSpeed: parseAnimationSpeed(animationSpeed),
     };
   } catch {
     // Safari in private mode throws on `localStorage` rather than returning
@@ -80,7 +91,11 @@ function readStorage(): Settings {
 
 function getSnapshot(): Settings {
   const next = readStorage();
-  if (next.appearance !== snapshot.appearance || next.accent !== snapshot.accent) {
+  if (
+    next.appearance !== snapshot.appearance ||
+    next.accent !== snapshot.accent ||
+    next.animationSpeed !== snapshot.animationSpeed
+  ) {
     snapshot = next;
   }
   return snapshot;
@@ -134,12 +149,18 @@ type ThemeContextValue = {
   setAppearance: (next: Appearance) => void;
   accent: string;
   setAccent: (next: string) => void;
+  animationSpeed: number;
+  setAnimationSpeed: (next: number) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const { appearance, accent } = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { appearance, accent, animationSpeed } = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
   const system = useSyncExternalStore(subscribeToSystem, getSystemSnapshot, () => "light" as const);
 
   const resolved: ResolvedAppearance = appearance === "system" ? system : appearance;
@@ -151,17 +172,41 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.dataset.theme = resolved;
     root.style.setProperty("--mac-accent", accent);
     root.style.setProperty("--mac-on-accent", getPaletteColor(accent).onColor);
-  }, [resolved, accent]);
+    root.style.setProperty(
+      "--topic-motion-duration",
+      `${BASE_TOPIC_MOTION_MS / animationSpeed}ms`,
+    );
+  }, [resolved, accent, animationSpeed]);
 
   const setAppearance = useCallback(
     (next: Appearance) => writeSetting(APPEARANCE_STORAGE_KEY, next),
     [],
   );
   const setAccent = useCallback((next: string) => writeSetting(ACCENT_STORAGE_KEY, next), []);
+  const setAnimationSpeed = useCallback(
+    (next: number) => writeSetting(ANIMATION_SPEED_STORAGE_KEY, String(next)),
+    [],
+  );
 
   const value = useMemo(
-    () => ({ appearance, resolved, setAppearance, accent, setAccent }),
-    [appearance, resolved, setAppearance, accent, setAccent],
+    () => ({
+      appearance,
+      resolved,
+      setAppearance,
+      accent,
+      setAccent,
+      animationSpeed,
+      setAnimationSpeed,
+    }),
+    [
+      appearance,
+      resolved,
+      setAppearance,
+      accent,
+      setAccent,
+      animationSpeed,
+      setAnimationSpeed,
+    ],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -192,6 +237,9 @@ const PRE_PAINT_SCRIPT = `
   var c=localStorage.getItem(${JSON.stringify(ACCENT_STORAGE_KEY)});
   var m=${JSON.stringify(Object.fromEntries(applePalette.map((color) => [color.value, color.onColor])))};
   if(c&&m[c]){r.style.setProperty("--mac-accent",c);r.style.setProperty("--mac-on-accent",m[c]);}
+  var s=Number(localStorage.getItem(${JSON.stringify(ANIMATION_SPEED_STORAGE_KEY)}));
+  if(!(s>=.25&&s<=.75))s=.5;
+  r.style.setProperty("--topic-motion-duration",(${BASE_TOPIC_MOTION_MS}/s)+"ms");
 }catch(e){}})();
 `;
 

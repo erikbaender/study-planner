@@ -65,6 +65,19 @@ export type Visibility = {
 };
 
 /**
+ * The shared display order for course lists.
+ *
+ * `Course.order` preserves import and creation order, but it is not a useful
+ * navigation order. Keep the source arrays untouched and sort a copy wherever
+ * courses are presented to the user instead.
+ */
+export function sortCoursesAlphabetically(courses: readonly Course[]): Course[] {
+  return [...courses].sort((left, right) =>
+    left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+  );
+}
+
+/**
  * The courses every view draws, in one place.
  *
  * Focus first narrows to a question about the plan, then hidden courses are
@@ -85,7 +98,9 @@ export function coursesInFocus(
         ? courses.filter((course) => isBehind(health.get(course.id)))
         : courses.filter((course) => hasExamSoon(health.get(course.id)));
 
-  return matching.filter((course) => !visibility.hiddenCourseIds.includes(course.id));
+  return sortCoursesAlphabetically(
+    matching.filter((course) => !visibility.hiddenCourseIds.includes(course.id)),
+  );
 }
 
 /**

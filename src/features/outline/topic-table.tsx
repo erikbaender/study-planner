@@ -19,15 +19,15 @@
 
 import { clsx } from "clsx";
 import { MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import { UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
 import { ContextMenu, DropdownMenu, IconButton } from "@/ui";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
 
-/** Name · progress · done/total · unit · actions. Declared once; the header and the rows share it. */
+/** Name · total · unit · actions · readout · progress · done. */
 const COLUMNS =
-  "grid grid-cols-[minmax(6rem,1fr)_11rem_7rem_3.5rem_5.5rem_1.75rem] items-center gap-3";
+  "grid grid-cols-[minmax(6rem,1fr)_3.5rem_5.5rem_1.75rem_7rem_11rem_1.25rem] items-center gap-3";
 
 export function TopicTable({
   course,
@@ -56,10 +56,11 @@ export function TopicTable({
         )}
       >
         <span>Topic</span>
-        <span>Progress</span>
-        <span className="text-right">Done</span>
         <span>Total</span>
         <span>Unit</span>
+        <span />
+        <span className="text-right">Done</span>
+        <span>Progress</span>
         <span />
       </div>
 
@@ -151,22 +152,16 @@ function TopicTableRow({
         // Selection is an explicit act: the name, the ⋯ menu, or right-click.
         className={clsx(
           COLUMNS,
-          "group rounded-control px-2 py-0.5",
+          "topic-completion-row group rounded-control px-2 py-0.5",
           selected ? "bg-accent-soft" : "hover:bg-fill",
         )}
+        style={{ "--topic-completion-color": course.color } as CSSProperties}
       >
         <Cell
           label={`Name of ${topic.name}`}
           value={topic.name}
           onCommit={(name) => name && patch({ name })}
           onAddRow={onAddRow}
-        />
-
-        <TopicProgressCell
-          topic={topic}
-          today={today}
-          tint={topic.color || course.color}
-          readoutClassName="text-right text-callout tabular-nums whitespace-nowrap text-secondary"
         />
 
         <span className="flex items-baseline gap-1">
@@ -221,6 +216,14 @@ function TopicTableRow({
               className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
             />
           }
+        />
+
+        <TopicProgressCell
+          topic={topic}
+          today={today}
+          tint={course.color}
+          sliderClassName="w-full min-w-0"
+          readoutClassName="text-right text-callout tabular-nums whitespace-nowrap text-secondary"
         />
       </li>
     </ContextMenu>

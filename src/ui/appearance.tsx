@@ -35,6 +35,26 @@ export function AppearanceControl({ size = "sm" }: { size?: "sm" | "md" }) {
   );
 }
 
+export function AnimationSpeedControl() {
+  const { animationSpeed, setAnimationSpeed } = useTheme();
+
+  return (
+    <label>
+      <span className="sr-only">Animation speed</span>
+      <input
+        type="range"
+        min="0.25"
+        max="0.75"
+        step="0.25"
+        value={animationSpeed}
+        aria-label="Animation speed"
+        onChange={(event) => setAnimationSpeed(Number(event.currentTarget.value))}
+        className="block h-4 w-full cursor-pointer accent-[var(--mac-accent)]"
+      />
+    </label>
+  );
+}
+
 /**
  * Accent picker.
  *

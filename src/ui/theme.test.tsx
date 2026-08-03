@@ -1,9 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { AccentPicker, AppearanceControl } from "./appearance";
+import { AccentPicker, AnimationSpeedControl, AppearanceControl } from "./appearance";
 import {
   ACCENT_STORAGE_KEY,
+  ANIMATION_SPEED_STORAGE_KEY,
   APPEARANCE_STORAGE_KEY,
   ThemeProvider,
   useTheme,
@@ -158,5 +159,34 @@ describe("accent colour", () => {
     const tabbable = swatches.filter((swatch) => swatch.getAttribute("tabindex") === "0");
     expect(tabbable).toHaveLength(1);
     expect(tabbable[0]).toHaveAccessibleName("Green");
+  });
+});
+
+describe("animation speed", () => {
+  it("controls the shared motion timeline and persists the chosen multiplier", () => {
+    renderTheme(<AnimationSpeedControl />);
+    const slider = screen.getByRole("slider", { name: "Animation speed" });
+
+    expect(slider).toHaveValue("0.5");
+    expect(slider).toHaveAttribute("min", "0.25");
+    expect(slider).toHaveAttribute("max", "0.75");
+    expect(slider).toHaveAttribute("step", "0.25");
+    expect(document.documentElement.style.getPropertyValue("--topic-motion-duration")).toBe(
+      "480ms",
+    );
+
+    fireEvent.change(slider, { target: { value: "0.25" } });
+    expect(slider).toHaveValue("0.25");
+    expect(window.localStorage.getItem(ANIMATION_SPEED_STORAGE_KEY)).toBe("0.25");
+    expect(document.documentElement.style.getPropertyValue("--topic-motion-duration")).toBe(
+      "960ms",
+    );
+  });
+
+  it("ignores an out-of-range stored multiplier", () => {
+    window.localStorage.setItem(ANIMATION_SPEED_STORAGE_KEY, "2");
+    renderTheme(<AnimationSpeedControl />);
+
+    expect(screen.getByRole("slider", { name: "Animation speed" })).toHaveValue("0.5");
   });
 });

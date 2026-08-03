@@ -109,6 +109,140 @@ describe("TopicTable", () => {
 
     const row = screen.getByLabelText("Name of Reading list").closest("li")!;
     expect(within(row).queryByRole("slider")).not.toBeInTheDocument();
+    expect(within(row).getByRole("checkbox", { name: "Mark Reading list as done" })).toBeDisabled();
     expect(within(row).getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+  });
+
+  it("marks a topic done instantly and clears it when unchecked", async () => {
+    const user = userEvent.setup();
+    renderTable();
+
+    const checkbox = screen.getByRole("checkbox", { name: "Mark Glycolysis as done" });
+    await user.click(checkbox);
+
+    expect(checkbox).toBeChecked();
+    expect(repository.logStudy).toHaveBeenLastCalledWith({
+      topicId: glycolysis.id,
+      date: TODAY,
+      units: 60,
+    });
+
+    await user.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox.closest("li")).toHaveAttribute("data-completion-trigger", "checkbox");
+    expect(checkbox.closest("li")).toHaveAttribute("data-completion-direction", "off");
+    expect(repository.logStudy).toHaveBeenLastCalledWith({
+      topicId: glycolysis.id,
+      date: TODAY,
+      units: -100,
+    });
+  });
+
+  it("checks the completion control when progress reaches full", () => {
+    const finished = makeTopic({ name: "Finished", totalUnits: 50, completedUnits: 50 });
+    render(
+      <TopicTable
+        course={makeCourse({ topics: [finished] })}
+        topics={[finished]}
+        today={TODAY}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+        onAddRow={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: "Mark Finished as done" })).toBeChecked();
+  });
+
+  it("keeps the readout, working slider, and checkbox in trailing order", () => {
+    renderTable();
+
+    const row = screen.getByLabelText("Name of Glycolysis").closest("li")!;
+    const readout = within(row).getByText("40 / 100 slides");
+    const slider = within(row).getByRole("slider", { name: "Glycolysis progress" });
+    const checkbox = within(row).getByRole("checkbox", { name: "Mark Glycolysis as done" });
+
+    expect(readout.compareDocumentPosition(slider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(slider.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row).toHaveStyle({ "--topic-completion-color": course.color });
+  });
+
+  it("only marks a row for animation when completion is checked interactively", async () => {
+    const finished = makeTopic({ name: "Already finished", totalUnits: 50, completedUnits: 50 });
+    const { rerender } = render(
+      <TopicTable
+        course={makeCourse({ topics: [finished] })}
+        topics={[finished]}
+        today={TODAY}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+        onAddRow={vi.fn()}
+      />,
+    );
+    const loadedRow = screen.getByLabelText("Name of Already finished").closest("li")!;
+    expect(loadedRow).not.toHaveAttribute("data-completion-animating");
+
+    rerender(
+      <TopicTable
+        course={course}
+        topics={course.topics}
+        today={TODAY}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+        onAddRow={vi.fn()}
+      />,
+    );
+    const user = userEvent.setup();
+    const checkbox = screen.getByRole("checkbox", { name: "Mark Glycolysis as done" });
+    const row = screen.getByLabelText("Name of Glycolysis").closest("li")!;
+    await user.click(checkbox);
+    expect(row).toHaveAttribute("data-completion-trigger", "checkbox");
+    expect(row).toHaveAttribute("data-completion-direction", "on");
+    expect(row).toHaveAttribute("data-completion-animating", "true");
+
+    await new Promise((resolve) => window.setTimeout(resolve, 310));
+    expect(row).not.toHaveAttribute("data-completion-animating");
+  });
+
+  it("marks a row for animation when its slider reaches full", async () => {
+    const user = userEvent.setup();
+    renderTable();
+    const row = screen.getByLabelText("Name of Glycolysis").closest("li")!;
+    const slider = within(row).getByRole("slider", { name: "Glycolysis progress" });
+
+    await user.click(slider);
+    await user.keyboard("{End}");
+
+    expect(row).toHaveAttribute("data-completion-trigger", "slider");
+    expect(row).toHaveAttribute("data-completion-animating", "true");
+    expect(within(row).getByRole("checkbox", { name: "Mark Glycolysis as done" })).toBeChecked();
+  });
+
+  it("reverses the completion animation when the slider leaves full", async () => {
+    const finished = makeTopic({ name: "Finished", totalUnits: 50, completedUnits: 50 });
+    const user = userEvent.setup();
+    render(
+      <TopicTable
+        course={makeCourse({ topics: [finished] })}
+        topics={[finished]}
+        today={TODAY}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+        onAddRow={vi.fn()}
+      />,
+    );
+    const row = screen.getByLabelText("Name of Finished").closest("li")!;
+    const slider = within(row).getByRole("slider", { name: "Finished progress" });
+
+    await user.click(slider);
+    await user.keyboard("{ArrowLeft}");
+
+    expect(row).toHaveAttribute("data-completion-trigger", "slider");
+    expect(row).toHaveAttribute("data-completion-direction", "off");
+    expect(within(row).getByRole("checkbox", { name: "Mark Finished as done" })).not.toBeChecked();
   });
 });

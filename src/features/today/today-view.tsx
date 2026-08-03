@@ -183,6 +183,7 @@ export function TodayView({
                 key={topic.id}
                 topic={topic}
                 today={today}
+                courseColor={course.color}
                 prefix={`${course.name} · ${units} today`}
                 selected={topic.id === selectedTopicId}
                 onSelect={() => onSelectTopic(course, topic)}
@@ -280,6 +281,7 @@ export function TodayView({
                 key={topic.id}
                 topic={topic}
                 today={today}
+                courseColor={course.color}
                 prefix={course.name}
                 selected={topic.id === selectedTopicId}
                 onSelect={() => onSelectTopic(course, topic)}

@@ -91,8 +91,12 @@ describe("coursesInFocus", () => {
   });
   const health = healthByCourse(plan, snapshotOf(plan), TODAY);
 
-  it("returns everything under 'all'", () => {
-    expect(coursesInFocus(plan, { kind: "all" }, health)).toHaveLength(3);
+  it("returns courses alphabetically under every focus", () => {
+    expect(coursesInFocus(plan, { kind: "all" }, health).map((course) => course.name)).toEqual([
+      "Anatomy",
+      "Biochem",
+      "Physio",
+    ]);
   });
 
   it("narrows to the courses that are actually behind", () => {
@@ -103,8 +107,8 @@ describe("coursesInFocus", () => {
 
   it("narrows to the courses with an exam inside the horizon", () => {
     expect(coursesInFocus(plan, { kind: "soon" }, health).map((course) => course.name)).toEqual([
-      "Biochem",
       "Anatomy",
+      "Biochem",
     ]);
   });
 

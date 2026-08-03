@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import {
   AccentPicker,
+  AnimationSpeedControl,
   AppearanceControl,
   Badge,
   Button,
@@ -154,6 +155,10 @@ export const AppToolbar = forwardRef<
           <div className="flex flex-col gap-1.5">
             <h2 className="text-callout font-semibold text-secondary">Accent colour</h2>
             <AccentPicker />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <h2 className="text-callout font-semibold text-secondary">Motion</h2>
+            <AnimationSpeedControl />
           </div>
         </div>
       </Popover>

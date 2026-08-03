@@ -38,7 +38,12 @@ import {
   SidebarSection,
   Tooltip,
 } from "@/ui";
-import { hasExamSoon, isBehind, matchesQuery } from "@/features/workspace/scope";
+import {
+  hasExamSoon,
+  isBehind,
+  matchesQuery,
+  sortCoursesAlphabetically,
+} from "@/features/workspace/scope";
 import type { Focus } from "@/features/workspace/store";
 
 export function AppSidebar({
@@ -77,9 +82,9 @@ export function AppSidebar({
   const courses = plan?.courses ?? [];
   const behindCount = courses.filter((course) => isBehind(health.get(course.id))).length;
   const soonCount = courses.filter((course) => hasExamSoon(health.get(course.id))).length;
-  const visible = courses
-    .filter((course) => matchesQuery(query, course.name, course.code))
-    .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+  const visible = sortCoursesAlphabetically(
+    courses.filter((course) => matchesQuery(query, course.name, course.code)),
+  );
 
   return (
     <Sidebar label="Courses">

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -61,6 +61,68 @@ describe("ProgressSlider", () => {
     await user.keyboard("{ArrowRight}{ArrowRight}");
 
     expect(onCommit).toHaveBeenLastCalledWith(42);
+  });
+
+  it("finishes an animated track click before committing its absolute target", async () => {
+    const onCommit = vi.fn();
+    const { container } = render(<Harness onCommit={onCommit} start={20} />);
+    const root = container.firstElementChild as HTMLElement;
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 100,
+      bottom: 20,
+      left: 0,
+      width: 100,
+      height: 20,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(container.querySelector(".topic-progress-range")!, {
+      button: 0,
+      clientX: 75,
+      pointerId: 1,
+    });
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.pointerUp(container.querySelector(".topic-progress-range")!, {
+      button: 0,
+      clientX: 75,
+      pointerId: 1,
+    });
+
+    expect(screen.getByRole("slider")).toHaveAttribute("aria-valuenow", "75");
+    expect(onCommit).not.toHaveBeenCalled();
+    await new Promise((resolve) => window.setTimeout(resolve, 260));
+    expect(onCommit).toHaveBeenCalledWith(75);
+  });
+
+  it("updates animated targets while dragging and commits only the final one", () => {
+    const onCommit = vi.fn();
+    const { container } = render(<Harness onCommit={onCommit} start={20} />);
+    const root = container.firstElementChild as HTMLElement;
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 100,
+      bottom: 20,
+      left: 0,
+      width: 100,
+      height: 20,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerDown(root, { button: 0, clientX: 25, pointerId: 2 });
+    fireEvent.pointerMove(root, { buttons: 1, clientX: 60, pointerId: 2 });
+    expect(root).toHaveAttribute("data-progress-dragging", "true");
+    expect(screen.getByRole("slider")).toHaveAttribute("aria-valuenow", "60");
+    expect(onCommit).not.toHaveBeenCalled();
+
+    fireEvent.pointerUp(root, { button: 0, clientX: 80, pointerId: 2 });
+    expect(onCommit).toHaveBeenCalledOnce();
+    expect(onCommit).toHaveBeenCalledWith(80);
+    expect(screen.getByRole("slider")).toHaveAttribute("aria-valuenow", "80");
   });
 
   it("goes backwards, because correcting an over-log is the same gesture", async () => {

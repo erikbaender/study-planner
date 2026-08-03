@@ -26,7 +26,16 @@
 
 import { clsx } from "clsx";
 import { Slider } from "radix-ui";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const DEFAULT_PROGRESS_MOTION_MS = 240;
+
+function progressMotionDuration(element: HTMLElement): number {
+  const configured = Number.parseFloat(
+    getComputedStyle(element).getPropertyValue("--topic-motion-duration"),
+  );
+  return Number.isFinite(configured) ? configured : DEFAULT_PROGRESS_MOTION_MS;
+}
 
 export function ProgressSlider({
   value,
@@ -75,12 +84,43 @@ export function ProgressSlider({
    */
   const [draft, setDraft] = useState<number | null>(null);
   const [settled, setSettled] = useState(value);
+  const thumbRef = useRef<HTMLSpanElement>(null);
+  const pointer = useRef<{ id: number; target: number; dragging: boolean } | null>(null);
+  const pendingClickCommit = useRef<number | null>(null);
+
+  const cancelPendingClickCommit = () => {
+    if (pendingClickCommit.current === null) return;
+    window.clearTimeout(pendingClickCommit.current);
+    pendingClickCommit.current = null;
+  };
+
+  useEffect(
+    () => () => {
+      if (pendingClickCommit.current !== null) {
+        window.clearTimeout(pendingClickCommit.current);
+      }
+    },
+    [],
+  );
   if (settled !== value) {
     setSettled(value);
     setDraft(null);
   }
 
   const display = Math.min(max, Math.max(0, draft ?? value));
+
+  const pointerTarget = (clientX: number, root: HTMLElement) => {
+    const bounds = root.getBoundingClientRect();
+    if (bounds.width <= 0) return null;
+    const raw = ((clientX - bounds.left) / bounds.width) * max;
+    return Math.min(max, Math.max(0, Math.round(raw / step) * step));
+  };
+
+  const previewPointerTarget = (next: number) => {
+    if (pointer.current) pointer.current.target = next;
+    setDraft(next);
+    onPreview?.(next);
+  };
 
   return (
     <Slider.Root
@@ -89,6 +129,7 @@ export function ProgressSlider({
       step={step}
       disabled={disabled}
       onValueChange={([next]) => {
+        cancelPendingClickCommit();
         setDraft(next);
         onPreview?.(next);
       }}
@@ -100,6 +141,73 @@ export function ProgressSlider({
         // to reading the store rather than waiting for a change that will not
         // arrive.
         else onPreview?.(null);
+      }}
+      onPointerDownCapture={(event) => {
+        // Pointer input is target-based: a click sets one target, while a drag
+        // periodically replaces it. The range and thumb interpolate toward
+        // each target through CSS instead of being pinned under the cursor.
+        if (disabled || event.button !== 0) return;
+        const next = pointerTarget(event.clientX, event.currentTarget);
+        if (next === null) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        cancelPendingClickCommit();
+        pointer.current = { id: event.pointerId, target: next, dragging: false };
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        previewPointerTarget(next);
+        thumbRef.current?.focus({ preventScroll: true });
+      }}
+      onPointerMoveCapture={(event) => {
+        if (!pointer.current || pointer.current.id !== event.pointerId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const next = pointerTarget(event.clientX, event.currentTarget);
+        if (next === null || next === pointer.current.target) return;
+        pointer.current.dragging = true;
+        event.currentTarget.dataset.progressDragging = "true";
+        previewPointerTarget(next);
+      }}
+      onPointerUpCapture={(event) => {
+        if (!pointer.current || pointer.current.id !== event.pointerId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const wasDragging = pointer.current.dragging;
+        const next = pointerTarget(event.clientX, event.currentTarget) ?? pointer.current.target;
+        previewPointerTarget(next);
+        pointer.current = null;
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+        if (wasDragging) {
+          // React flushes the final draft at the end of this event. Restore
+          // click inertia on the following frame so that last drag update is
+          // still rendered without a transition.
+          const root = event.currentTarget;
+          window.requestAnimationFrame(() => {
+            delete root.dataset.progressDragging;
+          });
+        }
+        if (next !== value) {
+          if (wasDragging) {
+            onCommit(next);
+          } else {
+            // Let the visual click travel finish before persistence can replace
+            // the reactive row. Otherwise the new row appears at the endpoint
+            // partway through the transition and reads as a hitch.
+            pendingClickCommit.current = window.setTimeout(() => {
+              pendingClickCommit.current = null;
+              onCommit(next);
+            }, progressMotionDuration(event.currentTarget));
+          }
+        } else onPreview?.(null);
+      }}
+      onPointerCancelCapture={(event) => {
+        if (!pointer.current || pointer.current.id !== event.pointerId) return;
+        pointer.current = null;
+        delete event.currentTarget.dataset.progressDragging;
+        setDraft(null);
+        onPreview?.(null);
       }}
       className={clsx(
         // The hit area is taller than the bar it draws. A 6px-tall target is
@@ -116,7 +224,7 @@ export function ProgressSlider({
     >
       <Slider.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-fill-strong">
         <Slider.Range
-          className="absolute h-full rounded-full"
+          className="topic-progress-range absolute h-full rounded-full"
           style={{ background: tint ?? "var(--mac-accent)" }}
         />
       </Slider.Track>
@@ -129,12 +237,13 @@ export function ProgressSlider({
         knob disappearing under your own cursor is unnerving.
       */}
       <Slider.Thumb
+        ref={thumbRef}
         // The thumb, not the root, is what carries `role="slider"`, so this is
         // where the name and the spoken value have to live.
         aria-label={label}
         aria-valuetext={valueText ? valueText(display) : `${Math.round((display / max) * 100)}%`}
         className={clsx(
-          "block size-3 rounded-full bg-white shadow-raised",
+          "topic-progress-thumb block size-3 rounded-full bg-white shadow-raised",
           "inset-ring inset-ring-[var(--mac-control-border)]",
           "transition-opacity duration-100 ease-mac",
           "group-hover:opacity-100 focus-visible:opacity-100",

@@ -16,6 +16,7 @@
 
 import { clsx } from "clsx";
 import { MoreHorizontal } from "lucide-react";
+import type { CSSProperties } from "react";
 import type { Topic } from "@/domain";
 import { ContextMenu, DropdownMenu, IconButton } from "@/ui";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
@@ -25,6 +26,7 @@ export function TopicRow({
   today,
   selected,
   prefix,
+  courseColor,
   onSelect,
   onDelete,
 }: {
@@ -33,6 +35,7 @@ export function TopicRow({
   selected?: boolean;
   /** Shown before the name — the section in the outline, the course in Today. */
   prefix?: string;
+  courseColor: string;
   onSelect: () => void;
   onDelete: () => void;
 }) {
@@ -46,9 +49,10 @@ export function TopicRow({
     >
       <li
         className={clsx(
-          "group flex items-center gap-3 rounded-control px-2 py-1",
+          "topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1",
           selected ? "bg-accent-soft" : "hover:bg-fill",
         )}
+        style={{ "--topic-completion-color": courseColor } as CSSProperties}
       >
         <button
           type="button"
@@ -59,14 +63,6 @@ export function TopicRow({
           {prefix ? <span className="text-tertiary">{prefix} · </span> : null}
           {topic.name}
         </button>
-
-        <TopicProgressCell
-          topic={topic}
-          today={today}
-          tint={topic.color || undefined}
-          sliderClassName="w-48 shrink-0"
-          readoutClassName="w-32 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary"
-        />
 
         <DropdownMenu
           align="end"
@@ -84,6 +80,14 @@ export function TopicRow({
               className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
             />
           }
+        />
+
+        <TopicProgressCell
+          topic={topic}
+          today={today}
+          tint={courseColor}
+          sliderClassName="w-48 shrink-0"
+          readoutClassName="w-32 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary"
         />
       </li>
     </ContextMenu>
