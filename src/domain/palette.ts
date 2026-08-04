@@ -1,9 +1,13 @@
 /**
- * The Apple system colour palette, plus selection helpers.
+ * Course identity colours, plus selection helpers.
  *
- * `onColor` is the foreground to use on top of `value`. It is stated per colour
- * rather than computed, because a naive luminance threshold picks white on
- * Yellow and Mint, which fails WCAG AA badly.
+ * UI state owns the near-primary anchors: red for negative feedback, yellow
+ * for warnings, green for positive feedback and blue for selection/actions.
+ * These twelve colours sit between those anchors around the hue wheel. A
+ * course can therefore stay colourful without borrowing a semantic colour.
+ *
+ * `onColor` is stated per colour rather than computed so a solid use always
+ * has a known accessible foreground.
  */
 
 export type PlannerColor = {
@@ -16,26 +20,25 @@ export type PlannerColor = {
   onColor: "#ffffff" | "#000000";
 };
 
-export const applePalette: readonly PlannerColor[] = [
-  { name: "Red", value: "#ff3b30", soft: "#ffebe9", onColor: "#ffffff" },
-  { name: "Orange", value: "#ff9500", soft: "#fff1dc", onColor: "#000000" },
-  { name: "Yellow", value: "#ffcc00", soft: "#fff7c7", onColor: "#000000" },
-  { name: "Green", value: "#34c759", soft: "#e4f8e9", onColor: "#000000" },
-  { name: "Mint", value: "#00c7be", soft: "#dcf7f5", onColor: "#000000" },
-  { name: "Teal", value: "#30b0c7", soft: "#e0f4f8", onColor: "#000000" },
-  { name: "Cyan", value: "#32ade6", soft: "#e3f5fc", onColor: "#000000" },
-  { name: "Blue", value: "#007aff", soft: "#e2f0ff", onColor: "#ffffff" },
-  { name: "Indigo", value: "#5856d6", soft: "#ecebff", onColor: "#ffffff" },
-  { name: "Purple", value: "#af52de", soft: "#f5e8fb", onColor: "#ffffff" },
-  { name: "Pink", value: "#ff2d55", soft: "#ffe6ec", onColor: "#ffffff" },
-  { name: "Brown", value: "#a2845e", soft: "#f2ece4", onColor: "#ffffff" },
-  { name: "Gray", value: "#8e8e93", soft: "#eeeeef", onColor: "#ffffff" },
+export const coursePalette: readonly PlannerColor[] = [
+  { name: "Coral", value: "#e8684a", soft: "#fbe9e4", onColor: "#000000" },
+  { name: "Tangerine", value: "#df853e", soft: "#faeddf", onColor: "#000000" },
+  { name: "Gold", value: "#c69b32", soft: "#f7f0dc", onColor: "#000000" },
+  { name: "Lime", value: "#a6b93d", soft: "#f1f4dd", onColor: "#000000" },
+  { name: "Chartreuse", value: "#7cb84a", soft: "#eaf4e1", onColor: "#000000" },
+  { name: "Leaf", value: "#53ae55", soft: "#e5f3e5", onColor: "#000000" },
+  { name: "Jade", value: "#2aa879", soft: "#dff2eb", onColor: "#000000" },
+  { name: "Turquoise", value: "#2ca3a3", soft: "#e0f1f1", onColor: "#000000" },
+  { name: "Sky", value: "#3d8fd1", soft: "#e3eef8", onColor: "#000000" },
+  { name: "Violet", value: "#8169d1", soft: "#ebe8f8", onColor: "#000000" },
+  { name: "Orchid", value: "#b95dba", soft: "#f4e5f4", onColor: "#000000" },
+  { name: "Rose", value: "#d65b8d", soft: "#f8e5ed", onColor: "#000000" },
 ];
 
-export const DEFAULT_COLOR = "#007aff";
+export const DEFAULT_COLOR = "#3d8fd1";
 
 export function getPaletteColor(value: string): PlannerColor {
-  return applePalette.find((color) => color.value === value) ?? applePalette[7];
+  return coursePalette.find((color) => color.value === value) ?? coursePalette[8];
 }
 
 /**
@@ -44,13 +47,13 @@ export function getPaletteColor(value: string): PlannerColor {
  * rather than a random one.
  */
 export function leastUsedColor(usedColors: readonly string[]): string {
-  const usage = new Map(applePalette.map((color) => [color.value, 0]));
+  const usage = new Map(coursePalette.map((color) => [color.value, 0]));
   for (const color of usedColors) {
     if (usage.has(color)) usage.set(color, usage.get(color)! + 1);
   }
 
-  let best = applePalette[0];
-  for (const color of applePalette) {
+  let best = coursePalette[0];
+  for (const color of coursePalette) {
     if (usage.get(color.value)! < usage.get(best.value)!) best = color;
   }
   return best.value;

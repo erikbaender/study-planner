@@ -37,16 +37,16 @@ describe("ProgressBar", () => {
 
 describe("Badge", () => {
   it("renders its content", () => {
-    render(<Badge tone="red">3 behind</Badge>);
+    render(<Badge tone="negative">3 behind</Badge>);
     expect(screen.getByText("3 behind")).toBeInTheDocument();
   });
 
   it("always uses a transparent fill and tone-colored border and text", () => {
-    render(<Badge tone="green">On track</Badge>);
+    render(<Badge tone="positive">On track</Badge>);
     expect(screen.getByText("On track")).toHaveClass(
       "bg-transparent",
       "border-current",
-      "text-green",
+      "text-positive",
     );
     expect(screen.getByText("On track")).not.toHaveClass("text-white");
   });

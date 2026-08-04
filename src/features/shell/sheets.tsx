@@ -12,7 +12,7 @@
 
 import { useState } from "react";
 import {
-  applePalette,
+  coursePalette,
   leastUsedColor,
   SAMPLE_DATASETS,
   type Course,
@@ -324,7 +324,7 @@ export function NewCourseSheet({
         <div className="flex flex-col gap-1">
           <span className="text-callout font-medium text-secondary">Colour</span>
           <div role="radiogroup" aria-label="Course colour" className="flex flex-wrap gap-1.5">
-            {applePalette.map((candidate) => (
+            {coursePalette.map((candidate) => (
               <button
                 key={candidate.value}
                 type="button"
@@ -373,7 +373,7 @@ export function ConfirmDeleteSheet({
           <Button onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             variant="accent"
-            className="bg-red hover:bg-red"
+            className="bg-negative hover:bg-negative"
             onClick={() => {
               onConfirm();
               onOpenChange(false);

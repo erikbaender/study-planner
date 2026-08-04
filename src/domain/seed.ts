@@ -14,7 +14,7 @@
  */
 
 import { addDays, weekdayOf } from "./dates";
-import { applePalette } from "./palette";
+import { coursePalette } from "./palette";
 import type {
   Course,
   Exam,
@@ -199,7 +199,7 @@ export function generateSeedData(options: SeedOptions): SeedData {
 
   const courses: Course[] = blueprints.map((blueprint, courseIndex) => {
     const courseId = `course_${slug(blueprint.code)}`;
-    const color = applePalette[courseIndex % applePalette.length].value;
+    const color = coursePalette[courseIndex % coursePalette.length].value;
 
     const exams: Exam[] = [
       {

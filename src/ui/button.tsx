@@ -54,7 +54,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
     "bg-accent text-on-accent shadow-raised",
     "hover:bg-accent-hover active:bg-accent-hover",
   ),
-  danger: clsx("bg-red text-white shadow-raised", "hover:opacity-90 active:opacity-80"),
+  danger: clsx("bg-negative text-white shadow-raised", "hover:opacity-90 active:opacity-80"),
   plain: clsx("bg-transparent text-label", "hover:bg-fill active:bg-fill-strong"),
 };
 

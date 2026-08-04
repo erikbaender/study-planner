@@ -146,7 +146,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   studyDaysOfWeek: [1, 2, 3, 4, 5, 6],
   blackoutDates: [],
   theme: "system",
-  accentColor: "#007aff",
+  accentColor: "#1769e0",
 };
 
 /** Everything the app needs to render, as returned by `PlannerRepository.snapshot`. */

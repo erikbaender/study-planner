@@ -38,6 +38,6 @@ export type { MenuItem } from "./overlays";
 
 export { CountdownBadge, Sidebar, SidebarItem, SidebarSection } from "./sidebar";
 
-export { AccentPicker, AnimationSpeedControl, AppearanceControl } from "./appearance";
+export { AnimationSpeedControl, AppearanceControl } from "./appearance";
 export { ThemeProvider, ThemeScript, useTheme } from "./theme";
 export type { Appearance, ResolvedAppearance } from "./theme";

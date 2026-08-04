@@ -26,7 +26,7 @@ import { Trash2 } from "lucide-react";
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
-  applePalette,
+  coursePalette,
   courseProgress,
   topicProgress,
   UNITS,
@@ -272,7 +272,7 @@ function CourseInspector({
         {health?.pace ? (
           <>
             <Row label="Pace">
-              <Badge tone={health.pace.onTrack ? "green" : "red"}>
+              <Badge tone={health.pace.onTrack ? "positive" : "negative"}>
                 {health.pace.onTrack
                   ? "On track"
                   : health.pace.daysLate > 0
@@ -314,7 +314,7 @@ function CourseInspector({
       <Separator />
 
       <Section>
-        <Button variant="plain" leadingIcon={<Trash2 />} className="text-red" onClick={onDelete}>
+        <Button variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onDelete}>
           Delete course
         </Button>
       </Section>
@@ -330,7 +330,7 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (value: str
           names it. */}
       <span className="text-callout font-medium text-secondary">Colour</span>
       <div role="radiogroup" aria-label="Course colour" className="flex flex-wrap gap-1.5 pt-0.5">
-        {applePalette.map((color) => (
+        {coursePalette.map((color) => (
           <button
             key={color.value}
             type="button"
@@ -609,7 +609,7 @@ function TopicInspector({
       <Separator />
 
       <Section>
-        <Button variant="plain" leadingIcon={<Trash2 />} className="text-red" onClick={onDelete}>
+        <Button variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onDelete}>
           Delete topic
         </Button>
       </Section>
@@ -676,11 +676,11 @@ function ExamInspector({
         />
         <Row label="Certainty">
           {exam.status === "provisional" ? (
-            <Badge tone="orange">
+            <Badge tone="warning">
               Provisional
             </Badge>
           ) : (
-            <Badge tone="green">Confirmed</Badge>
+            <Badge tone="positive">Confirmed</Badge>
           )}
         </Row>
         {exam.status === "provisional" ? (
@@ -694,7 +694,7 @@ function ExamInspector({
       <Separator />
 
       <Section>
-        <Button variant="plain" leadingIcon={<Trash2 />} className="text-red" onClick={onDelete}>
+        <Button variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onDelete}>
           Delete exam
         </Button>
       </Section>

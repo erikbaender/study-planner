@@ -175,7 +175,13 @@ export function CountdownBadge({
 }) {
   // At risk overrides the distance: an exam six weeks away that you will not be
   // ready for is the more urgent fact, and "6w" in grey says the opposite.
-  const tone = atRisk ? "red" : days <= 3 ? "red" : days <= 10 ? "orange" : "neutral";
+  const tone = atRisk
+    ? "negative"
+    : days <= 3
+      ? "negative"
+      : days <= 10
+        ? "warning"
+        : "neutral";
   return (
     <Badge tone={tone}>
       <span className="sr-only">

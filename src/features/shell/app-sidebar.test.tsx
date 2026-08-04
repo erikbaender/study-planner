@@ -21,17 +21,20 @@ describe("AppSidebar course visibility", () => {
         assessCourse({ course, today: TODAY, calendar: DEFAULT_PREFERENCES, log: [] }),
       ],
     ]);
+    const onSelectCourse = vi.fn();
     const shared = {
       plans: [plan],
       plan,
       health,
       focus: { kind: "all" } as const,
       query: "",
+      selectedCourseId: null,
       onSelectPlan: vi.fn(),
       onNewPlan: vi.fn(),
       onEditPlan: vi.fn(),
       onDeletePlan: vi.fn(),
       onSetFocus: vi.fn(),
+      onSelectCourse,
       onToggleHidden: vi.fn(),
       onHideAll: vi.fn(),
       onShowAll: vi.fn(),
@@ -41,14 +44,17 @@ describe("AppSidebar course visibility", () => {
     const { rerender } = render(
       <TooltipProvider><AppSidebar {...shared} hiddenCourseIds={[]} /></TooltipProvider>,
     );
+    const user = userEvent.setup();
+    await user.click(screen.getByText("Biochemistry"));
+    expect(onSelectCourse).toHaveBeenCalledWith(course);
     expect(screen.getByText("7d")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Hide Biochemistry" }).querySelector(".lucide-eye-off"),
     ).toBeInTheDocument();
-    const user = userEvent.setup();
     const hideButton = screen.getByRole("button", { name: "Hide Biochemistry" });
     await user.click(hideButton);
     expect(hideButton).not.toHaveFocus();
+    expect(onSelectCourse).toHaveBeenCalledTimes(1);
 
     rerender(
       <TooltipProvider><AppSidebar {...shared} hiddenCourseIds={[course.id]} /></TooltipProvider>,
@@ -73,11 +79,13 @@ describe("AppSidebar course visibility", () => {
         focus={{ kind: "all" }}
         hiddenCourseIds={[]}
         query=""
+        selectedCourseId={null}
         onSelectPlan={vi.fn()}
         onNewPlan={vi.fn()}
         onEditPlan={vi.fn()}
         onDeletePlan={vi.fn()}
         onSetFocus={vi.fn()}
+        onSelectCourse={vi.fn()}
         onToggleHidden={vi.fn()}
         onHideAll={vi.fn()}
         onShowAll={vi.fn()}
@@ -109,11 +117,13 @@ describe("AppSidebar course visibility", () => {
           focus={{ kind: "all" }}
           hiddenCourseIds={[]}
           query=""
+          selectedCourseId={null}
           onSelectPlan={vi.fn()}
           onNewPlan={vi.fn()}
           onEditPlan={vi.fn()}
           onDeletePlan={vi.fn()}
           onSetFocus={vi.fn()}
+          onSelectCourse={vi.fn()}
           onToggleHidden={vi.fn()}
           onHideAll={vi.fn()}
           onShowAll={vi.fn()}

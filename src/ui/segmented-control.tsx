@@ -90,8 +90,7 @@ export function SegmentedControl<T extends string>({
             "text-secondary hover:text-label",
             // The selected segment is a raised thumb sitting in the bed, which
             // is what distinguishes this from a row of pill buttons.
-            "data-[state=on]:bg-control data-[state=on]:text-label data-[state=on]:shadow-raised",
-            "data-[state=on]:inset-ring data-[state=on]:inset-ring-[var(--mac-control-border)]",
+            "data-[state=on]:bg-accent data-[state=on]:text-on-accent data-[state=on]:shadow-raised",
             "disabled:pointer-events-none disabled:opacity-40",
             "[&_svg]:size-3.5",
           )}

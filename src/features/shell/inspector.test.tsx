@@ -245,10 +245,10 @@ describe("Inspector", () => {
         />,
       );
 
-      await user.click(screen.getByRole("radio", { name: "Purple" }));
+      await user.click(screen.getByRole("radio", { name: "Violet" }));
       expect(repository.updateCourse).toHaveBeenCalledWith(
         course.id,
-        expect.objectContaining({ color: "#af52de", name: "Biochemistry" }),
+        expect.objectContaining({ color: "#8169d1", name: "Biochemistry" }),
       );
     });
   });

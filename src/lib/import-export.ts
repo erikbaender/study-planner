@@ -13,6 +13,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_COLOR } from "@/domain/palette";
 import { EXAM_KINDS, EXAM_STATUSES, PRIORITIES, TOPIC_STATUSES, UNITS } from "@/domain/types";
 import type { Plan, PlannerSnapshot } from "@/domain/types";
 
@@ -33,7 +34,7 @@ const topicSchema = z.object({
   completedUnits: z.number().nonnegative().default(0),
   status: z.enum(TOPIC_STATUSES).default("planned"),
   priority: z.enum(PRIORITIES).default("normal"),
-  color: z.string().default("#007aff"),
+  color: z.string().default(DEFAULT_COLOR),
   notes: z.string().default(""),
   dependencies: z.array(z.string()).default([]),
   blocks: z.array(blockSchema).default([]),
@@ -51,7 +52,7 @@ const examSchema = z.object({
 const courseSchema = z.object({
   name: z.string().min(1),
   code: z.string().optional(),
-  color: z.string().default("#007aff"),
+  color: z.string().default(DEFAULT_COLOR),
   notes: z.string().default(""),
   exams: z.array(examSchema).default([]),
   topics: z.array(topicSchema).default([]),

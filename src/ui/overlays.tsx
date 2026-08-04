@@ -220,7 +220,7 @@ function renderItems(
         key={index}
         disabled={item.disabled}
         onSelect={item.onSelect}
-        className={clsx(MENU_ITEM, item.danger && "text-red data-highlighted:bg-red")}
+        className={clsx(MENU_ITEM, item.danger && "text-negative data-highlighted:bg-negative")}
       >
         {item.icon ? <span aria-hidden="true">{item.icon}</span> : null}
         {item.label}

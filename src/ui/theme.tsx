@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Appearance and accent colour.
+ * Appearance and motion preferences.
  *
  * The audit's defect #4 was `const [theme] = useState(...)` — a theme system
  * with the setter dropped, so 876 lines of light-mode CSS could never render.
@@ -27,7 +27,6 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
-import { applePalette, DEFAULT_COLOR, getPaletteColor } from "@/domain/palette";
 
 export type Appearance = "system" | "light" | "dark";
 
@@ -35,15 +34,14 @@ export type Appearance = "system" | "light" | "dark";
 export type ResolvedAppearance = "light" | "dark";
 
 export const APPEARANCE_STORAGE_KEY = "planner.appearance";
-export const ACCENT_STORAGE_KEY = "planner.accent";
 export const ANIMATION_SPEED_STORAGE_KEY = "planner.animationSpeed";
 export const BASE_TOPIC_MOTION_MS = 240;
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
-type Settings = { appearance: Appearance; accent: string; animationSpeed: number };
+type Settings = { appearance: Appearance; animationSpeed: number };
 
-const DEFAULTS: Settings = { appearance: "system", accent: DEFAULT_COLOR, animationSpeed: 0.5 };
+const DEFAULTS: Settings = { appearance: "system", animationSpeed: 0.5 };
 
 /* ─── The store ─────────────────────────────────────────────────────────── */
 
@@ -59,10 +57,6 @@ function isAppearance(value: unknown): value is Appearance {
   return value === "system" || value === "light" || value === "dark";
 }
 
-function isPaletteColor(value: string): boolean {
-  return applePalette.some((color) => color.value === value);
-}
-
 function parseAnimationSpeed(value: string | null): number {
   const speed = Number(value);
   return Number.isFinite(speed) && speed >= 0.25 && speed <= 0.75
@@ -73,13 +67,9 @@ function parseAnimationSpeed(value: string | null): number {
 function readStorage(): Settings {
   try {
     const appearance = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
-    const accent = window.localStorage.getItem(ACCENT_STORAGE_KEY);
     const animationSpeed = window.localStorage.getItem(ANIMATION_SPEED_STORAGE_KEY);
     return {
       appearance: isAppearance(appearance) ? appearance : DEFAULTS.appearance,
-      // An unknown colour falls back rather than being applied: the accent also
-      // has to supply a legible foreground, and only palette colours state one.
-      accent: accent && isPaletteColor(accent) ? accent : DEFAULTS.accent,
       animationSpeed: parseAnimationSpeed(animationSpeed),
     };
   } catch {
@@ -93,7 +83,6 @@ function getSnapshot(): Settings {
   const next = readStorage();
   if (
     next.appearance !== snapshot.appearance ||
-    next.accent !== snapshot.accent ||
     next.animationSpeed !== snapshot.animationSpeed
   ) {
     snapshot = next;
@@ -147,8 +136,6 @@ type ThemeContextValue = {
   /** What `appearance` currently resolves to; equals it unless it is `system`. */
   resolved: ResolvedAppearance;
   setAppearance: (next: Appearance) => void;
-  accent: string;
-  setAccent: (next: string) => void;
   animationSpeed: number;
   setAnimationSpeed: (next: number) => void;
 };
@@ -156,7 +143,7 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const { appearance, accent, animationSpeed } = useSyncExternalStore(
+  const { appearance, animationSpeed } = useSyncExternalStore(
     subscribe,
     getSnapshot,
     getServerSnapshot,
@@ -170,19 +157,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = resolved;
-    root.style.setProperty("--mac-accent", accent);
-    root.style.setProperty("--mac-on-accent", getPaletteColor(accent).onColor);
     root.style.setProperty(
       "--topic-motion-duration",
       `${BASE_TOPIC_MOTION_MS / animationSpeed}ms`,
     );
-  }, [resolved, accent, animationSpeed]);
+  }, [resolved, animationSpeed]);
 
   const setAppearance = useCallback(
     (next: Appearance) => writeSetting(APPEARANCE_STORAGE_KEY, next),
     [],
   );
-  const setAccent = useCallback((next: string) => writeSetting(ACCENT_STORAGE_KEY, next), []);
   const setAnimationSpeed = useCallback(
     (next: number) => writeSetting(ANIMATION_SPEED_STORAGE_KEY, String(next)),
     [],
@@ -193,8 +177,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       appearance,
       resolved,
       setAppearance,
-      accent,
-      setAccent,
       animationSpeed,
       setAnimationSpeed,
     }),
@@ -202,8 +184,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       appearance,
       resolved,
       setAppearance,
-      accent,
-      setAccent,
       animationSpeed,
       setAnimationSpeed,
     ],
@@ -234,9 +214,6 @@ const PRE_PAINT_SCRIPT = `
   var d=a==="dark"||(a==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);
   var r=document.documentElement;
   r.dataset.theme=d?"dark":"light";
-  var c=localStorage.getItem(${JSON.stringify(ACCENT_STORAGE_KEY)});
-  var m=${JSON.stringify(Object.fromEntries(applePalette.map((color) => [color.value, color.onColor])))};
-  if(c&&m[c]){r.style.setProperty("--mac-accent",c);r.style.setProperty("--mac-on-accent",m[c]);}
   var s=Number(localStorage.getItem(${JSON.stringify(ANIMATION_SPEED_STORAGE_KEY)}));
   if(!(s>=.25&&s<=.75))s=.5;
   r.style.setProperty("--topic-motion-duration",(${BASE_TOPIC_MOTION_MS}/s)+"ms");

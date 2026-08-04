@@ -11,7 +11,7 @@
  */
 
 import { addDays, weekdayOf } from "./dates";
-import { applePalette } from "./palette";
+import { coursePalette } from "./palette";
 import type { SeedData } from "./seed";
 import type {
   Course,
@@ -174,7 +174,7 @@ export function generateMhhSampleData(): SeedData {
   const planId = "plan_sample_mhh";
   const courses: Course[] = COURSES.map((blueprint, courseIndex) => {
     const courseId = `course_sample_mhh_${courseIndex}`;
-    const color = applePalette[courseIndex].value;
+    const color = coursePalette[courseIndex].value;
 
     return {
       id: courseId,
@@ -235,7 +235,7 @@ export function generateMhhShowcaseData(today: IsoDate): SeedData {
   const courses: Course[] = COURSES.map((blueprint, courseIndex) => {
     const profile = profiles[courseIndex];
     const courseId = `course_sample_mhh_showcase_${courseIndex}`;
-    const color = applePalette[courseIndex].value;
+    const color = coursePalette[courseIndex].value;
     const examDate = addDays(today, profile.examOffset);
     const completionPoint = blueprint.topics.length * profile.completion;
 
@@ -319,7 +319,7 @@ export function generateMhhShowcaseData(today: IsoDate): SeedData {
     studyDaysOfWeek: [1, 2, 3, 4, 5, 6],
     blackoutDates: [addDays(today, 12)],
     theme: "system",
-    accentColor: "#007aff",
+    accentColor: "#1769e0",
   };
 
   return {

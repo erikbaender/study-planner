@@ -64,7 +64,7 @@ export function ProgressBar({
       ) : (
         <span
           aria-hidden="true"
-          className="block h-full rounded-full transition-[width] duration-300 ease-mac"
+          className="topic-motion-width block h-full rounded-full"
           style={{ width: `${clamped * 100}%`, background: tint ?? "var(--mac-accent)" }}
         />
       )}
@@ -72,14 +72,14 @@ export function ProgressBar({
   );
 }
 
-export type BadgeTone = "neutral" | "accent" | "red" | "orange" | "green";
+export type BadgeTone = "neutral" | "accent" | "negative" | "warning" | "positive";
 
 const BADGE_TONES: Record<BadgeTone, string> = {
   neutral: "text-secondary",
   accent: "text-accent",
-  red: "text-red",
-  orange: "text-orange",
-  green: "text-green",
+  negative: "text-negative",
+  warning: "text-warning",
+  positive: "text-positive",
 };
 
 /**

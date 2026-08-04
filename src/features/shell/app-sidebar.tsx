@@ -54,11 +54,13 @@ export function AppSidebar({
   focus,
   hiddenCourseIds,
   query,
+  selectedCourseId,
   onSelectPlan,
   onNewPlan,
   onEditPlan,
   onDeletePlan,
   onSetFocus,
+  onSelectCourse,
   onToggleHidden,
   onHideAll,
   onShowAll,
@@ -70,11 +72,13 @@ export function AppSidebar({
   focus: Focus;
   hiddenCourseIds: readonly string[];
   query: string;
+  selectedCourseId: string | null;
   onSelectPlan: (planId: string) => void;
   onNewPlan: () => void;
   onEditPlan: () => void;
   onDeletePlan: () => void;
   onSetFocus: (focus: Focus) => void;
+  onSelectCourse: (course: Course) => void;
   onToggleHidden: (course: Course) => void;
   onHideAll: () => void;
   onShowAll: () => void;
@@ -167,6 +171,8 @@ export function AppSidebar({
             course={course}
             health={health.get(course.id)}
             hidden={hiddenCourseIds.includes(course.id)}
+            selected={selectedCourseId === course.id}
+            onSelect={() => onSelectCourse(course)}
             onToggleHidden={() => onToggleHidden(course)}
           />
         ))}
@@ -198,11 +204,15 @@ function CourseFilterRow({
   course,
   health,
   hidden,
+  selected,
+  onSelect,
   onToggleHidden,
 }: {
   course: Course;
   health: CourseHealth | undefined;
   hidden: boolean;
+  selected: boolean;
+  onSelect: () => void;
   onToggleHidden: () => void;
 }) {
   const off = hidden;
@@ -214,8 +224,20 @@ function CourseFilterRow({
     <li
       data-course-id={course.id}
       data-course-completed={completed ? "true" : undefined}
-      className="course-completion-row group/row flex flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill"
+      tabIndex={0}
+      aria-current={selected ? "true" : undefined}
+      className={clsx(
+        "course-completion-row group/row flex cursor-default flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill",
+        selected && "bg-fill",
+      )}
       style={{ "--topic-completion-color": course.color } as CSSProperties}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
     >
       <span className="flex min-w-0 items-center gap-1.5">
         <span
@@ -254,7 +276,10 @@ function CourseFilterRow({
                 // have hover; keyboard activation does not fire pointer-up and
                 // therefore keeps the action visible as intended.
                 onPointerUp={(event) => event.currentTarget.blur()}
-                onClick={onToggleHidden}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleHidden();
+                }}
               />
             </Tooltip>
           </span>

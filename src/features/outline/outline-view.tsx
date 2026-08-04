@@ -336,7 +336,7 @@ function ExamRow({
                   : exam.startDate}
               </span>
               {exam.status === "provisional" ? (
-                <Badge tone="orange">
+                <Badge tone="warning">
                   Provisional
                 </Badge>
               ) : null}
@@ -529,7 +529,7 @@ function BulkEntrySheet({
         />
 
         {parsed.issues.length > 0 ? (
-          <ul role="alert" className="flex flex-col gap-0.5 text-footnote text-red">
+          <ul role="alert" className="flex flex-col gap-0.5 text-footnote text-negative">
             {parsed.issues.map((issue) => (
               <li key={`${issue.line}-${issue.message}`}>
                 Line {issue.line}: {issue.message}

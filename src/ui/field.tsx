@@ -32,7 +32,7 @@ const CONTROL = clsx(
   "disabled:opacity-40",
   // Invalid state is a red ring, not red text: the message below already says
   // what is wrong, and red text on a 13px label fails contrast in dark mode.
-  "aria-invalid:inset-ring-[var(--mac-red)]",
+  "aria-invalid:inset-ring-[var(--mac-negative)]",
 );
 
 type FieldShellProps = {
@@ -85,7 +85,7 @@ export function Field({
           role={error ? "alert" : undefined}
           className={clsx(
             "text-footnote",
-            error ? "text-red" : "text-secondary",
+            error ? "text-negative" : "text-secondary",
             orientation === "horizontal" && "col-start-2",
           )}
         >

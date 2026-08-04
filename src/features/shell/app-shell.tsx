@@ -257,9 +257,9 @@ export function AppShell() {
       {error ? (
         <div
           role="alert"
-          className="flex items-center gap-3 border-b border-separator bg-red/10 px-4 py-2 text-body"
+          className="flex items-center gap-3 border-b border-separator bg-negative/10 px-4 py-2 text-body"
         >
-          <span className="text-red">{error.message}</span>
+          <span className="text-negative">{error.message}</span>
           <Button size="sm" variant="plain" className="ml-auto" onClick={clear}>
             Dismiss
           </Button>
@@ -267,16 +267,19 @@ export function AppShell() {
       ) : null}
 
       <div className="relative flex min-h-0 flex-1">
-        {sidebarOpen ? (
-          // Overlaid on a narrow window, in the flow on a wide one: at 390px
-          // there is no room for two columns, and pushing the content off the
-          // screen is worse than covering it.
-          //
-          // Frosted while overlaid, transparent when in the flow. The sidebar's
-          // own material is tuned for a surface with nothing behind it and goes
-          // unreadable on top of content; `material-overlay` is the denser
-          // recipe for a panel that covers rather than abuts.
-          <div className="absolute inset-y-0 left-0 z-30 flex material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none">
+        <div
+          aria-hidden={!sidebarOpen}
+          inert={!sidebarOpen}
+          data-panel-side="left"
+          data-panel-state={sidebarOpen ? "open" : "closed"}
+          className={`side-panel-shell absolute inset-y-0 left-0 z-30 flex w-60 overflow-hidden material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none ${
+            sidebarOpen ? "" : "lg:w-0"
+          }`}
+        >
+          {/* Overlaid on a narrow window, in the flow on a wide one: at 390px
+              there is no room for two columns, and pushing the content off the
+              screen is worse than covering it. The shell stays mounted so its
+              entrance and exit share the same motion. */}
           <AppSidebar
             plans={snapshot.plans}
             plan={plan}
@@ -284,18 +287,19 @@ export function AppShell() {
             focus={workspace.focus}
             hiddenCourseIds={workspace.hiddenCourseIds}
             query={workspace.query}
+            selectedCourseId={workspace.selection?.kind === "course" ? workspace.selection.id : null}
             onSelectPlan={workspace.setPlan}
             onNewPlan={() => workspace.setCreating("plan")}
             onEditPlan={() => setEditPlanOpen(true)}
             onDeletePlan={() => setDeletePlanOpen(true)}
             onSetFocus={workspace.setFocus}
+            onSelectCourse={selectCourse}
             onToggleHidden={(course) => workspace.toggleCourseHidden(course.id)}
             onHideAll={() => workspace.hideAllCourses((plan?.courses ?? []).map((c) => c.id))}
             onShowAll={workspace.showAllCourses}
             onNewCourse={() => workspace.setCreating("course")}
           />
-          </div>
-        ) : null}
+        </div>
 
         <main id={contentId} className="min-w-0 flex-1 overflow-y-auto bg-content">
           {state.status === "loading" ? (
@@ -361,8 +365,15 @@ export function AppShell() {
           )}
         </main>
 
-        {workspace.inspectorOpen ? (
-          <div className="absolute inset-y-0 right-0 z-30 flex material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none">
+        <div
+          aria-hidden={!workspace.inspectorOpen}
+          inert={!workspace.inspectorOpen}
+          data-panel-side="right"
+          data-panel-state={workspace.inspectorOpen ? "open" : "closed"}
+          className={`side-panel-shell absolute inset-y-0 right-0 z-30 flex w-72 overflow-hidden material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none ${
+            workspace.inspectorOpen ? "" : "lg:w-0"
+          }`}
+        >
           <Inspector
             selection={selection}
             health={health}
@@ -377,8 +388,7 @@ export function AppShell() {
               )
             }
           />
-          </div>
-        ) : null}
+        </div>
       </div>
 
       <CommandPalette

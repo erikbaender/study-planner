@@ -216,7 +216,7 @@ export function TodayView({
                   {exam.name}
                 </span>
                 {courseHealth.pace ? (
-                  <Badge tone={courseHealth.pace.onTrack ? "green" : "red"}>
+                  <Badge tone={courseHealth.pace.onTrack ? "positive" : "negative"}>
                     {courseHealth.pace.onTrack ? "On track" : "Behind"}
                   </Badge>
                 ) : null}
@@ -252,7 +252,7 @@ export function TodayView({
                   <span className="shrink-0 text-callout tabular-nums text-secondary">
                     {pace.remainingUnits} units left
                   </span>
-                  <Badge tone="red">
+                  <Badge tone="negative">
                     {Number.isFinite(pace.requiredPace)
                       ? `${Math.ceil(pace.requiredPace)} / day needed`
                       : "No days left"}

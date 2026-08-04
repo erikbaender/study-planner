@@ -131,6 +131,52 @@
   transition: right var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
+/** The shared motion used by progress, completion controls, and panel chrome. */
+.topic-motion-width {
+  transition: width var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.side-panel-shell {
+  transition: width var(--topic-motion-duration) var(--topic-motion-curve);
+  animation-fill-mode: both;
+}
+
+@keyframes side-panel-left-in {
+  from { opacity: 0; transform: translateX(-100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes side-panel-left-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-100%); }
+}
+
+@keyframes side-panel-right-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes side-panel-right-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(100%); }
+}
+
+.side-panel-shell[data-panel-side="left"][data-panel-state="open"] {
+  animation: side-panel-left-in var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.side-panel-shell[data-panel-side="left"][data-panel-state="closed"] {
+  animation: side-panel-left-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.side-panel-shell[data-panel-side="right"][data-panel-state="open"] {
+  animation: side-panel-right-in var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.side-panel-shell[data-panel-side="right"][data-panel-state="closed"] {
+  animation: side-panel-right-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
 span:has(> .topic-progress-thumb) {
   transition: left var(--topic-motion-duration) var(--topic-motion-curve);
 }
@@ -194,8 +240,13 @@ span:has(> .topic-progress-thumb) {
     animation: none;
   }
   .topic-progress-range,
+  .topic-motion-width,
+  .side-panel-shell,
   span:has(> .topic-progress-thumb) {
     transition: none;
+  }
+  .side-panel-shell[data-panel-state] {
+    animation: none;
   }
 }
 
@@ -268,12 +319,12 @@ span:has(> .topic-progress-thumb) {
   --mac-material-overlay: rgba(248, 248, 248, 0.94);
   --mac-material-scrim: rgba(0, 0, 0, 0.24);
 
-  /* Status. Darkened from the palette in `src/domain/palette.ts`, which is
-     tuned for fills; these are used as *text* and must clear AA on white. */
-  --mac-red: #d70015;
-  --mac-orange: #b25000;
-  --mac-green: #1d7f36;
-  --mac-blue: #0066cc;
+  /* Semantic anchors. These stay close to red, yellow, green and blue while
+     avoiding the pure hues used to space the course palette. The light-theme
+     variants are dark enough to clear AA as text on white. */
+  --mac-negative: #d9363e;
+  --mac-warning: #8a6800;
+  --mac-positive: #238636;
   --mac-completion-mark: #1e1e1e;
 
   --mac-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.1);
@@ -319,10 +370,9 @@ span:has(> .topic-progress-thumb) {
   --mac-material-scrim: rgba(0, 0, 0, 0.42);
 
   /* Brightened: the light-mode variants are unreadable on #1e1e1e. */
-  --mac-red: #ff6961;
-  --mac-orange: #ff9f0a;
-  --mac-green: #32d74b;
-  --mac-blue: #64d2ff;
+  --mac-negative: #ff6b72;
+  --mac-warning: #ffd24a;
+  --mac-positive: #45d16f;
   --mac-completion-mark: #1e1e1e;
 
   --mac-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -335,16 +385,11 @@ span:has(> .topic-progress-thumb) {
 /* ─── Accent ────────────────────────────────────────────────────────────── */
 
 /**
- * Set by the theme provider from the user's choice. Declared once, outside the
- * theme blocks, because the accent is a user preference and does not change
- * between light and dark — macOS behaves the same way.
- *
- * `--mac-on-accent` is stated rather than computed: the palette's yellow and
- * mint need black, everything else needs white, and a luminance threshold gets
- * that wrong. `src/domain/palette.ts` is the single source for the pairing.
+ * Blue is the stable semantic anchor for selection, primary actions and focus.
+ * Course identity colours deliberately sit between it and the other anchors.
  */
 :root {
-  --mac-accent: #007aff;
+  --mac-accent: #1769e0;
   --mac-on-accent: #ffffff;
   --mac-accent-soft: color-mix(in srgb, var(--mac-accent) 14%, transparent);
   --mac-focus-ring: color-mix(in srgb, var(--mac-accent) 45%, transparent);
@@ -390,10 +435,9 @@ span:has(> .topic-progress-thumb) {
   --color-accent-soft: var(--mac-accent-soft);
   --color-on-accent: var(--mac-on-accent);
 
-  --color-red: var(--mac-red);
-  --color-orange: var(--mac-orange);
-  --color-green: var(--mac-green);
-  --color-blue: var(--mac-blue);
+  --color-negative: var(--mac-negative);
+  --color-warning: var(--mac-warning);
+  --color-positive: var(--mac-positive);
 
   /* macOS text styles. Base is 13px — `body` here, not `base`, so that a bare
      `text-sm` from muscle memory does not silently pass. */

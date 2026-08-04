@@ -178,9 +178,9 @@ function PlanSheet({
             <dt className="text-caption tracking-wide text-tertiary uppercase">Fits</dt>
             <dd>
               {result.shortfalls.length === 0 ? (
-                <Badge tone="green">Everything fits</Badge>
+                <Badge tone="positive">Everything fits</Badge>
               ) : (
-                <Badge tone="red">
+                <Badge tone="negative">
                   {result.shortfalls.length} course{result.shortfalls.length === 1 ? "" : "s"} short
                 </Badge>
               )}
@@ -189,8 +189,8 @@ function PlanSheet({
         </dl>
 
         {result.shortfalls.length > 0 ? (
-          <div className="flex flex-col gap-1.5 rounded-control bg-red/10 p-3">
-            <h3 className="text-body font-semibold text-red">This plan does not fit</h3>
+          <div className="flex flex-col gap-1.5 rounded-control bg-negative/10 p-3">
+            <h3 className="text-body font-semibold text-negative">This plan does not fit</h3>
             <ul className="flex flex-col gap-1 text-body">
               {result.shortfalls.map((shortfall) => (
                 <li key={shortfall.courseId}>{describeShortfall(shortfall, capacity)}</li>

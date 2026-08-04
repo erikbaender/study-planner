@@ -23,7 +23,6 @@ import {
   Settings2,
 } from "lucide-react";
 import {
-  AccentPicker,
   AnimationSpeedControl,
   AppearanceControl,
   Badge,
@@ -153,10 +152,6 @@ export const AppToolbar = forwardRef<
             <AppearanceControl />
           </div>
           <div className="flex flex-col gap-1.5">
-            <h2 className="text-callout font-semibold text-secondary">Accent colour</h2>
-            <AccentPicker />
-          </div>
-          <div className="flex flex-col gap-1.5">
             <h2 className="text-callout font-semibold text-secondary">Motion</h2>
             <AnimationSpeedControl />
           </div>
@@ -202,7 +197,7 @@ export const AppToolbar = forwardRef<
         }}
       />
 
-      <Badge tone={props.isAuthenticated ? "green" : "neutral"}>
+      <Badge tone={props.isAuthenticated ? "positive" : "neutral"}>
         {props.isAuthenticated ? "Synced" : "This device"}
       </Badge>
 

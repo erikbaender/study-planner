@@ -213,10 +213,10 @@ function TodayLine({ today, range, zoom }: { today: IsoDate; range: Range; zoom:
       style={{ left: xOf(today, range.start, zoom) }}
       // Above the ruler rather than under it: the chip is the one label that
       // must never be occluded, and the ruler is sticky at z-20.
-      className="pointer-events-none absolute inset-y-0 z-30 w-px bg-red"
+      className="pointer-events-none absolute inset-y-0 z-30 w-px bg-accent"
     >
       <span className="absolute top-0 -left-1 flex h-7 items-center">
-        <span className="rounded-chip bg-red px-1 text-caption font-semibold text-white">Today</span>
+        <span className="rounded-chip bg-accent px-1 text-caption font-semibold text-on-accent">Today</span>
       </span>
     </div>
   );
@@ -325,7 +325,7 @@ function CourseLane({
           />
           <span className="max-w-40 truncate text-callout font-medium">{course.name}</span>
           {health?.pace && !health.pace.onTrack ? (
-            <Badge tone="red">
+            <Badge tone="negative">
               Behind
             </Badge>
           ) : null}
