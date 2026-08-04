@@ -39,6 +39,18 @@ const examKindValidator = v.union(
 );
 const examStatusValidator = v.union(v.literal("confirmed"), v.literal("provisional"));
 const blockSourceValidator = v.union(v.literal("auto"), v.literal("manual"));
+const courseColorValidator = v.union(
+  v.literal("coral"),
+  v.literal("tangerine"),
+  v.literal("gold"),
+  v.literal("lime"),
+  v.literal("chartreuse"),
+  v.literal("jade"),
+  v.literal("turquoise"),
+  v.literal("violet"),
+  v.literal("orchid"),
+  v.literal("rose"),
+);
 
 async function requireUser(ctx: Parameters<typeof getAuthUserId>[0]) {
   const userId = await getAuthUserId(ctx);
@@ -273,7 +285,7 @@ export const createCourse = mutation({
     name: v.string(),
     code: v.optional(v.string()),
     notes: v.optional(v.string()),
-    color: v.string(),
+    color: courseColorValidator,
   },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -299,7 +311,7 @@ export const updateCourse = mutation({
     name: v.string(),
     code: v.optional(v.string()),
     notes: v.string(),
-    color: v.string(),
+    color: courseColorValidator,
   },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -311,6 +323,31 @@ export const updateCourse = mutation({
       color: args.color,
       updatedAt: Date.now(),
     });
+  },
+});
+
+/** Rewrites pre-palette hex values after an authenticated client has resolved them. */
+export const migrateColorReferences = mutation({
+  args: {
+    courses: v.array(
+      v.object({ courseId: v.id("courses"), color: courseColorValidator }),
+    ),
+    topics: v.array(v.object({ topicId: v.id("topics"), color: courseColorValidator })),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const now = Date.now();
+
+    for (const course of args.courses) {
+      await assertCourseOwner(ctx, course.courseId, userId);
+      await ctx.db.patch(course.courseId, { color: course.color, updatedAt: now });
+    }
+    for (const topic of args.topics) {
+      await assertTopicOwner(ctx, topic.topicId, userId);
+      await ctx.db.patch(topic.topicId, { color: topic.color, updatedAt: now });
+    }
+    return null;
   },
 });
 
@@ -436,7 +473,7 @@ export const createTopic = mutation({
     totalUnits: v.optional(v.number()),
     priority: v.optional(priorityValidator),
     notes: v.optional(v.string()),
-    color: v.string(),
+    color: courseColorValidator,
   },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -476,7 +513,7 @@ export const createTopics = mutation({
         totalUnits: v.number(),
       }),
     ),
-    color: v.string(),
+    color: courseColorValidator,
   },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -522,7 +559,7 @@ export const updateTopic = mutation({
     status: statusValidator,
     priority: priorityValidator,
     notes: v.string(),
-    color: v.string(),
+    color: courseColorValidator,
   },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -769,7 +806,7 @@ const importTopic = v.object({
   completedUnits: v.number(),
   status: statusValidator,
   priority: priorityValidator,
-  color: v.string(),
+  color: courseColorValidator,
   notes: v.string(),
   /** Dependencies travel as names — ids are not stable across deployments. */
   dependencies: v.array(v.string()),
@@ -786,7 +823,7 @@ const importExam = v.object({
 const importCourse = v.object({
   name: v.string(),
   code: v.optional(v.string()),
-  color: v.string(),
+  color: courseColorValidator,
   notes: v.string(),
   exams: v.array(importExam),
   topics: v.array(importTopic),

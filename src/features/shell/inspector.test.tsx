@@ -99,7 +99,7 @@ describe("Inspector", () => {
       });
       expect(checkbox).toBeChecked();
       expect(checkbox.closest(".topic-completion-row")).toHaveStyle({
-        "--topic-completion-color": course.color,
+        "--topic-completion-color": "#8169d1",
       });
     });
 
@@ -248,7 +248,7 @@ describe("Inspector", () => {
       await user.click(screen.getByRole("radio", { name: "Violet" }));
       expect(repository.updateCourse).toHaveBeenCalledWith(
         course.id,
-        expect.objectContaining({ color: "#8169d1", name: "Biochemistry" }),
+        expect.objectContaining({ color: "violet", name: "Biochemistry" }),
       );
     });
   });

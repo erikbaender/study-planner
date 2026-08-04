@@ -28,7 +28,7 @@ import {
 import { clsx } from "clsx";
 import type { CSSProperties } from "react";
 import type { Course, CourseHealth, Plan } from "@/domain";
-import { courseProgress } from "@/domain";
+import { courseColorValue, courseProgress } from "@/domain";
 import {
   CountdownBadge,
   DropdownMenu,
@@ -230,7 +230,7 @@ function CourseFilterRow({
         "course-completion-row group/row flex cursor-default flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill",
         selected && "bg-fill",
       )}
-      style={{ "--topic-completion-color": course.color } as CSSProperties}
+      style={{ "--topic-completion-color": courseColorValue(course.color) } as CSSProperties}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -243,7 +243,7 @@ function CourseFilterRow({
         <span
           aria-hidden="true"
           className={clsx("size-2.5 shrink-0 rounded-full", off && "opacity-40")}
-          style={{ background: course.color }}
+          style={{ background: courseColorValue(course.color) }}
         />
         <span className={clsx("min-w-0 flex-1 truncate text-body", off && "text-tertiary")}>
           {course.name}
@@ -290,7 +290,7 @@ function CourseFilterRow({
         ratio={courseProgress(course).ratio}
         label={`${course.name} progress`}
         size="sm"
-        tint={course.color}
+        tint={courseColorValue(course.color)}
         className={off ? "opacity-40" : undefined}
       />
     </li>

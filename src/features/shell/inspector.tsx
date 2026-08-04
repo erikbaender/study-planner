@@ -27,7 +27,9 @@ import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   coursePalette,
+  courseColorValue,
   courseProgress,
+  resolveCourseColorId,
   topicProgress,
   UNITS,
   UNIT_LABELS,
@@ -234,7 +236,7 @@ function CourseInspector({
           <span
             aria-hidden="true"
             className="size-2.5 shrink-0 rounded-full"
-            style={{ background: course.color }}
+            style={{ background: courseColorValue(course.color) }}
           />
           <span className="min-w-0 truncate">{course.name}</span>
         </h2>
@@ -259,7 +261,7 @@ function CourseInspector({
         <ProgressBar
           ratio={progress.ratio}
           label={`${course.name} progress`}
-          tint={course.color}
+          tint={courseColorValue(course.color)}
         />
         <Row label="Done">
           {progress.totalUnits > 0
@@ -323,6 +325,7 @@ function CourseInspector({
 }
 
 function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const selectedColorId = resolveCourseColorId(value);
   return (
     <div className="flex flex-col gap-1">
       {/* Not a `Field`: that wires a `<label for>` to a single control, and
@@ -332,15 +335,15 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (value: str
       <div role="radiogroup" aria-label="Course colour" className="flex flex-wrap gap-1.5 pt-0.5">
         {coursePalette.map((color) => (
           <button
-            key={color.value}
+            key={color.id}
             type="button"
             role="radio"
-            aria-checked={color.value === value}
+            aria-checked={color.id === selectedColorId}
             aria-label={color.name}
-            onClick={() => onChange(color.value)}
+            onClick={() => onChange(color.id)}
             className={clsx(
               "size-5 rounded-full transition-transform duration-100 ease-mac",
-              color.value === value
+              color.id === selectedColorId
                 ? "scale-110 inset-ring-2 inset-ring-[var(--mac-label)]"
                 : "hover:scale-110",
             )}
@@ -459,7 +462,9 @@ function TopicInspector({
             <div
               className="topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1"
               data-course-id={course.id}
-              style={{ "--topic-completion-color": course.color } as CSSProperties}
+              style={{
+                "--topic-completion-color": courseColorValue(course.color),
+              } as CSSProperties}
             >
             <ProgressSlider
               className="min-w-0 flex-1"
@@ -467,7 +472,7 @@ function TopicInspector({
               max={topic.totalUnits}
               label={`${topic.name} progress`}
               valueText={(units) => `${units} of ${topic.totalUnits} ${unitLabel}`}
-              tint={course.color}
+              tint={courseColorValue(course.color)}
               onPreview={(units) => {
                 if (units !== null && units >= topic.totalUnits && shown < topic.totalUnits) {
                   triggerCompletionAnimation(completionCheckboxRef.current, "slider");
@@ -514,7 +519,9 @@ function TopicInspector({
             <div
               className="topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1"
               data-course-id={course.id}
-              style={{ "--topic-completion-color": course.color } as CSSProperties}
+              style={{
+                "--topic-completion-color": courseColorValue(course.color),
+              } as CSSProperties}
             >
               <ProgressBar
                 className="min-w-0 flex-1"

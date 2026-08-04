@@ -28,6 +28,7 @@ import type {
 } from "@/domain";
 import type { PlannerSnapshot, StudyBlock } from "@/domain";
 import { countStudyDays, isStudyDay, studyStreak, velocity, VELOCITY_WINDOW_DAYS } from "@/domain";
+import { courseColorValue } from "@/domain";
 import { Badge, Button, Card, CountdownBadge, EmptyState } from "@/ui";
 import { TopicRow } from "@/features/topics/topic-row";
 import { PlanningActions } from "@/features/planning/planning-actions";
@@ -184,7 +185,7 @@ export function TodayView({
                 topic={topic}
                 today={today}
                 courseId={course.id}
-                courseColor={course.color}
+                courseColor={courseColorValue(course.color)}
                 prefix={`${course.name} · ${units} today`}
                 selected={topic.id === selectedTopicId}
                 onSelect={() => onSelectTopic(course, topic)}
@@ -209,7 +210,7 @@ export function TodayView({
                 <span
                   aria-hidden="true"
                   className="size-2.5 shrink-0 rounded-full"
-                  style={{ background: course.color }}
+                  style={{ background: courseColorValue(course.color) }}
                 />
                 <span className="min-w-0 flex-1 truncate">
                   <span className="text-tertiary">{course.name} · </span>
@@ -246,7 +247,7 @@ export function TodayView({
                   <span
                     aria-hidden="true"
                     className="size-2.5 shrink-0 rounded-full"
-                    style={{ background: course.color }}
+                    style={{ background: courseColorValue(course.color) }}
                   />
                   <span className="min-w-0 flex-1 truncate">{course.name}</span>
                   <span className="shrink-0 text-callout tabular-nums text-secondary">
@@ -283,7 +284,7 @@ export function TodayView({
                 topic={topic}
                 today={today}
                 courseId={course.id}
-                courseColor={course.color}
+                courseColor={courseColorValue(course.color)}
                 prefix={course.name}
                 selected={topic.id === selectedTopicId}
                 onSelect={() => onSelectTopic(course, topic)}

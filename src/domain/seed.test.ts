@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { differenceInDays } from "./dates";
+import { isCourseColorId } from "./palette";
 import { generateSeedData } from "./seed";
 import type { Topic } from "./types";
 
@@ -30,6 +31,16 @@ describe("generateSeedData", () => {
     // Pinned rather than bounded: the fixture size is what the timeline's
     // virtualization is tuned against, so it should not drift unnoticed.
     expect(allTopics(data)).toHaveLength(344);
+  });
+
+  it("stores palette references rather than rendered colour values", () => {
+    const data = generateSeedData({ today: TODAY });
+    const references = data.plan.courses.flatMap((course) => [
+      course.color,
+      ...course.topics.map((topic) => topic.color),
+    ]);
+    expect(references.every(isCourseColorId)).toBe(true);
+    expect(references.every((color) => !color.startsWith("#"))).toBe(true);
   });
 
   it("trims to the requested number of courses", () => {

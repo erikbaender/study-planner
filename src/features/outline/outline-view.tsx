@@ -20,6 +20,7 @@ import { ChevronRight, ClipboardPaste, Plus, Trash2 } from "lucide-react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
+  courseColorValue,
   formatOutline,
   parseOutline,
   UNITS,
@@ -201,14 +202,14 @@ function CourseSection({
           <span
             aria-hidden="true"
             className="size-2.5 shrink-0 rounded-full"
-            style={{ background: course.color }}
+            style={{ background: courseColorValue(course.color) }}
           />
           <h2 className="min-w-0 truncate text-title3 font-semibold">{course.name}</h2>
         </button>
         <ProgressBar
           ratio={progress.ratio}
           label={`${course.name} progress`}
-          tint={course.color}
+          tint={courseColorValue(course.color)}
           className="w-28 shrink-0"
         />
         <span className="w-28 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary">

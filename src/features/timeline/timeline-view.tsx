@@ -35,6 +35,7 @@ import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   addDays,
   clampDate,
+  courseColorValue,
   differenceInDays,
   maxDate,
   minDate,
@@ -245,14 +246,14 @@ function ExamMarkers({ courses, range, zoom }: { courses: readonly Course[]; ran
                 style={{
                   left: xOf(exam.startDate, range.start, zoom),
                   width: widthOf(exam.startDate, exam.endDate, zoom),
-                  backgroundImage: `repeating-linear-gradient(45deg, ${course.color} 0 1px, transparent 1px 9px)`,
+                  backgroundImage: `repeating-linear-gradient(45deg, ${courseColorValue(course.color)} 0 1px, transparent 1px 9px)`,
                   opacity: 0.28,
                 }}
                 className="absolute inset-y-0"
               />
             ) : null}
             <span
-              style={{ left: xOf(exam.startDate, range.start, zoom), background: course.color }}
+              style={{ left: xOf(exam.startDate, range.start, zoom), background: courseColorValue(course.color) }}
               className={clsx(
                 "absolute inset-y-0 w-px",
                 exam.status === "provisional" ? "opacity-40" : "opacity-60",
@@ -261,7 +262,7 @@ function ExamMarkers({ courses, range, zoom }: { courses: readonly Course[]; ran
             {/* The flag. A rule alone reads as another bar; the flag is what
                 says "this is a deadline, not work". */}
             <span
-              style={{ left: xOf(exam.startDate, range.start, zoom), background: course.color }}
+              style={{ left: xOf(exam.startDate, range.start, zoom), background: courseColorValue(course.color) }}
               className={clsx(
                 "absolute top-0 h-2 w-2 rounded-br-[3px]",
                 exam.status === "provisional" && "opacity-50",
@@ -321,7 +322,7 @@ function CourseLane({
           <span
             aria-hidden="true"
             className="size-2 shrink-0 rounded-full"
-            style={{ background: course.color }}
+            style={{ background: courseColorValue(course.color) }}
           />
           <span className="max-w-40 truncate text-callout font-medium">{course.name}</span>
           {health?.pace && !health.pace.onTrack ? (
@@ -338,7 +339,7 @@ function CourseLane({
             style={{
               left: xOf(span.start, range.start, zoom),
               width: widthOf(span.start, span.end, zoom),
-              background: `color-mix(in srgb, ${course.color} 25%, transparent)`,
+              background: `color-mix(in srgb, ${courseColorValue(course.color)} 25%, transparent)`,
             }}
             className="pointer-events-none absolute top-1.5 h-4 rounded-chip"
           >
@@ -346,7 +347,7 @@ function CourseLane({
               className="block h-full rounded-chip"
               style={{
                 width: `${(health?.progress.ratio ?? 0) * 100}%`,
-                background: course.color,
+                background: courseColorValue(course.color),
                 opacity: 0.8,
               }}
             />
@@ -632,7 +633,7 @@ function BlockBar({
         style={{
           left: xOf(shown.startDate, range.start, zoom),
           width: Math.max(widthOf(shown.startDate, shown.endDate, zoom), 6),
-          background: `color-mix(in srgb, ${topic.color || course.color} 22%, transparent)`,
+          background: `color-mix(in srgb, ${courseColorValue(topic.color || course.color)} 22%, transparent)`,
         }}
         className={clsx(
           "group absolute top-1 h-4 touch-none overflow-hidden rounded-chip",
@@ -655,7 +656,7 @@ function BlockBar({
           className="block h-full"
           style={{
             width: `${(progress.ratio ?? 0) * 100}%`,
-            background: topic.color || course.color,
+            background: courseColorValue(topic.color || course.color),
           }}
         />
         <span

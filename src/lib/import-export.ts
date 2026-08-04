@@ -13,7 +13,7 @@
  */
 
 import { z } from "zod";
-import { DEFAULT_COLOR } from "@/domain/palette";
+import { DEFAULT_COLOR_ID, resolveCourseColorId } from "@/domain/palette";
 import { EXAM_KINDS, EXAM_STATUSES, PRIORITIES, TOPIC_STATUSES, UNITS } from "@/domain/types";
 import type { Plan, PlannerSnapshot } from "@/domain/types";
 
@@ -34,7 +34,7 @@ const topicSchema = z.object({
   completedUnits: z.number().nonnegative().default(0),
   status: z.enum(TOPIC_STATUSES).default("planned"),
   priority: z.enum(PRIORITIES).default("normal"),
-  color: z.string().default(DEFAULT_COLOR),
+  color: z.string().default(DEFAULT_COLOR_ID).transform(resolveCourseColorId),
   notes: z.string().default(""),
   dependencies: z.array(z.string()).default([]),
   blocks: z.array(blockSchema).default([]),
@@ -52,7 +52,7 @@ const examSchema = z.object({
 const courseSchema = z.object({
   name: z.string().min(1),
   code: z.string().optional(),
-  color: z.string().default(DEFAULT_COLOR),
+  color: z.string().default(DEFAULT_COLOR_ID).transform(resolveCourseColorId),
   notes: z.string().default(""),
   exams: z.array(examSchema).default([]),
   topics: z.array(topicSchema).default([]),
@@ -113,7 +113,7 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
         return {
           name: course.name,
           code: course.code,
-          color: course.color,
+          color: resolveCourseColorId(course.color),
           notes: course.notes,
           exams: course.exams.map((exam) => ({
             name: exam.name,
@@ -131,7 +131,7 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
             completedUnits: topic.completedUnits,
             status: topic.status,
             priority: topic.priority,
-            color: topic.color,
+            color: resolveCourseColorId(topic.color),
             notes: topic.notes,
             dependencies: topic.dependencyIds
               .map((id) => namesById.get(id))

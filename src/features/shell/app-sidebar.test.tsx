@@ -134,6 +134,6 @@ describe("AppSidebar course visibility", () => {
 
     const row = screen.getByText("Finished course").closest("li");
     expect(row).toHaveAttribute("data-course-completed", "true");
-    expect(row).toHaveStyle({ "--topic-completion-color": "#ff3b30" });
+    expect(row).toHaveStyle({ "--topic-completion-color": "#e8684a" });
   });
 });

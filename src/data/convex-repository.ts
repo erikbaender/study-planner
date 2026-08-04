@@ -28,6 +28,7 @@ import {
   type Weekday,
 } from "@/domain/types";
 import type { PlannerExport } from "@/lib/import-export";
+import { resolveCourseColorId } from "@/domain/palette";
 import type {
   CourseInput,
   ExamInput,
@@ -73,7 +74,7 @@ function toTopic(topic: PlanTree["courses"][number]["topics"][number]): Topic {
     status: topic.status,
     priority: topic.priority,
     dependencyIds: topic.dependencyIds,
-    color: topic.color,
+    color: resolveCourseColorId(topic.color),
     notes: topic.notes,
     order: topic.order,
     blocks: topic.blocks.map(toStudyBlock),
@@ -100,7 +101,7 @@ function toCourse(course: PlanTree["courses"][number]): Course {
     planId: course.planId,
     name: course.name,
     code: course.code,
-    color: course.color,
+    color: resolveCourseColorId(course.color),
     notes: course.notes,
     order: course.order,
     exams: course.exams.map(toExam),
@@ -161,6 +162,7 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
   const subscribe = (listener: (state: RepositoryState) => void) => {
     const parts: Parts = {};
     let failed = false;
+    let colorMigrationRequested = false;
 
     const emit = () => {
       if (failed) return;
@@ -168,6 +170,33 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       // flash an empty plan list for the instant before `plans` arrives, which
       // is exactly the "you have no plans yet" empty state.
       if (!parts.plans || !parts.studyLog || !parts.preferencesLoaded) return;
+
+      if (!colorMigrationRequested) {
+        const courses = parts.plans.flatMap((plan) =>
+          plan.courses
+            .filter((course) => course.color !== resolveCourseColorId(course.color))
+            .map((course) => ({
+              courseId: course._id,
+              color: resolveCourseColorId(course.color),
+            })),
+        );
+        const topics = parts.plans.flatMap((plan) =>
+          plan.courses.flatMap((course) =>
+            course.topics
+              .filter((topic) => topic.color !== resolveCourseColorId(topic.color))
+              .map((topic) => ({
+                topicId: topic._id,
+                color: resolveCourseColorId(topic.color),
+              })),
+          ),
+        );
+        colorMigrationRequested = true;
+        if (courses.length > 0 || topics.length > 0) {
+          void client
+            .mutation(api.planner.migrateColorReferences, { courses, topics })
+            .catch(fail);
+        }
+      }
 
       listener({
         status: "ready",
@@ -256,6 +285,7 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       return await client.mutation(api.planner.createCourse, {
         planId: asId<"plans">(planId),
         ...input,
+        color: resolveCourseColorId(input.color),
       });
     },
     async updateCourse(courseId, input) {
@@ -264,7 +294,7 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         name: input.name,
         code: input.code,
         notes: input.notes,
-        color: input.color,
+        color: resolveCourseColorId(input.color),
       });
     },
     async deleteCourse(courseId) {
@@ -309,19 +339,21 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       return await client.mutation(api.planner.createTopic, {
         courseId: asId<"courses">(courseId),
         ...input,
+        color: resolveCourseColorId(input.color),
       });
     },
     async createTopics(courseId, topics, color) {
       return await client.mutation(api.planner.createTopics, {
         courseId: asId<"courses">(courseId),
         topics,
-        color,
+        color: resolveCourseColorId(color),
       });
     },
     async updateTopic(topicId, patch: TopicPatch) {
       await client.mutation(api.planner.updateTopic, {
         topicId: asId<"topics">(topicId),
         ...patch,
+        color: resolveCourseColorId(patch.color),
       });
     },
     async deleteTopic(topicId) {

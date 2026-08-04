@@ -25,6 +25,7 @@ import {
   type StudyLogEntry,
   type Topic,
 } from "@/domain/types";
+import { resolveCourseColorId } from "@/domain/palette";
 import {
   buildDependencyGraph,
   requireAcyclic,
@@ -193,6 +194,28 @@ function mapTopic(snapshot: PlannerSnapshot, topicId: EntityId, fn: (topic: Topi
 
 /* ------------------------------------------------------------- repository */
 
+function normalizeSnapshotColors(snapshot: PlannerSnapshot): PlannerSnapshot {
+  let changed = false;
+  const plans = snapshot.plans.map((plan) => ({
+    ...plan,
+    courses: plan.courses.map((course) => {
+      const color = resolveCourseColorId(course.color);
+      const topics = course.topics.map((topic) => {
+        const topicColor = resolveCourseColorId(topic.color);
+        if (topicColor === topic.color) return topic;
+        changed = true;
+        return { ...topic, color: topicColor };
+      });
+      if (color === course.color && topics.every((topic, index) => topic === course.topics[index])) {
+        return course;
+      }
+      changed = true;
+      return { ...course, color, topics };
+    }),
+  }));
+  return changed ? { ...snapshot, plans } : snapshot;
+}
+
 export type LocalRepositoryOptions = {
   storage?: SnapshotStorage;
   createId?: IdFactory;
@@ -212,7 +235,12 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
   const loaded = storage
     .load()
-    .then((snapshot) => publish({ status: "ready", snapshot: snapshot ?? EMPTY_SNAPSHOT }))
+    .then(async (snapshot) => {
+      const loadedSnapshot = snapshot ?? EMPTY_SNAPSHOT;
+      const normalized = normalizeSnapshotColors(loadedSnapshot);
+      if (normalized !== loadedSnapshot) await storage.save(normalized);
+      publish({ status: "ready", snapshot: normalized });
+    })
     .catch((error: unknown) =>
       publish({
         status: "error",
@@ -323,7 +351,7 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
               planId,
               name: input.name,
               code: input.code,
-              color: input.color,
+              color: resolveCourseColorId(input.color),
               notes: input.notes ?? "",
               order: nextOrder(plan.courses),
               exams: [],
@@ -344,7 +372,7 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
             name: input.name,
             code: input.code,
             notes: input.notes,
-            color: input.color,
+            color: resolveCourseColorId(input.color),
           })),
         ),
       );
@@ -523,7 +551,7 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
               status: "planned",
               priority: input.priority ?? "normal",
               dependencyIds: [],
-              color: input.color,
+              color: resolveCourseColorId(input.color),
               notes: input.notes ?? "",
               order: nextOrder(course.topics),
               blocks: [],
@@ -556,7 +584,7 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
                 status: "planned",
                 priority: "normal",
                 dependencyIds: [],
-                color,
+                color: resolveCourseColorId(color),
                 notes: "",
                 order: nextOrder(course.topics) + index,
                 blocks: [],
@@ -573,7 +601,11 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
         requireValidProgress(patch.completedUnits, patch.totalUnits);
         return withPlans(
           snapshot,
-          mapTopic(snapshot, topicId, (topic) => ({ ...topic, ...patch })),
+          mapTopic(snapshot, topicId, (topic) => ({
+            ...topic,
+            ...patch,
+            color: resolveCourseColorId(patch.color),
+          })),
         );
       });
     },

@@ -326,14 +326,14 @@ export function NewCourseSheet({
           <div role="radiogroup" aria-label="Course colour" className="flex flex-wrap gap-1.5">
             {coursePalette.map((candidate) => (
               <button
-                key={candidate.value}
+                key={candidate.id}
                 type="button"
                 role="radio"
-                aria-checked={candidate.value === color}
+                aria-checked={candidate.id === color}
                 aria-label={candidate.name}
-                onClick={() => setColor(candidate.value)}
+                onClick={() => setColor(candidate.id)}
                 className={
-                  candidate.value === color
+                  candidate.id === color
                     ? "size-6 scale-110 rounded-full inset-ring-2 inset-ring-[var(--mac-label)]"
                     : "size-6 rounded-full hover:scale-110"
                 }

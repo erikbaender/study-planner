@@ -165,7 +165,7 @@ describe("TopicTable", () => {
 
     expect(readout.compareDocumentPosition(slider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(slider.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(row).toHaveStyle({ "--topic-completion-color": course.color });
+    expect(row).toHaveStyle({ "--topic-completion-color": "#8169d1" });
   });
 
   it("only marks a row for animation when completion is checked interactively", async () => {

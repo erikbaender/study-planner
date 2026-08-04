@@ -67,6 +67,31 @@ describe("subscription", () => {
     expect((states.at(-1) as { snapshot: PlannerSnapshot }).snapshot.plans).toHaveLength(1);
   });
 
+  it("rewrites legacy colour values to stable palette references on load", async () => {
+    const seeded = generateSeedData({ today: TODAY, courseLimit: 1 });
+    const legacy: PlannerSnapshot = {
+      plans: [
+        {
+          ...seeded.plan,
+          courses: seeded.plan.courses.map((course) => ({
+            ...course,
+            color: "#ff3b30",
+            topics: course.topics.map((topic) => ({ ...topic, color: "#3d8fd1" })),
+          })),
+        },
+      ],
+      studyLog: seeded.studyLog,
+      preferences: seeded.preferences ?? DEFAULT_PREFERENCES,
+    };
+    const storage = memoryStorage(legacy);
+    const { repository } = setup(storage);
+
+    const loaded = await read(repository);
+    expect(loaded.plans[0].courses[0].color).toBe("coral");
+    expect(loaded.plans[0].courses[0].topics[0].color).toBe("violet");
+    expect((await storage.load())?.plans[0].courses[0].color).toBe("coral");
+  });
+
   it("stops after unsubscribing", async () => {
     const { repository } = setup();
     const listener = vi.fn();
@@ -227,13 +252,13 @@ describe("topics", () => {
         { name: "Glycolysis", section: "Metabolism", unit: "slides", totalUnits: 42 },
         { name: "Krebs cycle", section: "Metabolism", unit: "slides", totalUnits: 38 },
       ],
-      "#ff0000",
+      "coral",
     );
 
     const topics = (await read(repository)).plans[0].courses[0].topics;
     expect(ids).toHaveLength(2);
     expect(topics.map((topic) => topic.order)).toEqual([0, 1]);
-    expect(topics.map((topic) => topic.color)).toEqual(["#ff0000", "#ff0000"]);
+    expect(topics.map((topic) => topic.color)).toEqual(["coral", "coral"]);
   });
 
   it("appends a batch after existing topics", async () => {

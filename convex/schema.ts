@@ -39,6 +39,7 @@ export default defineSchema({
     name: v.string(),
     code: v.optional(v.string()),
     notes: v.string(),
+    /** Stable course-palette id. Kept as a string while legacy hex rows are read-migrated. */
     color: v.string(),
     order: v.number(),
     createdAt: v.number(),
@@ -76,6 +77,7 @@ export default defineSchema({
     status: v.union(v.literal("planned"), v.literal("active"), v.literal("done")),
     priority: v.union(v.literal("low"), v.literal("normal"), v.literal("high")),
     dependencyIds: v.array(v.id("topics")),
+    /** Stable course-palette id. Kept as a string while legacy hex rows are read-migrated. */
     color: v.string(),
     notes: v.string(),
     order: v.number(),

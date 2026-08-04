@@ -20,7 +20,7 @@
 import { clsx } from "clsx";
 import { useState, type CSSProperties } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
-import { UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
+import { courseColorValue, UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
 import { ContextMenu, Select } from "@/ui";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
 
@@ -154,7 +154,7 @@ function TopicTableRow({
           "topic-completion-row group rounded-control px-2 py-0.5",
           selected ? "bg-accent-soft" : "hover:bg-fill",
         )}
-        style={{ "--topic-completion-color": course.color } as CSSProperties}
+        style={{ "--topic-completion-color": courseColorValue(course.color) } as CSSProperties}
       >
         <Cell
           label={`Name of ${topic.name}`}
@@ -193,7 +193,7 @@ function TopicTableRow({
         <TopicProgressCell
           topic={topic}
           today={today}
-          tint={course.color}
+          tint={courseColorValue(course.color)}
           sliderClassName="w-full min-w-0"
           readoutClassName="text-right text-callout tabular-nums whitespace-nowrap text-secondary"
         />

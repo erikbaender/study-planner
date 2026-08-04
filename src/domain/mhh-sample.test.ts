@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assessCourse, studyStreak } from "./metrics";
 import { generateMhhSampleData, generateMhhShowcaseData } from "./mhh-sample";
 import { generateSampleDataset, SAMPLE_DATASETS } from "./sample-datasets";
+import { isCourseColorId } from "./palette";
 
 const TODAY = "2026-08-02";
 
@@ -16,6 +17,15 @@ describe("generateMhhSampleData", () => {
     expect(topics).toHaveLength(89);
     expect(blocks).toHaveLength(86);
     expect(topics.some((topic) => /^Teil\s+\d+/i.test(topic.name))).toBe(false);
+  });
+
+  it("stores palette references throughout the sample", () => {
+    const data = generateMhhSampleData();
+    const references = data.plan.courses.flatMap((course) => [
+      course.color,
+      ...course.topics.map((topic) => topic.color),
+    ]);
+    expect(references.every(isCourseColorId)).toBe(true);
   });
 
   it("preserves source names, statuses, dates and milestone deadlines", () => {

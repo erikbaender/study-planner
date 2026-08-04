@@ -199,7 +199,7 @@ export function generateSeedData(options: SeedOptions): SeedData {
 
   const courses: Course[] = blueprints.map((blueprint, courseIndex) => {
     const courseId = `course_${slug(blueprint.code)}`;
-    const color = coursePalette[courseIndex % coursePalette.length].value;
+    const color = coursePalette[courseIndex % coursePalette.length].id;
 
     const exams: Exam[] = [
       {

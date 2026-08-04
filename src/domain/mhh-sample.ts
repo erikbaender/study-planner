@@ -174,7 +174,7 @@ export function generateMhhSampleData(): SeedData {
   const planId = "plan_sample_mhh";
   const courses: Course[] = COURSES.map((blueprint, courseIndex) => {
     const courseId = `course_sample_mhh_${courseIndex}`;
-    const color = coursePalette[courseIndex].value;
+    const color = coursePalette[courseIndex % coursePalette.length].id;
 
     return {
       id: courseId,
@@ -235,7 +235,7 @@ export function generateMhhShowcaseData(today: IsoDate): SeedData {
   const courses: Course[] = COURSES.map((blueprint, courseIndex) => {
     const profile = profiles[courseIndex];
     const courseId = `course_sample_mhh_showcase_${courseIndex}`;
-    const color = coursePalette[courseIndex].value;
+    const color = coursePalette[courseIndex % coursePalette.length].id;
     const examDate = addDays(today, profile.examOffset);
     const completionPoint = blueprint.topics.length * profile.completion;
 
