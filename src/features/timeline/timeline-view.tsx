@@ -29,7 +29,7 @@
  */
 
 import { clsx } from "clsx";
-import { CalendarRange, ChevronRight, Layers } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
@@ -102,12 +102,17 @@ type Chart = {
   scroller: React.RefObject<HTMLDivElement | null>;
   pan: number;
   edit: number;
+  /** The dates at the left and right edges of the scrollport, for the off-screen markers. */
+  window: { from: IsoDate; to: IsoDate } | null;
+  centreOn: (date: IsoDate) => void;
 };
 
 const ChartContext = createContext<Chart>({
   scroller: { current: null },
   pan: LEFT,
   edit: RIGHT,
+  window: null,
+  centreOn: () => {},
 });
 
 /**
@@ -173,6 +178,15 @@ export function TimelineView({
   const [zoom, setZoom] = useState<Zoom>("week");
   const [mode, setMode] = useState<Mode>("view");
   const [open, setOpen] = useState<Record<string, boolean>>({ [ALL_TOPICS]: true });
+  /**
+   * The dates on screen.
+   *
+   * Held as dates rather than pixels on purpose: it changes once per column
+   * crossed instead of once per frame, so scrolling does not re-render ninety
+   * lanes at 60Hz. The markers themselves are placed by `position: sticky`,
+   * which needs no state at all.
+   */
+  const [visible, setVisible] = useState<{ from: IsoDate; to: IsoDate } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   /** The date to re-centre on after a zoom change; see `changeZoom`. */
   const anchorRef = useRef<IsoDate | null>(null);
@@ -186,12 +200,23 @@ export function TimelineView({
   // what is behind, so the larger half of the view is given to it.
   const todayOffset = (client: number) => xOf(today, range.start, zoom) - client / 3;
 
+  const trackVisible = () => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const from = dateAt(element.scrollLeft, range.start, zoom);
+    const to = dateAt(element.scrollLeft + element.clientWidth, range.start, zoom);
+    setVisible((current) =>
+      current && current.from === from && current.to === to ? current : { from, to },
+    );
+  };
+
   // Opening on the far left of the canvas — weeks of finished work — made
   // "press Today" the first action of every visit. Do it for them, without the
   // animation, so the first paint is already in the right place.
   useEffect(() => {
     const element = scrollRef.current;
     if (element) element.scrollLeft = todayOffset(element.clientWidth);
+    trackVisible();
     // Mount only: re-running would yank the canvas back while someone reads it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -206,6 +231,7 @@ export function TimelineView({
     anchorRef.current = null;
     if (!element || !anchor) return;
     element.scrollLeft = xOf(anchor, range.start, zoom) - element.clientWidth / 2;
+    trackVisible();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom]);
 
@@ -232,7 +258,19 @@ export function TimelineView({
     );
   }
 
-  const chart: Chart = { scroller: scrollRef, ...buttonsFor(mode) };
+  const chart: Chart = {
+    scroller: scrollRef,
+    ...buttonsFor(mode),
+    window: visible,
+    centreOn: (date) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      element.scrollTo({
+        left: xOf(date, range.start, zoom) - element.clientWidth / 2,
+        behavior: "smooth",
+      });
+    },
+  };
   // Chronological, not grouped: the combined lane exists to show the plan as a
   // sequence, and a topic's place in that sequence is where its work *starts* —
   // its earliest block, whatever else it has scheduled later. Topics with
@@ -288,6 +326,7 @@ export function TimelineView({
         // The chart owns both buttons now, so the browser's own menu would only
         // ever interrupt an edit gesture halfway through.
         onContextMenu={(event) => event.preventDefault()}
+        onScroll={trackVisible}
         onPointerDown={(event) => {
           if (event.button === chart.pan) startPan(event, chart);
         }}
@@ -853,6 +892,7 @@ function TopicLane({
         ) : null}
         {topic.name}
       </span>
+      <OffscreenMarkers topic={topic} />
       {draft ? (
         <span
           aria-hidden="true"
@@ -879,6 +919,102 @@ function TopicLane({
       ))}
     </div>
   );
+}
+
+/**
+ * "There is more of this row over there."
+ *
+ * A row whose only block sits three months off screen looks, at a glance,
+ * exactly like a row with nothing scheduled at all — and at Day zoom most rows
+ * look like that most of the time. The markers pin themselves to the edges of
+ * the scrollport with `position: sticky`, count what is out there, and take you
+ * to the nearest one on the far side, centred rather than flush against an edge
+ * so its neighbours come with it.
+ */
+function OffscreenMarkers({ topic }: { topic: Topic }) {
+  const chart = useContext(ChartContext);
+  const view = chart.window;
+  if (!view) return null;
+
+  const before = topic.blocks.filter((block) => block.endDate < view.from);
+  const after = topic.blocks.filter((block) => block.startDate > view.to);
+  if (before.length === 0 && after.length === 0) return null;
+
+  // The nearest one in each direction: the next thing you would want to see.
+  const nearestBefore = before.length
+    ? before.reduce((closest, block) => (block.endDate > closest.endDate ? block : closest))
+    : null;
+  const nearestAfter = after.length
+    ? after.reduce((closest, block) => (block.startDate < closest.startDate ? block : closest))
+    : null;
+
+  return (
+    <>
+      {nearestBefore ? (
+        <Marker
+          side="left"
+          count={before.length}
+          date={nearestBefore.endDate}
+          topic={topic.name}
+          onGo={() => chart.centreOn(midpoint(nearestBefore))}
+        />
+      ) : null}
+      {nearestAfter ? (
+        <Marker
+          side="right"
+          count={after.length}
+          date={nearestAfter.startDate}
+          topic={topic.name}
+          onGo={() => chart.centreOn(midpoint(nearestAfter))}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function Marker({
+  side,
+  count,
+  date,
+  topic,
+  onGo,
+}: {
+  side: "left" | "right";
+  count: number;
+  date: IsoDate;
+  topic: string;
+  onGo: () => void;
+}) {
+  const Chevron = side === "left" ? ChevronLeft : ChevronRight;
+  const where = side === "left" ? "earlier" : "later";
+
+  return (
+    <button
+      type="button"
+      // The lane underneath would read this as the start of a pan or of a new
+      // block; the marker is chrome, not canvas.
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={onGo}
+      title={`${count} ${where} block${count === 1 ? "" : "s"} for ${topic} — go to ${shortDate(date)}`}
+      aria-label={`${count} ${where} block${count === 1 ? "" : "s"} for ${topic}, go to ${shortDate(date)}`}
+      className={clsx(
+        "material-inline sticky top-1 z-30 flex h-4 items-center gap-0.5 rounded-chip px-1 text-caption tabular-nums text-secondary",
+        "hover:text-label",
+        // Clear of the sticky label column on the left; flush with the right
+        // edge of the scrollport on the other side.
+        side === "left" ? "float-left left-44 mr-1" : "float-right right-1",
+      )}
+    >
+      {side === "left" ? <Chevron aria-hidden="true" className="size-3" /> : null}
+      {count}
+      {side === "right" ? <Chevron aria-hidden="true" className="size-3" /> : null}
+    </button>
+  );
+}
+
+/** The day a block reads as being "at", for centring on it. */
+function midpoint(block: StudyBlock): IsoDate {
+  return addDays(block.startDate, Math.floor(differenceInDays(block.startDate, block.endDate) / 2));
 }
 
 /* ─── The bar ───────────────────────────────────────────────────────────── */

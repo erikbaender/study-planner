@@ -129,7 +129,7 @@ export function AppSidebar({
       />
 
       <SidebarSection title="Search">
-        <div className="flex h-control items-center gap-1 rounded-control border border-accent/55 bg-content px-1.5 text-accent focus-within:border-accent">
+        <div className="group flex h-control items-center gap-1 rounded-control border border-transparent bg-fill px-1.5 text-tertiary transition-colors duration-100 ease-mac focus-within:border-accent focus-within:bg-content focus-within:text-accent">
           <Search aria-hidden="true" className="size-3.5 shrink-0" />
           <input
             ref={searchRef}
@@ -140,14 +140,14 @@ export function AppSidebar({
             onKeyDown={(event) => {
               if (event.key === "Escape") onSetQuery?.("");
             }}
-            className="min-w-0 flex-1 bg-transparent text-center text-body text-label outline-none [&::-webkit-search-cancel-button]:hidden"
+            className="min-w-0 flex-1 bg-transparent text-center text-body text-label outline-none focus:outline-none focus:ring-0 [&::-webkit-search-cancel-button]:hidden"
           />
           {query ? (
             <button
               type="button"
               aria-label="Clear search"
               onClick={() => onSetQuery?.("")}
-              className="flex size-4 shrink-0 items-center justify-center rounded-full text-accent transition-colors hover:bg-accent-soft"
+              className="flex size-4 shrink-0 items-center justify-center rounded-full text-current transition-colors hover:bg-fill-strong group-focus-within:hover:bg-accent-soft"
             >
               <X aria-hidden="true" className="size-3" />
             </button>
