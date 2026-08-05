@@ -30,7 +30,17 @@
 
 import { clsx } from "clsx";
 import { CalendarRange, ChevronLeft, ChevronRight, Layers } from "lucide-react";
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   addDays,
@@ -98,12 +108,51 @@ const RIGHT = 2;
 const buttonsFor = (mode: Mode) =>
   mode === "view" ? { pan: LEFT, edit: RIGHT } : { pan: RIGHT, edit: LEFT };
 
+type Viewport = { from: IsoDate; to: IsoDate } | null;
+
+/**
+ * Scroll position is external to React's timeline tree.
+ *
+ * A top-level state update here used to reconcile the ruler, grid, 344 topic
+ * lanes, and every bar whenever the viewport crossed a day. Marker consumers
+ * subscribe directly instead, and their selector below keeps its snapshot
+ * stable until one of that topic's blocks actually crosses an edge.
+ */
+type ViewportStore = {
+  subscribe: (listener: () => void) => () => void;
+  getSnapshot: () => Viewport;
+  setSnapshot: (next: Exclude<Viewport, null>) => void;
+};
+
+function createViewportStore(): ViewportStore {
+  let snapshot: Viewport = null;
+  const listeners = new Set<() => void>();
+
+  return {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getSnapshot: () => snapshot,
+    setSnapshot(next) {
+      if (snapshot?.from === next.from && snapshot.to === next.to) return;
+      snapshot = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+const EMPTY_VIEWPORT_STORE: ViewportStore = {
+  subscribe: () => () => {},
+  getSnapshot: () => null,
+  setSnapshot: () => {},
+};
+
 type Chart = {
   scroller: React.RefObject<HTMLDivElement | null>;
   pan: number;
   edit: number;
-  /** The dates at the left and right edges of the scrollport, for the off-screen markers. */
-  window: { from: IsoDate; to: IsoDate } | null;
+  viewport: ViewportStore;
   centreOn: (date: IsoDate) => void;
 };
 
@@ -111,7 +160,7 @@ const ChartContext = createContext<Chart>({
   scroller: { current: null },
   pan: LEFT,
   edit: RIGHT,
-  window: null,
+  viewport: EMPTY_VIEWPORT_STORE,
   centreOn: () => {},
 });
 
@@ -178,16 +227,8 @@ export function TimelineView({
   const [zoom, setZoom] = useState<Zoom>("week");
   const [mode, setMode] = useState<Mode>("view");
   const [open, setOpen] = useState<Record<string, boolean>>({ [ALL_TOPICS]: true });
-  /**
-   * The dates on screen.
-   *
-   * Held as dates rather than pixels on purpose: it changes once per column
-   * crossed instead of once per frame, so scrolling does not re-render ninety
-   * lanes at 60Hz. The markers themselves are placed by `position: sticky`,
-   * which needs no state at all.
-   */
-  const [visible, setVisible] = useState<{ from: IsoDate; to: IsoDate } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewport] = useState(createViewportStore);
   /** The date to re-centre on after a zoom change; see `changeZoom`. */
   const anchorRef = useRef<IsoDate | null>(null);
 
@@ -200,15 +241,13 @@ export function TimelineView({
   // what is behind, so the larger half of the view is given to it.
   const todayOffset = (client: number) => xOf(today, range.start, zoom) - client / 3;
 
-  const trackVisible = () => {
+  const trackVisible = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
     const from = dateAt(element.scrollLeft, range.start, zoom);
     const to = dateAt(element.scrollLeft + element.clientWidth, range.start, zoom);
-    setVisible((current) =>
-      current && current.from === from && current.to === to ? current : { from, to },
-    );
-  };
+    viewport.setSnapshot({ from, to });
+  }, [range.start, viewport, zoom]);
 
   // Opening on the far left of the canvas — weeks of finished work — made
   // "press Today" the first action of every visit. Do it for them, without the
@@ -235,6 +274,16 @@ export function TimelineView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom]);
 
+  // A sidebar or inspector resize changes the right edge without a scroll.
+  // Keep markers correct without making viewport dimensions React state.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(trackVisible);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [trackVisible]);
+
   const changeZoom = (next: Zoom) => {
     const element = scrollRef.current;
     if (element) {
@@ -242,6 +291,22 @@ export function TimelineView({
     }
     setZoom(next);
   };
+
+  const centreOn = useCallback(
+    (date: IsoDate) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      element.scrollTo({
+        left: xOf(date, range.start, zoom) - element.clientWidth / 2,
+        behavior: "smooth",
+      });
+    },
+    [range.start, zoom],
+  );
+  const chart = useMemo<Chart>(
+    () => ({ scroller: scrollRef, ...buttonsFor(mode), viewport, centreOn }),
+    [centreOn, mode, viewport],
+  );
 
   if (courses.length === 0) {
     return (
@@ -257,20 +322,6 @@ export function TimelineView({
       />
     );
   }
-
-  const chart: Chart = {
-    scroller: scrollRef,
-    ...buttonsFor(mode),
-    window: visible,
-    centreOn: (date) => {
-      const element = scrollRef.current;
-      if (!element) return;
-      element.scrollTo({
-        left: xOf(date, range.start, zoom) - element.clientWidth / 2,
-        behavior: "smooth",
-      });
-    },
-  };
   // Chronological, not grouped: the combined lane exists to show the plan as a
   // sequence, and a topic's place in that sequence is where its work *starts* —
   // its earliest block, whatever else it has scheduled later. Topics with
@@ -933,43 +984,100 @@ function TopicLane({
  */
 function OffscreenMarkers({ topic }: { topic: Topic }) {
   const chart = useContext(ChartContext);
-  const view = chart.window;
-  if (!view) return null;
-
-  const before = topic.blocks.filter((block) => block.endDate < view.from);
-  const after = topic.blocks.filter((block) => block.startDate > view.to);
-  if (before.length === 0 && after.length === 0) return null;
-
-  // The nearest one in each direction: the next thing you would want to see.
-  const nearestBefore = before.length
-    ? before.reduce((closest, block) => (block.endDate > closest.endDate ? block : closest))
-    : null;
-  const nearestAfter = after.length
-    ? after.reduce((closest, block) => (block.startDate < closest.startDate ? block : closest))
-    : null;
+  const markers = useOffscreenMarkerState(topic.blocks, chart.viewport);
+  if (!markers.before && !markers.after) return null;
 
   return (
     <>
-      {nearestBefore ? (
+      {markers.before ? (
         <Marker
           side="left"
-          count={before.length}
-          date={nearestBefore.endDate}
+          count={markers.before.count}
+          date={markers.before.block.endDate}
           topic={topic.name}
-          onGo={() => chart.centreOn(midpoint(nearestBefore))}
+          onGo={() => chart.centreOn(midpoint(markers.before!.block))}
         />
       ) : null}
-      {nearestAfter ? (
+      {markers.after ? (
         <Marker
           side="right"
-          count={after.length}
-          date={nearestAfter.startDate}
+          count={markers.after.count}
+          date={markers.after.block.startDate}
           topic={topic.name}
-          onGo={() => chart.centreOn(midpoint(nearestAfter))}
+          onGo={() => chart.centreOn(midpoint(markers.after!.block))}
         />
       ) : null}
     </>
   );
+}
+
+type MarkerSide = { count: number; block: StudyBlock } | null;
+type OffscreenMarkerState = { before: MarkerSide; after: MarkerSide };
+
+const NO_OFFSCREEN_MARKERS: OffscreenMarkerState = { before: null, after: null };
+
+/** One pass finds both counts and the nearest block in either direction. */
+function markersFor(blocks: readonly StudyBlock[], viewport: Viewport): OffscreenMarkerState {
+  if (!viewport || blocks.length === 0) return NO_OFFSCREEN_MARKERS;
+
+  let beforeCount = 0;
+  let afterCount = 0;
+  let nearestBefore: StudyBlock | null = null;
+  let nearestAfter: StudyBlock | null = null;
+
+  for (const block of blocks) {
+    if (block.endDate < viewport.from) {
+      beforeCount += 1;
+      if (!nearestBefore || block.endDate > nearestBefore.endDate) nearestBefore = block;
+    } else if (block.startDate > viewport.to) {
+      afterCount += 1;
+      if (!nearestAfter || block.startDate < nearestAfter.startDate) nearestAfter = block;
+    }
+  }
+
+  if (!nearestBefore && !nearestAfter) return NO_OFFSCREEN_MARKERS;
+  return {
+    before: nearestBefore ? { count: beforeCount, block: nearestBefore } : null,
+    after: nearestAfter ? { count: afterCount, block: nearestAfter } : null,
+  };
+}
+
+function sameMarkerState(left: OffscreenMarkerState, right: OffscreenMarkerState): boolean {
+  return (
+    left.before?.count === right.before?.count &&
+    left.before?.block === right.before?.block &&
+    left.after?.count === right.after?.count &&
+    left.after?.block === right.after?.block
+  );
+}
+
+/**
+ * `useSyncExternalStore` only re-renders when a snapshot changes by identity.
+ * Reuse the previous result while both off-screen sets are unchanged, so a day
+ * crossing in empty canvas costs a few comparisons rather than 344 renders.
+ */
+function useOffscreenMarkerState(
+  blocks: readonly StudyBlock[],
+  store: ViewportStore,
+): OffscreenMarkerState {
+  const cacheRef = useRef<{
+    blocks: readonly StudyBlock[];
+    viewport: Viewport;
+    result: OffscreenMarkerState;
+  } | null>(null);
+
+  const getSnapshot = useCallback(() => {
+    const viewport = store.getSnapshot();
+    const cached = cacheRef.current;
+    if (cached?.blocks === blocks && cached.viewport === viewport) return cached.result;
+
+    const selected = markersFor(blocks, viewport);
+    const result = cached && sameMarkerState(cached.result, selected) ? cached.result : selected;
+    cacheRef.current = { blocks, viewport, result };
+    return result;
+  }, [blocks, store]);
+
+  return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
 }
 
 function Marker({

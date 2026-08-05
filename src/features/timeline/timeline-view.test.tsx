@@ -79,4 +79,44 @@ describe("TimelineView", () => {
 
     expect(repository.createStudyBlock).not.toHaveBeenCalled();
   });
+
+  it("tracks the visible dates without re-rendering the timeline tree", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        {
+          id: "block_1",
+          topicId: "topic_1",
+          startDate: "2026-05-10",
+          endDate: "2026-05-12",
+          source: "auto",
+        },
+      ],
+    });
+    const course = makeCourse({ name: "Biochemistry", topics: [topic] });
+    const health = new Map();
+    const healthLookup = vi.spyOn(health, "get");
+    const { container } = render(
+      <TimelineView
+        courses={[course]}
+        health={health}
+        today="2026-05-01"
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onGoToOutline={vi.fn()}
+      />,
+    );
+    const scroller = container.querySelector(".overflow-auto");
+    expect(scroller).toBeInstanceOf(HTMLDivElement);
+    Object.defineProperty(scroller, "clientWidth", { configurable: true, value: 280 });
+    healthLookup.mockClear();
+
+    (scroller as HTMLDivElement).scrollLeft += 14;
+    fireEvent.scroll(scroller!);
+
+    // Course health is read by the parent lane tree. A lookup here means a
+    // scroll notification escaped the marker subscription and reconciled the
+    // entire chart again.
+    expect(healthLookup).not.toHaveBeenCalled();
+  });
 });
