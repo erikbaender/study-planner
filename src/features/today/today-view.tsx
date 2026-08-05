@@ -32,6 +32,7 @@ import { courseColorValue } from "@/domain";
 import { Badge, Button, Card, CountdownBadge, EmptyState } from "@/ui";
 import { TopicRow } from "@/features/topics/topic-row";
 import { PlanningActions } from "@/features/planning/planning-actions";
+import { topicsForQuery } from "@/features/workspace/scope";
 
 /** How many topics the "continue" card offers. A list you scroll is a backlog, not a suggestion. */
 const CONTINUE_LIMIT = 8;
@@ -52,6 +53,7 @@ export function TodayView({
   studyLog,
   snapshot,
   today,
+  query = "",
   selectedTopicId,
   onSelectTopic,
   onDeleteTopic,
@@ -62,6 +64,7 @@ export function TodayView({
   studyLog: readonly StudyLogEntry[];
   snapshot: PlannerSnapshot;
   today: string;
+  query?: string;
   selectedTopicId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
   onDeleteTopic: (course: Course, topic: Topic) => void;
@@ -95,7 +98,7 @@ export function TodayView({
     )
     .slice(0, BEHIND_LIMIT);
 
-  const plannedToday = todaysWork(courses, today, snapshot);
+  const plannedToday = todaysWork(courses, today, snapshot, query);
 
   // Measured over the whole plan rather than the focus: a pace figure that
   // changed when you clicked a sidebar row would be describing the filter
@@ -103,7 +106,7 @@ export function TodayView({
   const pace = velocity(snapshot.studyLog, today, snapshot.preferences, VELOCITY_WINDOW_DAYS);
   const streak = studyStreak(snapshot.studyLog, today, snapshot.preferences);
 
-  const continueTopics = pickUpNext(courses, health, CONTINUE_LIMIT);
+  const continueTopics = pickUpNext(courses, health, CONTINUE_LIMIT, query);
 
   const loggedToday = studyLog
     .filter((entry) => entry.date === today)
@@ -310,11 +313,12 @@ function todaysWork(
   courses: readonly Course[],
   today: string,
   snapshot: PlannerSnapshot,
+  query: string,
 ): Array<{ course: Course; topic: Topic; units: number }> {
   const rows: Array<{ course: Course; topic: Topic; units: number }> = [];
 
   for (const course of courses) {
-    for (const topic of course.topics) {
+    for (const topic of topicsForQuery(query, course)) {
       for (const block of topic.blocks) {
         if (block.startDate > today || block.endDate < today) continue;
         rows.push({ course, topic, units: unitsToday(block, snapshot) });
@@ -345,11 +349,12 @@ function pickUpNext(
   courses: readonly Course[],
   health: Map<string, CourseHealth>,
   limit: number,
+  query: string,
 ): Array<{ course: Course; topic: Topic }> {
   const urgency = (course: Course) => health.get(course.id)?.daysUntilExam ?? Infinity;
 
   const rows = courses.flatMap((course) =>
-    course.topics
+    topicsForQuery(query, course)
       .filter((topic) => topic.status !== "done" && topic.totalUnits > 0)
       .map((topic) => ({ course, topic })),
   );

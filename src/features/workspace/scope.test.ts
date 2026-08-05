@@ -4,10 +4,12 @@ import { DEFAULT_PREFERENCES } from "@/domain";
 import { course as makeCourse, exam as makeExam, plan as makePlan, topic as makeTopic } from "@/test/factories";
 import {
   coursesInFocus,
+  courseMatchesQuery,
   hasExamSoon,
   healthByCourse,
   isBehind,
   matchesQuery,
+  topicsForQuery,
   resolveSelection,
   upcomingExams,
 } from "./scope";
@@ -200,5 +202,26 @@ describe("matchesQuery", () => {
   it("does not match on letters that merely appear in order", () => {
     // Substring, not subsequence. "gls" is not a query for "Glycolysis".
     expect(matchesQuery("gls", "Glycolysis")).toBe(false);
+  });
+});
+
+describe("course search", () => {
+  it("includes a course when a topic matches", () => {
+    const course = makeCourse({
+      name: "Biology",
+      topics: [makeTopic({ name: "Cellular respiration" }), makeTopic({ name: "Genetics" })],
+    });
+    expect(courseMatchesQuery("respiration", course)).toBe(true);
+    expect(topicsForQuery("respiration", course).map((topic) => topic.name)).toEqual([
+      "Cellular respiration",
+    ]);
+  });
+
+  it("keeps all topics when the course itself matches", () => {
+    const course = makeCourse({
+      name: "Biology",
+      topics: [makeTopic({ name: "Cellular respiration" }), makeTopic({ name: "Genetics" })],
+    });
+    expect(topicsForQuery("biology", course)).toHaveLength(2);
   });
 });

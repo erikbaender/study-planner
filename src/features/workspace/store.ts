@@ -77,7 +77,7 @@ export type WorkspaceState = {
    * taken back — the pattern macOS uses is not available to us.
    */
   pendingDelete: Selection;
-  /** The toolbar search field. Filters the outline and the sidebar's course list. */
+  /** The sidebar search field. Filters courses and topics in every view. */
   query: string;
 
   setPlan: (planId: EntityId | null) => void;

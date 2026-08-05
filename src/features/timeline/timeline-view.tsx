@@ -29,12 +29,13 @@
  */
 
 import { clsx } from "clsx";
-import { CalendarRange, ChevronRight, Trash2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { CalendarRange, ChevronRight, Layers } from "lucide-react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   addDays,
   clampDate,
+  compareDates,
   courseColorValue,
   differenceInDays,
   maxDate,
@@ -47,7 +48,7 @@ import {
   type StudyBlock,
   type Topic,
 } from "@/domain";
-import { Badge, Button, ContextMenu, EmptyState, SegmentedControl } from "@/ui";
+import { Badge, Button, EmptyState, SegmentedControl } from "@/ui";
 import {
   bandsFor,
   daysMoved,
@@ -63,6 +64,10 @@ import {
   ZOOMS,
   type Zoom,
 } from "./geometry";
+import { topicsForQuery } from "@/features/workspace/scope";
+
+/** The virtual lane's key in the open/closed map. No course can collide with it. */
+const ALL_TOPICS = "__all-topics__";
 
 const LANE_HEIGHT = 28;
 const ROW_HEIGHT = 24;
@@ -73,10 +78,86 @@ const RULER_HEIGHT = BAND_HEIGHT + TICK_HEIGHT;
 /** Below this the pointer was steadying itself, not dragging. The old code had no threshold at all. */
 const DRAG_THRESHOLD_PX = 4;
 
+/* ─── Modes ─────────────────────────────────────────────────────────────── */
+
+const MODES = ["view", "edit"] as const;
+type Mode = (typeof MODES)[number];
+
+const MODE_LABELS: Record<Mode, string> = { view: "View", edit: "Edit" };
+
+/**
+ * Which mouse button does what.
+ *
+ * The two modes are one implementation with the buttons swapped: whichever
+ * button is not navigating is editing. View leads with the left button on
+ * navigation because reading a semester is mostly scrolling, and a plan you are
+ * only looking at should be impossible to disturb by accident.
+ */
+const LEFT = 0;
+const RIGHT = 2;
+const buttonsFor = (mode: Mode) =>
+  mode === "view" ? { pan: LEFT, edit: RIGHT } : { pan: RIGHT, edit: LEFT };
+
+type Chart = {
+  scroller: React.RefObject<HTMLDivElement | null>;
+  pan: number;
+  edit: number;
+};
+
+const ChartContext = createContext<Chart>({
+  scroller: { current: null },
+  pan: LEFT,
+  edit: RIGHT,
+});
+
+/**
+ * Grab-scrolling.
+ *
+ * The canvas moves under the pointer rather than the pointer picking anything
+ * up, which is why the gesture is the same on empty background and on a bar:
+ * in view mode a bar is part of the picture, not a handle. A press that never
+ * passes the threshold was a click, and taps its target instead — that is how
+ * selection survives without a separate click handler, which a right button
+ * would never fire anyway.
+ */
+function startPan(event: React.PointerEvent, chart: Chart, onTap?: () => void) {
+  const element = chart.scroller.current;
+  if (!element) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const originX = event.clientX;
+  const originY = event.clientY;
+  const left = element.scrollLeft;
+  const top = element.scrollTop;
+  let panning = false;
+
+  const move = (pointer: PointerEvent) => {
+    const deltaX = pointer.clientX - originX;
+    const deltaY = pointer.clientY - originY;
+    if (!panning && Math.abs(deltaX) < DRAG_THRESHOLD_PX && Math.abs(deltaY) < DRAG_THRESHOLD_PX) {
+      return;
+    }
+    panning = true;
+    element.scrollLeft = left - deltaX;
+    element.scrollTop = top - deltaY;
+  };
+
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    if (!panning) onTap?.();
+  };
+
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+
 export function TimelineView({
   courses,
   health,
   today,
+  query = "",
   selectedId,
   onSelectTopic,
   onGoToOutline,
@@ -84,12 +165,14 @@ export function TimelineView({
   courses: readonly Course[];
   health: Map<string, CourseHealth>;
   today: IsoDate;
+  query?: string;
   selectedId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
   onGoToOutline: () => void;
 }) {
   const [zoom, setZoom] = useState<Zoom>("week");
-  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [mode, setMode] = useState<Mode>("view");
+  const [open, setOpen] = useState<Record<string, boolean>>({ [ALL_TOPICS]: true });
   const scrollRef = useRef<HTMLDivElement>(null);
   /** The date to re-centre on after a zoom change; see `changeZoom`. */
   const anchorRef = useRef<IsoDate | null>(null);
@@ -149,6 +232,22 @@ export function TimelineView({
     );
   }
 
+  const chart: Chart = { scroller: scrollRef, ...buttonsFor(mode) };
+  // Chronological, not grouped: the combined lane exists to show the plan as a
+  // sequence, and a topic's place in that sequence is where its work *starts* —
+  // its earliest block, whatever else it has scheduled later. Topics with
+  // nothing scheduled have no place in the order, so they go to the end, where
+  // they read as a backlog waiting to be placed.
+  const everyTopic = courses
+    .flatMap((course) => topicsForQuery(query, course).map((topic) => ({ course, topic })))
+    .map((entry) => ({ ...entry, from: firstBlockStart(entry.topic) }))
+    .sort((left, right) => {
+      if (left.from === right.from) return left.topic.name.localeCompare(right.topic.name);
+      if (!left.from) return 1;
+      if (!right.from) return -1;
+      return compareDates(left.from, right.from);
+    });
+
   const scrollToToday = () => {
     const element = scrollRef.current;
     if (!element) return;
@@ -165,16 +264,38 @@ export function TimelineView({
           onValueChange={changeZoom}
           segments={ZOOMS.map((candidate) => ({ value: candidate, label: ZOOM_LABELS[candidate] }))}
         />
+        <SegmentedControl<Mode>
+          size="sm"
+          label="Mode"
+          value={mode}
+          onValueChange={setMode}
+          segments={MODES.map((candidate) => ({ value: candidate, label: MODE_LABELS[candidate] }))}
+        />
         <Button size="sm" onClick={scrollToToday}>
           Today
         </Button>
         <span className="ml-auto text-callout text-tertiary">
-          Drag a bar to move it, drag its edge to resize. Arrow keys do the same.
+          {mode === "view"
+            ? "Drag to move around the chart. Right-drag to edit a block."
+            : "Drag a bar to move it, drag its edge to resize. Right-drag to move around."}
         </span>
         <Legend />
       </div>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-content">
+      <ChartContext.Provider value={chart}>
+      <div
+        ref={scrollRef}
+        // The chart owns both buttons now, so the browser's own menu would only
+        // ever interrupt an edit gesture halfway through.
+        onContextMenu={(event) => event.preventDefault()}
+        onPointerDown={(event) => {
+          if (event.button === chart.pan) startPan(event, chart);
+        }}
+        className={clsx(
+          "min-h-0 flex-1 overflow-auto bg-content",
+          mode === "view" && "cursor-grab",
+        )}
+      >
         <div style={{ width }} className="relative">
           <Ruler ticks={ticks} bands={bands} range={range} zoom={zoom} today={today} />
 
@@ -186,6 +307,18 @@ export function TimelineView({
           <TodayLine today={today} range={range} zoom={zoom} />
 
           <div className="relative">
+            <AllTopicsLane
+              entries={everyTopic}
+              range={range}
+              zoom={zoom}
+              today={today}
+              selectedId={selectedId}
+              open={open[ALL_TOPICS] ?? true}
+              onToggle={() =>
+                setOpen((current) => ({ ...current, [ALL_TOPICS]: !(current[ALL_TOPICS] ?? true) }))
+              }
+              onSelectTopic={onSelectTopic}
+            />
             {courses.map((course) => (
               <CourseLane
                 key={course.id}
@@ -194,6 +327,7 @@ export function TimelineView({
                 range={range}
                 zoom={zoom}
                 today={today}
+                query={query}
                 selectedId={selectedId}
                 open={open[course.id] ?? false}
                 onToggle={() =>
@@ -205,6 +339,7 @@ export function TimelineView({
           </div>
         </div>
       </div>
+      </ChartContext.Provider>
     </div>
   );
 }
@@ -413,12 +548,102 @@ function ExamMarkers({ courses, range, zoom }: { courses: readonly Course[]; ran
 
 /* ─── Lanes ─────────────────────────────────────────────────────────────── */
 
+/**
+ * Every topic, in one lane.
+ *
+ * Not a course — nothing here is stored, nothing can be added to it, and it has
+ * no colour of its own. It exists because a plan is scheduled *across* courses:
+ * the question "what week is over-committed" cannot be answered by a chart that
+ * makes you open one course at a time and remember the last one. Each row keeps
+ * its own course's colour and names it, so the combined view stays legible, and
+ * every row is the same `TopicLane` as below — the same gestures, the same
+ * edits, writing to the same blocks.
+ *
+ * It sits first and starts open, because it is the view most sessions want.
+ */
+function AllTopicsLane({
+  entries,
+  range,
+  zoom,
+  today,
+  selectedId,
+  open,
+  onToggle,
+  onSelectTopic,
+}: {
+  entries: readonly { course: Course; topic: Topic }[];
+  range: Range;
+  zoom: Zoom;
+  today: IsoDate;
+  selectedId: string | null;
+  open: boolean;
+  onToggle: () => void;
+  onSelectTopic: (course: Course, topic: Topic) => void;
+}) {
+  if (entries.length === 0) return null;
+  const span = rollUpSpan(entries.map((entry) => entry.topic));
+
+  return (
+    <section className="border-b border-separator">
+      <div className="relative flex items-center" style={{ height: LANE_HEIGHT }}>
+        <button
+          type="button"
+          onClick={onToggle}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-expanded={open}
+          className="material-inline sticky left-0 z-10 flex h-full items-center gap-1.5 rounded-r-control border-r border-separator/60 pr-3 pl-2 text-left hover:bg-fill"
+        >
+          <ChevronRight
+            aria-hidden="true"
+            className={clsx(
+              "size-3.5 shrink-0 text-tertiary transition-transform duration-150 ease-mac",
+              open && "rotate-90",
+            )}
+          />
+          <Layers aria-hidden="true" className="size-3 shrink-0 text-tertiary" />
+          <span className="text-callout font-semibold">All topics</span>
+          <span className="text-caption tabular-nums text-tertiary">{entries.length}</span>
+        </button>
+
+        {!open && span ? (
+          <span
+            style={{
+              left: xOf(span.start, range.start, zoom),
+              width: widthOf(span.start, span.end, zoom),
+            }}
+            className="pointer-events-none absolute top-1.5 h-4 rounded-chip bg-fill-strong"
+          />
+        ) : null}
+      </div>
+
+      {open ? (
+        <div className="pb-1">
+          {entries.map(({ course, topic }) => (
+            <TopicLane
+              key={`${course.id}:${topic.id}`}
+              course={course}
+              topic={topic}
+              range={range}
+              zoom={zoom}
+              today={today}
+              selected={topic.id === selectedId}
+              withCourse
+              onSelect={() => onSelectTopic(course, topic)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function CourseLane({
   course,
   health,
   range,
   zoom,
   today,
+  query,
   selectedId,
   open,
   onToggle,
@@ -429,12 +654,14 @@ function CourseLane({
   range: Range;
   zoom: Zoom;
   today: IsoDate;
+  query: string;
   selectedId: string | null;
   open: boolean;
   onToggle: () => void;
   onSelectTopic: (topic: Topic) => void;
 }) {
-  const span = rollUpSpan(course);
+  const topics = topicsForQuery(query, course);
+  const span = rollUpSpan(topics);
 
   return (
     <section className="border-b border-separator/60">
@@ -492,13 +719,13 @@ function CourseLane({
       </div>
 
       {open ? (
-        course.topics.length === 0 ? (
+        topics.length === 0 ? (
           <p className="sticky left-0 max-w-md px-8 pb-2 text-callout text-tertiary">
             This course has no topics yet. Add material in the outline before placing study blocks.
           </p>
         ) : (
           <div className="pb-1">
-            {course.topics.map((topic) => (
+            {topics.map((topic) => (
               <TopicLane
                 key={topic.id}
                 course={course}
@@ -524,6 +751,7 @@ function TopicLane({
   zoom,
   today,
   selected,
+  withCourse = false,
   onSelect,
 }: {
   course: Course;
@@ -532,8 +760,11 @@ function TopicLane({
   zoom: Zoom;
   today: IsoDate;
   selected: boolean;
+  /** Name the course too — in the combined lane a bare topic name is ambiguous. */
+  withCourse?: boolean;
   onSelect: () => void;
 }) {
+  const chart = useContext(ChartContext);
   const repository = useRepository();
   const { run } = usePlannerErrors();
   const laneRef = useRef<HTMLDivElement>(null);
@@ -541,7 +772,6 @@ function TopicLane({
   const [readout, setReadout] = useState<Readout | null>(null);
 
   const startCreate = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
     const lane = laneRef.current;
     if (!lane) return;
 
@@ -593,8 +823,14 @@ function TopicLane({
     <div
       ref={laneRef}
       data-topic-lane={topic.id}
-      onPointerDown={startCreate}
-      className="relative cursor-crosshair hover:bg-fill/30"
+      onPointerDown={(event) => {
+        if (event.button === chart.edit) startCreate(event);
+        else if (event.button === chart.pan) startPan(event, chart);
+      }}
+      className={clsx(
+        "relative hover:bg-fill/30",
+        chart.edit === LEFT ? "cursor-crosshair" : "cursor-grab",
+      )}
       style={{ height: ROW_HEIGHT }}
       title={`Drag to place a study block for ${topic.name}`}
     >
@@ -602,11 +838,19 @@ function TopicLane({
           the bar it names; `text-callout` on `text-secondary` rather than a
           10px tertiary, which was too faint to read against a busy canvas. */}
       <span
-        onPointerDown={(event) => event.stopPropagation()}
+        // The label is not canvas: an edit gesture starting on it would place a
+        // block at whatever date happens to be underneath. Panning still passes
+        // through, because the label scrolls with everything else.
+        onPointerDown={(event) => {
+          if (event.button === chart.edit) event.stopPropagation();
+        }}
         // A right edge on the label, so a bar passing under it reads as passing
         // *under something* rather than as a bar that has been cut in half.
         className="material-inline sticky left-0 z-20 float-left flex h-full max-w-44 cursor-default items-center truncate rounded-r-chip border-r border-separator/60 pr-2 pl-8 text-callout text-secondary"
       >
+        {withCourse ? (
+          <span className="mr-1 shrink-0 truncate text-tertiary">{course.name} ·</span>
+        ) : null}
         {topic.name}
       </span>
       {draft ? (
@@ -660,6 +904,7 @@ function BlockBar({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const chart = useContext(ChartContext);
   const repository = useRepository();
   const { run } = usePlannerErrors();
   const [draft, setDraft] = useState<{ startDate: IsoDate; endDate: IsoDate } | null>(null);
@@ -690,7 +935,6 @@ function BlockBar({
    * is why every nudge there turned into a modal.
    */
   const startDrag = (event: React.PointerEvent, mode: DragMode) => {
-    if (event.button !== 0) return;
     event.stopPropagation();
 
     const originX = event.clientX;
@@ -741,6 +985,11 @@ function BlockBar({
   };
 
   const nudge = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect();
+      return;
+    }
     const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
     if (step === 0) return;
     event.preventDefault();
@@ -765,29 +1014,18 @@ function BlockBar({
 
   return (
     <>
-    <ContextMenu
-      items={[
-        { label: "Show in inspector", onSelect },
-        { type: "separator" },
-        {
-          label: "Remove this block",
-          icon: <Trash2 />,
-          danger: true,
-          onSelect: () => run(repository.deleteStudyBlock(block.id)),
-        },
-      ]}
-    >
       {/*
-        Clicking a bar selects it into the inspector rather than opening a
-        popover. The popover said the same things the inspector already says,
-        and being anchored to the bar it covered the neighbouring ones — so
-        inspecting one block hid the two you were comparing it against. The
-        right-click menu keeps the one action the inspector has no place for.
+        Tapping a bar selects it into the inspector; dragging it does whatever
+        the current mode says the pressed button does. There is no click
+        handler, because the editing button may be the right one, which never
+        produces a click — a press that stays under the threshold is the tap.
       */}
       <button
         type="button"
-        onPointerDown={(event) => startDrag(event, "move")}
-        onClick={onSelect}
+        onPointerDown={(event) => {
+          if (event.button === chart.edit) startDrag(event, "move");
+          else if (event.button === chart.pan) startPan(event, chart, onSelect);
+        }}
         onKeyDown={nudge}
         // Everything a bar means, spoken. The old bars were `div`s and said
         // nothing at all.
@@ -845,19 +1083,22 @@ function BlockBar({
         ) : null}
         <span
           aria-hidden="true"
-          onPointerDown={(event) => startDrag(event, "start")}
+          onPointerDown={(event) => {
+            if (event.button === chart.edit) startDrag(event, "start");
+          }}
           className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
           style={{ background: "var(--mac-label-secondary)" }}
         />
         <span
           aria-hidden="true"
-          onPointerDown={(event) => startDrag(event, "end")}
+          onPointerDown={(event) => {
+            if (event.button === chart.edit) startDrag(event, "end");
+          }}
           className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
           style={{ background: "var(--mac-label-secondary)" }}
         />
       </button>
-    </ContextMenu>
-    <DragReadout readout={readout} />
+      <DragReadout readout={readout} />
     </>
   );
 }
@@ -886,9 +1127,15 @@ function DragReadout({ readout }: { readout: Readout | null }) {
   );
 }
 
+/** Where a topic's work begins: the earliest block it has, or nothing if it has none. */
+function firstBlockStart(topic: Topic): IsoDate | null {
+  if (topic.blocks.length === 0) return null;
+  return minDate(...topic.blocks.map((block) => block.startDate));
+}
+
 /** The span a collapsed lane draws: everything the course has scheduled. */
-function rollUpSpan(course: Course): { start: IsoDate; end: IsoDate } | null {
-  const blocks = course.topics.flatMap((topic) => topic.blocks);
+function rollUpSpan(topics: readonly Topic[]): { start: IsoDate; end: IsoDate } | null {
+  const blocks = topics.flatMap((topic) => topic.blocks);
   if (blocks.length === 0) return null;
   return {
     start: minDate(...blocks.map((block) => block.startDate)),

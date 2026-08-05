@@ -33,8 +33,9 @@ describe("TimelineView", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Biochemistry" }));
-    const lane = screen.getByTitle("Drag to place a study block for Glycolysis");
+    await user.click(screen.getByRole("radio", { name: "Edit" }));
+    await user.click(screen.getAllByRole("button", { name: "Biochemistry" })[0]);
+    const lane = screen.getAllByTitle("Drag to place a study block for Glycolysis")[0];
     vi.spyOn(lane, "getBoundingClientRect").mockReturnValue({
       left: 0, top: 0, right: 1000, bottom: 24, width: 1000, height: 24, x: 0, y: 0,
       toJSON: () => ({}),
@@ -66,8 +67,9 @@ describe("TimelineView", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Biochemistry" }));
-    const lane = screen.getByTitle("Drag to place a study block for Glycolysis");
+    await user.click(screen.getByRole("radio", { name: "Edit" }));
+    await user.click(screen.getAllByRole("button", { name: "Biochemistry" })[0]);
+    const lane = screen.getAllByTitle("Drag to place a study block for Glycolysis")[0];
 
     // A pointer that steadied itself by two pixels is a click, and a click on
     // empty canvas means nothing — it used to silently commit a one-day block.

@@ -55,6 +55,7 @@ import { buildCommands } from "@/features/workspace/commands";
 import { isApplePlatform, shortcutLabel, useKeyboardMap } from "@/features/workspace/keyboard";
 import {
   coursesInFocus,
+  courseMatchesQuery,
   healthByCourse,
   resolveSelection,
   type ResolvedSelection,
@@ -104,6 +105,10 @@ export function AppShell() {
         hiddenCourseIds: workspace.hiddenCourseIds,
       }),
     [plan, workspace.focus, health, workspace.hiddenCourseIds],
+  );
+  const filteredFocused = useMemo(
+    () => focused.filter((course) => courseMatchesQuery(workspace.query, course)),
+    [focused, workspace.query],
   );
   const selection = useMemo(
     () => resolveSelection(plan, workspace.selection),
@@ -231,12 +236,9 @@ export function AppShell() {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <AppToolbar
-        ref={searchRef}
         view={workspace.view}
         onViewChange={workspace.setView}
         contentId={contentId}
-        query={workspace.query}
-        onQueryChange={workspace.setQuery}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
         inspectorOpen={workspace.inspectorOpen}
@@ -287,12 +289,14 @@ export function AppShell() {
             focus={workspace.focus}
             hiddenCourseIds={workspace.hiddenCourseIds}
             query={workspace.query}
+            searchRef={searchRef}
             selectedCourseId={workspace.selection?.kind === "course" ? workspace.selection.id : null}
             onSelectPlan={workspace.setPlan}
             onNewPlan={() => workspace.setCreating("plan")}
             onEditPlan={() => setEditPlanOpen(true)}
             onDeletePlan={() => setDeletePlanOpen(true)}
             onSetFocus={workspace.setFocus}
+            onSetQuery={workspace.setQuery}
             onSelectCourse={selectCourse}
             onToggleHidden={(course) => workspace.toggleCourseHidden(course.id)}
             onHideAll={() => workspace.hideAllCourses((plan?.courses ?? []).map((c) => c.id))}
@@ -322,11 +326,12 @@ export function AppShell() {
             />
           ) : workspace.view === "today" ? (
             <TodayView
-              courses={focused}
+              courses={filteredFocused}
               health={health}
               studyLog={snapshot.studyLog}
               snapshot={snapshot}
               today={today}
+              query={workspace.query}
               selectedTopicId={workspace.selection?.kind === "topic" ? workspace.selection.id : null}
               onSelectTopic={selectTopic}
               onDeleteTopic={(_course, topic) =>
@@ -336,16 +341,17 @@ export function AppShell() {
             />
           ) : workspace.view === "timeline" ? (
             <TimelineView
-              courses={focused}
+              courses={filteredFocused}
               health={health}
               today={today}
+              query={workspace.query}
               selectedId={workspace.selection?.id ?? null}
               onSelectTopic={selectTopic}
               onGoToOutline={() => workspace.setView("outline")}
             />
           ) : (
             <OutlineView
-              courses={focused}
+              courses={filteredFocused}
               health={health}
               today={today}
               query={workspace.query}

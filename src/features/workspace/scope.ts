@@ -161,3 +161,17 @@ export function matchesQuery(query: string, ...fields: Array<string | undefined>
   if (!needle) return true;
   return fields.some((field) => field?.toLowerCase().includes(needle));
 }
+
+/** A course remains visible when its name/code or one of its topics matches. */
+export function courseMatchesQuery(query: string, course: Course): boolean {
+  return (
+    matchesQuery(query, course.name, course.code) ||
+    course.topics.some((topic) => matchesQuery(query, topic.name, topic.section))
+  );
+}
+
+/** Keep all topics for a course-name match; otherwise narrow to matching topics. */
+export function topicsForQuery(query: string, course: Course): Topic[] {
+  if (matchesQuery(query, course.name, course.code)) return [...course.topics];
+  return course.topics.filter((topic) => matchesQuery(query, topic.name, topic.section));
+}

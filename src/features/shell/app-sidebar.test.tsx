@@ -100,6 +100,40 @@ describe("AppSidebar course visibility", () => {
     expect(rows).toEqual([expect.stringContaining("anatomy"), expect.stringContaining("Physiology")]);
   });
 
+  it("keeps every course visible while search filters the main content", () => {
+    const plan = makePlan({
+      courses: [
+        makeCourse({ name: "Biology", topics: [makeTopic({ name: "Cellular respiration" })] }),
+        makeCourse({ name: "Chemistry" }),
+      ],
+    });
+    render(
+      <TooltipProvider><AppSidebar
+        plans={[plan]}
+        plan={plan}
+        health={new Map()}
+        focus={{ kind: "all" }}
+        hiddenCourseIds={[]}
+        query="respiration"
+        selectedCourseId={null}
+        onSelectPlan={vi.fn()}
+        onNewPlan={vi.fn()}
+        onEditPlan={vi.fn()}
+        onDeletePlan={vi.fn()}
+        onSetFocus={vi.fn()}
+        onSelectCourse={vi.fn()}
+        onToggleHidden={vi.fn()}
+        onHideAll={vi.fn()}
+        onShowAll={vi.fn()}
+        onNewCourse={vi.fn()}
+      /></TooltipProvider>,
+    );
+
+    expect(screen.getByText("Biology")).toBeInTheDocument();
+    expect(screen.getByText("Chemistry")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Clear search" })).toBeInTheDocument();
+  });
+
   it("highlights a course when all sized topics are complete", () => {
     const course = makeCourse({
       name: "Finished course",

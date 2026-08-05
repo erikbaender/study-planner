@@ -49,7 +49,7 @@ import {
 } from "@/ui";
 import { TopicTable } from "./topic-table";
 import { AutoPlanButton } from "@/features/planning/planning-actions";
-import { matchesQuery } from "@/features/workspace/scope";
+import { topicsForQuery } from "@/features/workspace/scope";
 
 export function OutlineView({
   courses,
@@ -159,7 +159,7 @@ function CourseSection({
   const { run } = usePlannerErrors();
   const [pasting, setPasting] = useState(false);
   const progress = courseProgress(course);
-  const topics = course.topics.filter((topic) => matchesQuery(query, topic.name, topic.section));
+  const topics = topicsForQuery(query, course);
 
   const addRow = (section: string | undefined) =>
     run(

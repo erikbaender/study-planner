@@ -24,9 +24,11 @@ import {
   EyeOff,
   Layers,
   Plus,
+  Search,
+  X,
 } from "lucide-react";
 import { clsx } from "clsx";
-import type { CSSProperties } from "react";
+import type { CSSProperties, RefObject } from "react";
 import type { Course, CourseHealth, Plan } from "@/domain";
 import { courseColorValue, courseProgress } from "@/domain";
 import {
@@ -42,7 +44,6 @@ import {
 import {
   hasExamSoon,
   isBehind,
-  matchesQuery,
   sortCoursesAlphabetically,
 } from "@/features/workspace/scope";
 import type { Focus } from "@/features/workspace/store";
@@ -54,12 +55,14 @@ export function AppSidebar({
   focus,
   hiddenCourseIds,
   query,
+  searchRef,
   selectedCourseId,
   onSelectPlan,
   onNewPlan,
   onEditPlan,
   onDeletePlan,
   onSetFocus,
+  onSetQuery,
   onSelectCourse,
   onToggleHidden,
   onHideAll,
@@ -72,12 +75,14 @@ export function AppSidebar({
   focus: Focus;
   hiddenCourseIds: readonly string[];
   query: string;
+  searchRef?: RefObject<HTMLInputElement | null>;
   selectedCourseId: string | null;
   onSelectPlan: (planId: string) => void;
   onNewPlan: () => void;
   onEditPlan: () => void;
   onDeletePlan: () => void;
   onSetFocus: (focus: Focus) => void;
+  onSetQuery?: (query: string) => void;
   onSelectCourse: (course: Course) => void;
   onToggleHidden: (course: Course) => void;
   onHideAll: () => void;
@@ -87,9 +92,7 @@ export function AppSidebar({
   const courses = plan?.courses ?? [];
   const behindCount = courses.filter((course) => isBehind(health.get(course.id))).length;
   const soonCount = courses.filter((course) => hasExamSoon(health.get(course.id))).length;
-  const visible = sortCoursesAlphabetically(
-    courses.filter((course) => matchesQuery(query, course.name, course.code)),
-  );
+  const visible = sortCoursesAlphabetically(courses);
 
   return (
     <Sidebar label="Courses">
@@ -124,6 +127,33 @@ export function AppSidebar({
           </button>
         }
       />
+
+      <SidebarSection title="Search">
+        <div className="flex h-control items-center gap-1 rounded-control border border-accent/55 bg-content px-1.5 text-accent focus-within:border-accent">
+          <Search aria-hidden="true" className="size-3.5 shrink-0" />
+          <input
+            ref={searchRef}
+            type="search"
+            aria-label="Search courses and topics"
+            value={query}
+            onChange={(event) => onSetQuery?.(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") onSetQuery?.("");
+            }}
+            className="min-w-0 flex-1 bg-transparent text-center text-body text-label outline-none [&::-webkit-search-cancel-button]:hidden"
+          />
+          {query ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => onSetQuery?.("")}
+              className="flex size-4 shrink-0 items-center justify-center rounded-full text-accent transition-colors hover:bg-accent-soft"
+            >
+              <X aria-hidden="true" className="size-3" />
+            </button>
+          ) : null}
+        </div>
+      </SidebarSection>
 
       <SidebarSection title="Focus">
         <SidebarItem
@@ -178,9 +208,6 @@ export function AppSidebar({
         ))}
       </SidebarSection>
 
-      {courses.length > 0 && visible.length === 0 ? (
-        <p className="px-2 text-callout text-tertiary">No course matches “{query.trim()}”.</p>
-      ) : null}
     </Sidebar>
   );
 }

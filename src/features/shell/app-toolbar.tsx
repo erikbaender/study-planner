@@ -4,7 +4,7 @@
  * The unified toolbar.
  *
  * Left of the spacer is *where you are* — the sidebar toggle and the view
- * switcher. Right of it is *what you can do* — search, create, inspect,
+ * switcher. Right of it is *what you can do* — create, inspect,
  * appearance, account. macOS toolbars are grouped this way and the grouping is
  * what makes them scannable at a glance rather than a strip of icons.
  *
@@ -13,13 +13,12 @@
  * content region they share.
  */
 
-import { forwardRef, useRef } from "react";
+import { useRef } from "react";
 import {
   MoreHorizontal,
   PanelLeft,
   PanelRight,
   Plus,
-  Search,
   Settings2,
 } from "lucide-react";
 import {
@@ -38,14 +37,10 @@ import {
 } from "@/ui";
 import { VIEWS, VIEW_LABELS, type ViewId } from "@/features/workspace/store";
 
-export const AppToolbar = forwardRef<
-  HTMLInputElement,
-  {
+export function AppToolbar(props: {
     view: ViewId;
     onViewChange: (view: ViewId) => void;
     contentId: string;
-    query: string;
-    onQueryChange: (query: string) => void;
     sidebarOpen: boolean;
     onToggleSidebar: () => void;
     inspectorOpen: boolean;
@@ -61,8 +56,7 @@ export const AppToolbar = forwardRef<
     isAuthenticated: boolean;
     onSignIn: () => void;
     onSignOut: () => void;
-  }
->(function AppToolbar(props, searchRef) {
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -86,25 +80,6 @@ export const AppToolbar = forwardRef<
       />
 
       <ToolbarSpacer />
-
-      <label className="flex h-control items-center gap-1.5 rounded-control bg-fill px-2 focus-within:bg-content">
-        <Search aria-hidden="true" className="size-3.5 shrink-0 text-tertiary" />
-        <input
-          ref={searchRef}
-          type="search"
-          aria-label="Search courses and topics"
-          placeholder="Search"
-          value={props.query}
-          onChange={(event) => props.onQueryChange(event.target.value)}
-          // Escape clears rather than blurring: with the field empty the list
-          // below is whole again, which is what "get me out of this search"
-          // actually means.
-          onKeyDown={(event) => {
-            if (event.key === "Escape") props.onQueryChange("");
-          }}
-          className="w-36 min-w-0 bg-transparent text-body outline-none placeholder:text-tertiary [&::-webkit-search-cancel-button]:hidden"
-        />
-      </label>
 
       <DropdownMenu
         label="New"
@@ -212,4 +187,4 @@ export const AppToolbar = forwardRef<
       )}
     </Toolbar>
   );
-});
+}
