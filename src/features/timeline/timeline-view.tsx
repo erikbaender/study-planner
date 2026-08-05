@@ -30,7 +30,7 @@
 
 import { clsx } from "clsx";
 import { CalendarRange, ChevronRight, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   addDays,
@@ -49,11 +49,14 @@ import {
 } from "@/domain";
 import { Badge, Button, ContextMenu, EmptyState, SegmentedControl } from "@/ui";
 import {
+  bandsFor,
   daysMoved,
   dateAt,
   PX_PER_DAY,
+  shortDate,
   ticksFor,
   timelineRange,
+  weekendsIn,
   widthOf,
   xOf,
   ZOOM_LABELS,
@@ -63,6 +66,10 @@ import {
 
 const LANE_HEIGHT = 28;
 const ROW_HEIGHT = 24;
+/** The two-tier header: a band of months or years over the ticks themselves. */
+const BAND_HEIGHT = 18;
+const TICK_HEIGHT = 18;
+const RULER_HEIGHT = BAND_HEIGHT + TICK_HEIGHT;
 /** Below this the pointer was steadying itself, not dragging. The old code had no threshold at all. */
 const DRAG_THRESHOLD_PX = 4;
 
@@ -84,10 +91,48 @@ export function TimelineView({
   const [zoom, setZoom] = useState<Zoom>("week");
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** The date to re-centre on after a zoom change; see `changeZoom`. */
+  const anchorRef = useRef<IsoDate | null>(null);
 
   const range = timelineRange(courses, today);
   const width = range.days * PX_PER_DAY[zoom];
   const ticks = ticksFor(range.start, range.end, zoom);
+  const bands = bandsFor(range.start, range.end, zoom);
+
+  // Today a third of the way in, not centred: what is coming matters more than
+  // what is behind, so the larger half of the view is given to it.
+  const todayOffset = (client: number) => xOf(today, range.start, zoom) - client / 3;
+
+  // Opening on the far left of the canvas — weeks of finished work — made
+  // "press Today" the first action of every visit. Do it for them, without the
+  // animation, so the first paint is already in the right place.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element) element.scrollLeft = todayOffset(element.clientWidth);
+    // Mount only: re-running would yank the canvas back while someone reads it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Zooming used to be a teleport: the scroll offset was kept in pixels while
+  // the pixels changed meaning, so leaving Week for Day landed you months from
+  // where you were looking. The date under the middle of the viewport is what
+  // is actually being held constant, so hold that.
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    const anchor = anchorRef.current;
+    anchorRef.current = null;
+    if (!element || !anchor) return;
+    element.scrollLeft = xOf(anchor, range.start, zoom) - element.clientWidth / 2;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom]);
+
+  const changeZoom = (next: Zoom) => {
+    const element = scrollRef.current;
+    if (element) {
+      anchorRef.current = dateAt(element.scrollLeft + element.clientWidth / 2, range.start, zoom);
+    }
+    setZoom(next);
+  };
 
   if (courses.length === 0) {
     return (
@@ -107,12 +152,7 @@ export function TimelineView({
   const scrollToToday = () => {
     const element = scrollRef.current;
     if (!element) return;
-    // Today a third of the way in, not centred: what is coming matters more
-    // than what is behind, so the larger half of the view is given to it.
-    element.scrollTo({
-      left: xOf(today, range.start, zoom) - element.clientWidth / 3,
-      behavior: "smooth",
-    });
+    element.scrollTo({ left: todayOffset(element.clientWidth), behavior: "smooth" });
   };
 
   return (
@@ -122,7 +162,7 @@ export function TimelineView({
           size="sm"
           label="Zoom"
           value={zoom}
-          onValueChange={setZoom}
+          onValueChange={changeZoom}
           segments={ZOOMS.map((candidate) => ({ value: candidate, label: ZOOM_LABELS[candidate] }))}
         />
         <Button size="sm" onClick={scrollToToday}>
@@ -131,14 +171,16 @@ export function TimelineView({
         <span className="ml-auto text-callout text-tertiary">
           Drag a bar to move it, drag its edge to resize. Arrow keys do the same.
         </span>
+        <Legend />
       </div>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-content">
         <div style={{ width }} className="relative">
-          <Ruler ticks={ticks} range={range} zoom={zoom} />
+          <Ruler ticks={ticks} bands={bands} range={range} zoom={zoom} today={today} />
 
           {/* Drawn once behind every lane rather than per lane, so the rules are
               continuous down the whole chart instead of restarting at each. */}
+          <Weekends range={range} zoom={zoom} />
           <Rules ticks={ticks} range={range} zoom={zoom} />
           <ExamMarkers courses={courses} range={range} zoom={zoom} />
           <TodayLine today={today} range={range} zoom={zoom} />
@@ -171,16 +213,57 @@ export function TimelineView({
 
 type Range = { start: IsoDate; end: IsoDate; days: number };
 
-function Ruler({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; range: Range; zoom: Zoom }) {
+/**
+ * The ruler, in two tiers.
+ *
+ * The lower tier is the old one: days, weeks or months. The upper is the
+ * context it never carried — the month a "12" belongs to, the year a "Feb"
+ * belongs to. Each band's label is sticky *within its own band*, so scrolling
+ * halfway through March still says March instead of leaving the label off the
+ * left edge with nothing to name the columns on screen.
+ */
+function Ruler({
+  ticks,
+  bands,
+  range,
+  zoom,
+  today,
+}: {
+  ticks: ReturnType<typeof ticksFor>;
+  bands: ReturnType<typeof bandsFor>;
+  range: Range;
+  zoom: Zoom;
+  today: IsoDate;
+}) {
   return (
-    <div className="sticky top-0 z-20 h-7 border-b border-separator bg-content">
+    <div
+      className="sticky top-0 z-20 border-b border-separator bg-content"
+      style={{ height: RULER_HEIGHT }}
+    >
+      {bands.map((band) => (
+        <span
+          key={band.key}
+          style={{
+            left: xOf(band.start, range.start, zoom),
+            width: widthOf(band.start, band.end, zoom),
+            height: BAND_HEIGHT,
+          }}
+          className="absolute top-0 flex items-center overflow-hidden border-r border-separator/60 text-caption font-semibold text-secondary"
+        >
+          <span className="sticky left-0 truncate px-1.5">{band.label}</span>
+        </span>
+      ))}
       {ticks.map((tick) => (
         <span
           key={tick.date}
-          style={{ left: xOf(tick.date, range.start, zoom) }}
+          style={{ left: xOf(tick.date, range.start, zoom), top: BAND_HEIGHT, height: TICK_HEIGHT }}
           className={clsx(
-            "absolute top-0 pl-1 text-caption tabular-nums whitespace-nowrap",
-            tick.major ? "font-semibold text-secondary" : "text-tertiary",
+            "absolute flex items-center pl-1 text-caption tabular-nums whitespace-nowrap",
+            tick.date === today
+              ? "font-semibold text-accent"
+              : tick.major
+                ? "font-semibold text-secondary"
+                : "text-tertiary",
           )}
         >
           {tick.label}
@@ -192,7 +275,7 @@ function Ruler({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; ran
 
 function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; range: Range; zoom: Zoom }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 top-7">
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ top: RULER_HEIGHT }}>
       {ticks.map((tick) => (
         <span
           key={tick.date}
@@ -200,6 +283,55 @@ function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; ran
           className={clsx("absolute inset-y-0 w-px", tick.major ? "bg-separator" : "bg-separator/40")}
         />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Weekends.
+ *
+ * Only where a day is wide enough to be a column of its own: at Month and
+ * Quarter a two-day stripe every 35 pixels is moiré, not information.
+ */
+function Weekends({ range, zoom }: { range: Range; zoom: Zoom }) {
+  if (zoom !== "day" && zoom !== "week") return null;
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ top: RULER_HEIGHT }}>
+      {weekendsIn(range.start, range.end).map((date) => (
+        <span
+          key={date}
+          style={{ left: xOf(date, range.start, zoom), width: PX_PER_DAY[zoom] }}
+          className="absolute inset-y-0 bg-fill/50"
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What the marks mean.
+ *
+ * Three of the chart's conventions are unguessable — a dashed outline, a
+ * hatched band, a hollow tail on a bar — and each was previously discoverable
+ * only by having written the code.
+ */
+function Legend() {
+  return (
+    <div className="flex items-center gap-3 text-caption whitespace-nowrap text-tertiary">
+      <span className="flex items-center gap-1">
+        <span className="h-2.5 w-4 rounded-chip bg-secondary/25">
+          <span className="block h-full w-1/2 rounded-chip bg-secondary/70" />
+        </span>
+        done
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="h-2.5 w-4 rounded-chip border border-dashed border-tertiary" />
+        manual
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="h-2.5 w-4 rounded-chip bg-negative/30" />
+        overdue
+      </span>
     </div>
   );
 }
@@ -216,7 +348,7 @@ function TodayLine({ today, range, zoom }: { today: IsoDate; range: Range; zoom:
       // must never be occluded, and the ruler is sticky at z-20.
       className="pointer-events-none absolute inset-y-0 z-30 w-px bg-accent"
     >
-      <span className="absolute top-0 -left-1 flex h-7 items-center">
+      <span className="absolute top-0 -left-1 flex items-center" style={{ height: RULER_HEIGHT }}>
         <span className="rounded-chip bg-accent px-1 text-caption font-semibold text-on-accent">Today</span>
       </span>
     </div>
@@ -233,7 +365,11 @@ function TodayLine({ today, range, zoom }: { today: IsoDate; range: Range; zoom:
  */
 function ExamMarkers({ courses, range, zoom }: { courses: readonly Course[]; range: Range; zoom: Zoom }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 top-7 z-10">
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 z-10"
+      style={{ top: RULER_HEIGHT }}
+    >
       {courses.flatMap((course) =>
         course.exams.map((exam) => (
           <span key={exam.id}>
@@ -310,7 +446,7 @@ function CourseLane({
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          className="material-inline sticky left-0 z-10 flex h-full items-center gap-1.5 rounded-r-control pr-3 pl-2 text-left hover:bg-fill"
+          className="material-inline sticky left-0 z-10 flex h-full items-center gap-1.5 rounded-r-control border-r border-separator/60 pr-3 pl-2 text-left hover:bg-fill"
         >
           <ChevronRight
             aria-hidden="true"
@@ -402,6 +538,7 @@ function TopicLane({
   const { run } = usePlannerErrors();
   const laneRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<{ startDate: IsoDate; endDate: IsoDate } | null>(null);
+  const [readout, setReadout] = useState<Readout | null>(null);
 
   const startCreate = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -412,23 +549,32 @@ function TopicLane({
     const bounds = lane.getBoundingClientRect();
     const dateUnderPointer = (clientX: number) =>
       clampDate(dateAt(clientX - bounds.left, range.start, zoom), range.start, range.end);
+    const originX = event.clientX;
     const origin = dateUnderPointer(event.clientX);
     let latest = { startDate: origin, endDate: origin };
-    setDraft(latest);
+    // The same threshold the bars use, for the same reason in reverse: a stray
+    // click on a lane used to commit a one-day block nobody asked for, and the
+    // only way to notice was to find it later and delete it.
+    let dragging = false;
 
     const move = (pointer: PointerEvent) => {
+      if (!dragging && Math.abs(pointer.clientX - originX) < DRAG_THRESHOLD_PX) return;
+      dragging = true;
       const current = dateUnderPointer(pointer.clientX);
       latest = {
         startDate: minDate(origin, current),
         endDate: maxDate(origin, current),
       };
       setDraft(latest);
+      setReadout({ x: pointer.clientX, y: pointer.clientY, ...latest });
     };
 
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       setDraft(null);
+      setReadout(null);
+      if (!dragging) return;
       run(
         repository.createStudyBlock({
           topicId: topic.id,
@@ -457,7 +603,9 @@ function TopicLane({
           10px tertiary, which was too faint to read against a busy canvas. */}
       <span
         onPointerDown={(event) => event.stopPropagation()}
-        className="material-inline sticky left-0 z-20 float-left flex h-full max-w-44 cursor-default items-center truncate rounded-r-chip pr-2 pl-8 text-callout text-secondary"
+        // A right edge on the label, so a bar passing under it reads as passing
+        // *under something* rather than as a bar that has been cut in half.
+        className="material-inline sticky left-0 z-20 float-left flex h-full max-w-44 cursor-default items-center truncate rounded-r-chip border-r border-separator/60 pr-2 pl-8 text-callout text-secondary"
       >
         {topic.name}
       </span>
@@ -471,6 +619,7 @@ function TopicLane({
           className="pointer-events-none absolute top-1 h-4 rounded-chip border border-dashed border-accent bg-accent/10"
         />
       ) : null}
+      <DragReadout readout={readout} />
       {topic.blocks.map((block) => (
         <BlockBar
           key={block.id}
@@ -514,6 +663,7 @@ function BlockBar({
   const repository = useRepository();
   const { run } = usePlannerErrors();
   const [draft, setDraft] = useState<{ startDate: IsoDate; endDate: IsoDate } | null>(null);
+  const [readout, setReadout] = useState<Readout | null>(null);
 
   const shown = draft ?? block;
   const progress = topicProgress(topic);
@@ -573,11 +723,15 @@ function BlockBar({
         };
       }
       setDraft(latest);
+      // Dragging used to be blind: the bar moved, but which days it had landed
+      // on was a thing you found out by letting go and reading the inspector.
+      setReadout({ x: pointer.clientX, y: pointer.clientY, ...latest });
     };
 
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      setReadout(null);
       if (dragging) commit(latest);
       else setDraft(null);
     };
@@ -600,8 +754,17 @@ function BlockBar({
 
   const length = differenceInDays(shown.startDate, shown.endDate) + 1;
   const past = shown.endDate < today;
+  // "Finished" and "missed" are not the same past. A window that has closed on
+  // unfinished work is the one thing on this chart that needs acting on, and it
+  // used to be drawn *fainter* than everything else.
+  const overdue = past && (progress.ratio ?? 0) < 1;
+  const barWidth = Math.max(widthOf(shown.startDate, shown.endDate, zoom), 6);
+  // Only when the text will not be a clipped stub. Below this the bar's own
+  // length is the only honest label it can carry.
+  const label = barWidth >= 64 ? `${shortDate(shown.startDate)} – ${shortDate(shown.endDate)}` : null;
 
   return (
+    <>
     <ContextMenu
       items={[
         { label: "Show in inspector", onSelect },
@@ -628,18 +791,29 @@ function BlockBar({
         onKeyDown={nudge}
         // Everything a bar means, spoken. The old bars were `div`s and said
         // nothing at all.
-        aria-label={`${topic.name}, ${shown.startDate} to ${shown.endDate}, ${length} day${length === 1 ? "" : "s"}, ${topic.completedUnits} of ${topic.totalUnits} ${unit} done`}
+        aria-label={`${topic.name}, ${shown.startDate} to ${shown.endDate}, ${length} day${length === 1 ? "" : "s"}, ${topic.completedUnits} of ${topic.totalUnits} ${unit} done${overdue ? ", overdue" : ""}`}
+        // The hover answer to "which days is this?", which previously only a
+        // screen reader was told.
+        title={`${topic.name}\n${shortDate(shown.startDate)} – ${shortDate(shown.endDate)} · ${length} day${length === 1 ? "" : "s"}\n${topic.completedUnits} of ${topic.totalUnits} ${unit} done${overdue ? " · overdue" : ""}`}
         aria-current={selected ? "true" : undefined}
         style={{
           left: xOf(shown.startDate, range.start, zoom),
-          width: Math.max(widthOf(shown.startDate, shown.endDate, zoom), 6),
-          background: `color-mix(in srgb, ${courseColorValue(topic.color || course.color)} 22%, transparent)`,
+          width: barWidth,
+          // Overdue is carried by the bar's *unfilled* part rather than by an
+          // outline: the tinted remainder is exactly the work that was missed,
+          // and a red ring on top of the dashed "manual" border made two
+          // conventions fight over the same two pixels.
+          background: overdue
+            ? "color-mix(in srgb, var(--mac-negative) 20%, transparent)"
+            : `color-mix(in srgb, ${courseColorValue(topic.color || course.color)} 22%, transparent)`,
         }}
         className={clsx(
           "group absolute top-1 h-4 touch-none overflow-hidden rounded-chip",
           "inset-ring inset-ring-[color-mix(in_srgb,currentColor_20%,transparent)]",
           draft ? "cursor-grabbing" : "cursor-grab",
-          past && "opacity-60",
+          // Faded only once it is both past *and* finished: done work should
+          // recede, unfinished work in a closed window should not.
+          past && !overdue && "opacity-60",
           // An outline outside the bar rather than a ring inside it. The inset
           // version ate two pixels of a bar that can be six wide, and on a short
           // block it was most of what you saw.
@@ -659,6 +833,16 @@ function BlockBar({
             background: courseColorValue(topic.color || course.color),
           }}
         />
+        {/* The dates, in the bar, when there is room for them. A chart of
+            anonymous rectangles makes you hover every one to read it back. */}
+        {label ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 flex items-center px-1.5 text-caption tabular-nums whitespace-nowrap text-secondary"
+          >
+            {label}
+          </span>
+        ) : null}
         <span
           aria-hidden="true"
           onPointerDown={(event) => startDrag(event, "start")}
@@ -673,6 +857,32 @@ function BlockBar({
         />
       </button>
     </ContextMenu>
+    <DragReadout readout={readout} />
+    </>
+  );
+}
+
+/** Where the pointer is, and what the drag under it currently means. */
+type Readout = { x: number; y: number; startDate: IsoDate; endDate: IsoDate };
+
+/**
+ * The dates under a drag, at the pointer.
+ *
+ * Fixed rather than absolute so it is never clipped by the scroller, and offset
+ * above the cursor so it does not cover the bar it is describing.
+ */
+function DragReadout({ readout }: { readout: Readout | null }) {
+  if (!readout) return null;
+  const length = differenceInDays(readout.startDate, readout.endDate) + 1;
+  return (
+    <span
+      role="status"
+      style={{ left: readout.x, top: readout.y - 28 }}
+      className="material-popover pointer-events-none fixed z-50 -translate-x-1/2 rounded-chip px-1.5 py-0.5 text-caption tabular-nums whitespace-nowrap text-label shadow-popover"
+    >
+      {shortDate(readout.startDate)} – {shortDate(readout.endDate)} · {length} day
+      {length === 1 ? "" : "s"}
+    </span>
   );
 }
 

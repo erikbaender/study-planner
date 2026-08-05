@@ -11,7 +11,15 @@
  * subtly different ones.
  */
 
-import { addDays, differenceInDays, maxDate, minDate, startOfWeek, type IsoDate } from "@/domain";
+import {
+  addDays,
+  differenceInDays,
+  maxDate,
+  minDate,
+  startOfWeek,
+  weekdayOf,
+  type IsoDate,
+} from "@/domain";
 import type { Course } from "@/domain";
 
 export const ZOOMS = ["day", "week", "month", "quarter"] as const;
@@ -86,6 +94,74 @@ export function timelineRange(
   return { start, end, days: differenceInDays(start, end) + 1 };
 }
 
+/** A date as a person reads it: "12 Feb". Used wherever a raw ISO string would be noise. */
+export function shortDate(value: IsoDate): string {
+  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+export type Band = { key: string; label: string; start: IsoDate; end: IsoDate };
+
+/**
+ * The upper tier of the ruler.
+ *
+ * A single row of ticks answers "which day" and never "which month" — and the
+ * labels that would answer it are exactly the ones a narrow zoom drops. "12 Feb"
+ * with no year, or a lone narrow month letter at Quarter, is a date you cannot
+ * place. So the header is two tiers: months over days and weeks, years over
+ * months and quarters, each band spanning the width it actually covers.
+ */
+export function bandsFor(start: IsoDate, end: IsoDate, zoom: Zoom): Band[] {
+  const bands: Band[] = [];
+  const byMonth = zoom === "day" || zoom === "week";
+
+  let cursor = byMonth ? `${start.slice(0, 7)}-01` : `${start.slice(0, 4)}-01-01`;
+  while (cursor <= end) {
+    const day = new Date(`${cursor}T00:00:00`);
+    const next = new Date(day);
+    if (byMonth) next.setMonth(next.getMonth() + 1);
+    else next.setFullYear(next.getFullYear() + 1);
+    const following = toIso(next);
+
+    bands.push({
+      key: cursor,
+      label: byMonth
+        ? day.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+        : String(day.getFullYear()),
+      // Clipped to the canvas, so the first and last bands do not claim width
+      // the chart does not have and push their labels off the left edge.
+      start: maxDate(cursor as IsoDate, start),
+      end: minDate(addDays(following as IsoDate, -1), end),
+    });
+    cursor = following;
+  }
+  return bands;
+}
+
+/**
+ * Saturdays and Sundays, for shading.
+ *
+ * Without them a semester is a featureless stripe and every estimate made
+ * against it is wrong by two days a week: the eye reads a ten-day bar as ten
+ * days of work when six is the honest number.
+ */
+export function weekendsIn(start: IsoDate, end: IsoDate): IsoDate[] {
+  const days: IsoDate[] = [];
+  for (let offset = 0; offset <= differenceInDays(start, end); offset += 1) {
+    const date = addDays(start, offset);
+    const weekday = weekdayOf(date);
+    if (weekday === 0 || weekday === 6) days.push(date);
+  }
+  return days;
+}
+
+function toIso(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export type Tick = { date: IsoDate; label: string; major: boolean };
 
 /**
@@ -143,7 +219,10 @@ export function ticksFor(start: IsoDate, end: IsoDate, zoom: Zoom): Tick[] {
     }
     const next = new Date(day);
     next.setMonth(next.getMonth() + 1);
-    cursor = next.toISOString().slice(0, 10);
+    // Serialised from the *local* fields, not `toISOString`: the cursor was
+    // parsed at local midnight, and in any zone east of UTC that instant is
+    // still the previous day in UTC — which put every month tick one day early.
+    cursor = toIso(next);
   }
   return ticks;
 }

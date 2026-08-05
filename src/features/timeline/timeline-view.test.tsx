@@ -50,4 +50,31 @@ describe("TimelineView", () => {
     const input = repository.createStudyBlock.mock.calls[0][0];
     expect(input.endDate >= input.startDate).toBe(true);
   });
+
+  it("does not create a block from a click that never became a drag", async () => {
+    const topic = makeTopic({ name: "Glycolysis", blocks: [] });
+    const course = makeCourse({ name: "Biochemistry", topics: [topic] });
+    const user = userEvent.setup();
+    render(
+      <TimelineView
+        courses={[course]}
+        health={new Map()}
+        today="2026-05-01"
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onGoToOutline={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Biochemistry" }));
+    const lane = screen.getByTitle("Drag to place a study block for Glycolysis");
+
+    // A pointer that steadied itself by two pixels is a click, and a click on
+    // empty canvas means nothing — it used to silently commit a one-day block.
+    fireEvent.pointerDown(lane, { button: 0, clientX: 140 });
+    fireEvent.pointerMove(window, { clientX: 142 });
+    fireEvent.pointerUp(window);
+
+    expect(repository.createStudyBlock).not.toHaveBeenCalled();
+  });
 });
