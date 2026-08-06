@@ -219,6 +219,128 @@ span:has(> .topic-progress-thumb) {
   color: var(--mac-completion-mark);
 }
 
+/* ─── Timeline ──────────────────────────────────────────────────────────── */
+
+/**
+ * The width of one day, as an animatable length.
+ *
+ * Registered rather than declared, because an unregistered custom property is
+ * an unparsed token to the browser and cannot be interpolated. Every position
+ * in the chart is a `calc()` off this one value, so a zoom change is a single
+ * transition here rather than a re-render of every lane per frame.
+ */
+@property --timeline-day-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 14px;
+}
+
+.timeline-canvas {
+  /* The canvas' own `width` is a `calc()` of the same property, so it follows
+     without a transition of its own — two easings on one number would fight. */
+  transition: --timeline-day-width var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/** A course opening: the lane's rows and the gutter card's rows, as one height. */
+.timeline-disclosure {
+  overflow: hidden;
+  transition: height var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/** Everything that changes colour rather than position: hover, selection, fades. */
+.timeline-tint {
+  transition:
+    background-color var(--topic-motion-duration) var(--topic-motion-curve),
+    color var(--topic-motion-duration) var(--topic-motion-curve),
+    opacity var(--topic-motion-duration) var(--topic-motion-curve),
+    outline-color var(--topic-motion-duration) var(--topic-motion-curve),
+    box-shadow var(--topic-motion-duration) var(--topic-motion-curve),
+    transform var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/**
+ * The row hover, in the row's own course colour.
+ *
+ * A neutral grey highlight said "this row" and nothing else; the course tint
+ * says which course you are about to place work in, which is the question a
+ * combined lane of ten courses actually raises.
+ */
+.timeline-lane:hover {
+  background-color: color-mix(in srgb, var(--timeline-lane-tint) 16%, transparent);
+}
+
+@keyframes timeline-marker-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.timeline-marker {
+  animation: timeline-marker-in var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/* ─── Timeline cursors ──────────────────────────────────────────────────────
+ *
+ * The mode lives in one data attribute on the scroller, so holding the right
+ * button re-cursors the whole chart without React reconciling it. View mode is
+ * a hand over the canvas and an arrow over anything you could otherwise mistake
+ * for a control; edit mode is a crosshair over empty lane — drag to place — and
+ * the two edit cursors on a bar itself.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+[data-timeline-mode="view"] {
+  cursor: grab;
+}
+
+[data-timeline-mode="edit"] {
+  cursor: crosshair;
+}
+
+[data-timeline-mode] .timeline-chrome {
+  cursor: default;
+}
+
+[data-timeline-mode="view"] .timeline-bar {
+  cursor: default;
+}
+
+[data-timeline-mode="edit"] .timeline-bar {
+  cursor: move;
+}
+
+[data-timeline-mode="edit"] .timeline-bar-handle {
+  cursor: ew-resize;
+}
+
+/* The handles are edit affordances; in view mode they are neither shown nor
+   hit, so the bar under them keeps one cursor across its whole width. */
+[data-timeline-mode="view"] .timeline-bar-handle {
+  pointer-events: none;
+  opacity: 0;
+}
+
+[data-timeline-mode="edit"] .timeline-bar:hover .timeline-bar-handle {
+  opacity: 1;
+}
+
+/* Last, and matching on the same attribute the rules above do, so a grab in
+   progress outranks whatever the pointer happens to be over. */
+[data-timeline-panning="true"],
+[data-timeline-panning="true"] * {
+  cursor: grabbing;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-canvas,
+  .timeline-disclosure,
+  .timeline-tint {
+    transition: none;
+  }
+  .timeline-marker {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .topic-completion-row[data-completion-animating="true"] {
     animation: none;

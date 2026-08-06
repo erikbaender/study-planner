@@ -49,6 +49,36 @@ export function xOf(date: IsoDate, start: IsoDate, zoom: Zoom): number {
   return differenceInDays(start, date) * PX_PER_DAY[zoom];
 }
 
+/* ─── The same arithmetic, in CSS ───────────────────────────────────────────
+ *
+ * Every position in the chart is `calc()`ed off one custom property holding the
+ * width of a day, rather than baked into a pixel number by the functions above.
+ * That is what makes a zoom change an animation: the property is registered as
+ * a `<length>` in `globals.css` and therefore interpolates, so one transition
+ * on the canvas moves the ruler, the grid, the exam markers and every bar
+ * together — without React re-rendering a single lane per frame.
+ *
+ * The numeric versions stay, because hit-testing, extension and scroll targets
+ * need a number now rather than a value the compositor is still animating.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export const DAY_WIDTH_PROPERTY = "--timeline-day-width";
+
+/** A count of days as a CSS length that follows the animated day width. */
+export function daysCss(days: number): string {
+  return `calc(var(${DAY_WIDTH_PROPERTY}) * ${days})`;
+}
+
+export function xCss(date: IsoDate, start: IsoDate): string {
+  return daysCss(differenceInDays(start, date));
+}
+
+/** Inclusive, like `widthOf`; `minimumPx` keeps a one-day bar from vanishing at Quarter. */
+export function widthCss(start: IsoDate, end: IsoDate, minimumPx = 0): string {
+  const span = daysCss(differenceInDays(start, end) + 1);
+  return minimumPx > 0 ? `max(${span}, ${minimumPx}px)` : span;
+}
+
 /** Inclusive span: a block on one day is one day wide, not zero. */
 export function widthOf(start: IsoDate, end: IsoDate, zoom: Zoom): number {
   return (differenceInDays(start, end) + 1) * PX_PER_DAY[zoom];

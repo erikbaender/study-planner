@@ -7,6 +7,9 @@ import { TimelineView } from "./timeline-view";
 
 const repository = {
   createStudyBlock: vi.fn<(input: StudyBlockInput) => Promise<void>>(() => Promise.resolve()),
+  updateStudyBlock: vi.fn<(id: string, input: Partial<StudyBlockInput>) => Promise<void>>(() =>
+    Promise.resolve(),
+  ),
 };
 const run = vi.fn((promise: Promise<unknown>) => promise);
 
@@ -78,6 +81,85 @@ describe("TimelineView", () => {
     fireEvent.pointerUp(window);
 
     expect(repository.createStudyBlock).not.toHaveBeenCalled();
+  });
+
+  it("edits with the left button while the right one is held, and never with the right one alone", () => {
+    const topic = makeTopic({ name: "Glycolysis", blocks: [] });
+    const course = makeCourse({ name: "Biochemistry", topics: [topic] });
+    render(
+      <TimelineView
+        courses={[course]}
+        health={new Map()}
+        today="2026-05-01"
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onGoToOutline={vi.fn()}
+      />,
+    );
+
+    // The combined lane is open on arrival, so the row is here without opening
+    // a course — and the view is still in View mode.
+    const lane = screen.getAllByTitle("Drag to place a study block for Glycolysis")[0];
+    vi.spyOn(lane, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, right: 1000, bottom: 24, width: 1000, height: 24, x: 0, y: 0,
+      toJSON: () => ({}),
+    });
+
+    // The right button on its own is a modifier: it draws nothing, so a plan
+    // you are only reading cannot be disturbed by pressing it.
+    fireEvent.pointerDown(lane, { button: 2, clientX: 140 });
+    fireEvent.pointerMove(window, { clientX: 200 });
+    expect(repository.createStudyBlock).not.toHaveBeenCalled();
+
+    // Held, it makes the left button the editing one.
+    fireEvent.pointerDown(lane, { button: 0, clientX: 140 });
+    fireEvent.pointerMove(window, { clientX: 168 });
+    fireEvent.pointerUp(window, { button: 0 });
+    expect(repository.createStudyBlock).toHaveBeenCalledTimes(1);
+
+    // Released, the left button goes back to moving around the chart.
+    fireEvent.pointerUp(window, { button: 2 });
+    fireEvent.pointerDown(lane, { button: 0, clientX: 300 });
+    fireEvent.pointerMove(window, { clientX: 360 });
+    fireEvent.pointerUp(window, { button: 0 });
+    expect(repository.createStudyBlock).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops a dragged block against the next block of its topic", async () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+        { id: "block_2", topicId: "topic_1", startDate: "2026-05-11", endDate: "2026-05-15", source: "auto" },
+      ],
+    });
+    const course = makeCourse({ name: "Biochemistry", topics: [topic] });
+    const user = userEvent.setup();
+    render(
+      <TimelineView
+        courses={[course]}
+        health={new Map()}
+        today="2026-05-01"
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onGoToOutline={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("radio", { name: "Edit" }));
+    const bar = screen.getAllByRole("button", { name: /2026-05-04 to 2026-05-08/ })[0];
+
+    // A week to the right is exactly on top of the second block. Two windows
+    // over the same days are not a plan, and the row's progress is divided
+    // between its bars on the assumption that they are sequential.
+    fireEvent.pointerDown(bar, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(window, { clientX: 198 });
+    fireEvent.pointerUp(window, { button: 0 });
+
+    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
+      "block_1",
+      expect.objectContaining({ startDate: "2026-05-06", endDate: "2026-05-10" }),
+    );
   });
 
   it("tracks the visible dates without re-rendering the timeline tree", () => {
