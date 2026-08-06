@@ -74,30 +74,27 @@ export function ProgressBar({
 
 export type BadgeTone = "neutral" | "accent" | "red" | "orange" | "green";
 
-const BADGE_TONES: Record<BadgeTone, { solid: string; outline: string }> = {
-  neutral: { solid: "bg-fill-strong text-secondary", outline: "text-secondary" },
-  accent: { solid: "bg-accent text-on-accent", outline: "text-accent" },
-  red: { solid: "bg-red text-white", outline: "text-red" },
-  orange: { solid: "bg-orange text-white", outline: "text-orange" },
-  green: { solid: "bg-green text-white", outline: "text-green" },
+const BADGE_TONES: Record<BadgeTone, string> = {
+  neutral: "text-secondary",
+  accent: "text-accent",
+  red: "text-red",
+  orange: "text-orange",
+  green: "text-green",
 };
 
 /**
  * A small status chip.
  *
- * `variant="outline"` carries meaning rather than decoration: a provisional
- * exam date renders outlined and a confirmed one filled, which is how the
- * interface keeps its promise never to present a rumour as a fact.
+ * Labels are always outlined so they remain visually distinct from buttons.
+ * The tone is applied to both the text and border through `currentColor`.
  */
 export function Badge({
   children,
   tone = "neutral",
-  variant = "solid",
   className,
 }: {
   children: ReactNode;
   tone?: BadgeTone;
-  variant?: "solid" | "outline";
   className?: string;
 }) {
   return (
@@ -105,9 +102,8 @@ export function Badge({
       className={clsx(
         "inline-flex h-4 shrink-0 items-center gap-1 rounded-chip px-1.5",
         "text-caption font-semibold tabular-nums whitespace-nowrap",
-        variant === "solid"
-          ? BADGE_TONES[tone].solid
-          : clsx("bg-transparent inset-ring inset-ring-current", BADGE_TONES[tone].outline),
+        "border border-current bg-transparent",
+        BADGE_TONES[tone],
         className,
       )}
     >

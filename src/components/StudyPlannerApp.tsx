@@ -148,7 +148,7 @@ export function StudyPlannerApp() {
     <div className="flex h-screen flex-col overflow-hidden">
       <Toolbar>
         <h1 className="text-body font-semibold">Study Planner</h1>
-        <Badge tone={isAuthenticated ? "green" : "neutral"} variant="outline">
+        <Badge tone={isAuthenticated ? "green" : "neutral"}>
           {isAuthenticated ? "Synced" : "This device"}
         </Badge>
 
@@ -410,7 +410,7 @@ function CourseDetail({ course, today }: { course: Course; today: string }) {
                     : exam.startDate}
                 </span>
                 {exam.status === "provisional" ? (
-                  <Badge tone="orange" variant="outline">
+                  <Badge tone="orange">
                     Provisional
                   </Badge>
                 ) : null}

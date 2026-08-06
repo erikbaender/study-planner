@@ -155,8 +155,8 @@ export function SidebarItem({
 }
 
 /**
- * The exam countdown badge. Provisional dates are outlined, confirmed ones
- * filled — the visual half of "never lie about certainty".
+ * The exam countdown label. Provisional dates retain their accessible wording;
+ * all labels share the same outlined treatment.
  */
 export function CountdownBadge({
   days,
@@ -167,7 +167,7 @@ export function CountdownBadge({
 }) {
   const tone = days <= 3 ? "red" : days <= 10 ? "orange" : "neutral";
   return (
-    <Badge tone={tone} variant={provisional ? "outline" : "solid"}>
+    <Badge tone={tone}>
       <span className="sr-only">
         {provisional ? "Provisional exam, " : "Exam in "}
         {days} days

@@ -880,7 +880,7 @@ function DraggableBlock({
           onChange={(event) => setPlannedUnits(event.target.value)}
         />
         <div className="flex items-center gap-2">
-          <Badge variant={block.source === "manual" ? "outline" : "solid"}>
+          <Badge>
             {block.source}
           </Badge>
           <span className="text-callout text-secondary">

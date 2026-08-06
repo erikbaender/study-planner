@@ -109,10 +109,7 @@ export function ExamManager({
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="truncate text-body font-semibold">{exam.name}</span>
                     <Badge>{sentenceCase(exam.kind)}</Badge>
-                    <Badge
-                      tone={exam.status === "provisional" ? "orange" : "neutral"}
-                      variant={exam.status === "provisional" ? "outline" : "solid"}
-                    >
+                    <Badge tone={exam.status === "provisional" ? "orange" : "neutral"}>
                       {sentenceCase(exam.status)}
                     </Badge>
                   </div>

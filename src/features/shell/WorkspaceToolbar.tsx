@@ -143,7 +143,7 @@ export function WorkspaceToolbar({
         </div>
       </Popover>
 
-      <Badge tone={authenticated ? "green" : "neutral"} variant="outline">
+      <Badge tone={authenticated ? "green" : "neutral"}>
         {authenticated ? "Synced" : "This device"}
       </Badge>
       <Button size="sm" variant="plain" onClick={authenticated ? onSignOut : onSignIn}>

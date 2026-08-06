@@ -840,7 +840,7 @@ function EditableTopicRow({
           <span className="flex items-center gap-1.5 whitespace-nowrap">
             <span className="tabular-nums">{exam.startDate}</span>
             {exam.status === "provisional" ? (
-              <Badge tone="orange" variant="outline">
+              <Badge tone="orange">
                 Window
               </Badge>
             ) : null}

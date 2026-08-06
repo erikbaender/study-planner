@@ -353,7 +353,7 @@ export function TodayView({
                           ) : null}
                         </span>
                         {health ? <CoursePaceBadge health={health} /> : null}
-                        <Badge variant={exam.status === "provisional" ? "outline" : "solid"}>
+                        <Badge>
                           {daysUntil(exam.startDate, today)}d
                         </Badge>
                       </button>
