@@ -1,876 +1,713 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
-  --canvas-default: #0d1117;
-  --canvas-muted: #151b23;
-  --canvas-inset: #010409;
-  --canvas-overlay: #161b22;
-  --control-bg: #212830;
-  --control-hover: #262c36;
-  --control-active: #2f3742;
-  --fg-default: #f0f6fc;
-  --fg-muted: #9198a1;
-  --fg-subtle: #656c76;
-  --border-default: #3d444d;
-  --border-muted: rgba(61, 68, 77, 0.7);
-  --accent-fg: #4493f8;
-  --accent-emphasis: #1f6feb;
-  --accent-muted: rgba(56, 139, 253, 0.18);
-  --success-fg: #3fb950;
-  --danger-fg: #f85149;
-  --danger-emphasis: #da3633;
-  --focus-ring: #2f81f7;
-  --shadow-overlay: 0 8px 24px rgba(1, 4, 9, 0.64);
-  --control-height: 32px;
-  --radius: 6px;
-  --background: var(--canvas-default);
-  --foreground: var(--fg-default);
-  --app-bg: var(--canvas-default);
-  --app-fg: var(--fg-default);
-  --surface: var(--canvas-default);
-  --surface-elevated: var(--canvas-muted);
-  --surface-muted: var(--canvas-muted);
-  --surface-hover: var(--control-hover);
-  --surface-active: var(--accent-muted);
-  --gridline: var(--border-muted);
-  --hairline: var(--border-default);
-  --muted: var(--fg-muted);
-  --accent: var(--accent-fg);
+  --topic-motion-duration: 240ms;
+  --topic-motion-curve: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
-:root[data-theme="light"],
+@keyframes topic-completion-outline {
+  0% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--topic-completion-color) 80%, transparent);
+  }
+  45% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 18%, transparent);
+    box-shadow: 0 0 0 2px var(--topic-completion-color);
+  }
+  100% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+}
+
+@keyframes topic-completion-row-out {
+  0% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+  35% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 18%, transparent);
+    box-shadow: 0 0 0 2px var(--topic-completion-color);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+}
+
+@keyframes topic-completion-checkmark {
+  0% {
+    opacity: 0;
+    scale: 0.75;
+  }
+  65% {
+    opacity: 1;
+    scale: 1.35;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes topic-completion-checkmark-out {
+  0% {
+    opacity: 1;
+    scale: 1;
+  }
+  35% {
+    opacity: 1;
+    scale: 1.15;
+  }
+  100% {
+    opacity: 0;
+    scale: 0.75;
+  }
+}
+
+@keyframes topic-completion-fill {
+  0% {
+    opacity: 1;
+    scale: 0;
+  }
+  55% {
+    scale: 1.14;
+  }
+  75% {
+    scale: 0.94;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes topic-completion-fill-out {
+  0% {
+    opacity: 1;
+    scale: 1;
+  }
+  45% {
+    opacity: 1;
+    scale: 1.06;
+  }
+  100% {
+    opacity: 0;
+    scale: 0;
+  }
+}
+
+.topic-completion-row[data-completion-animating="true"] {
+  animation: topic-completion-outline var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.course-completion-row[data-completion-animating="true"] {
+  animation: topic-completion-outline var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="off"],
+.course-completion-row[data-completion-direction="off"] {
+  animation: topic-completion-row-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="on"] .topic-completion-checkmark {
+  /* Control motion is intentionally shorter than the surrounding row pulse. */
+  animation: topic-completion-checkmark var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="off"] .topic-completion-checkmark {
+  animation: topic-completion-checkmark-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="on"] .topic-completion-fill {
+  animation: topic-completion-fill var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="off"] .topic-completion-fill {
+  animation: topic-completion-fill-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-progress-range {
+  transition: right var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/** The shared motion used by progress, completion controls, and panel chrome. */
+.topic-motion-width {
+  transition: width var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.side-panel-shell {
+  transition: width var(--topic-motion-duration) var(--topic-motion-curve);
+  animation-fill-mode: both;
+}
+
+@keyframes side-panel-left-in {
+  from { opacity: 0; transform: translateX(-100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes side-panel-left-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-100%); }
+}
+
+@keyframes side-panel-right-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes side-panel-right-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(100%); }
+}
+
+.side-panel-shell[data-panel-side="left"][data-panel-state="open"] {
+  animation: side-panel-left-in var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.side-panel-shell[data-panel-side="left"][data-panel-state="closed"] {
+  animation: side-panel-left-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.side-panel-shell[data-panel-side="right"][data-panel-state="open"] {
+  animation: side-panel-right-in var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.side-panel-shell[data-panel-side="right"][data-panel-state="closed"] {
+  animation: side-panel-right-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+span:has(> .topic-progress-thumb) {
+  transition: left var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/* A click benefits from visible travel; a drag must remain under the cursor.
+   Re-targeting a long transition on every pointer event feels like input lag. */
+[data-progress-dragging="true"] .topic-progress-range,
+[data-progress-dragging="true"] span:has(> .topic-progress-thumb) {
+  transition: none;
+}
+
+.topic-completion-row:has(.topic-completion-checkbox:checked) {
+  background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+}
+
+.course-completion-row[data-course-completed="true"] {
+  background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+}
+
+/* The same semantic hover fill used by unfinished rows, layered over the
+   completion tint instead of replacing it. This keeps the hover delta equal. */
+.topic-completion-row:has(.topic-completion-checkbox:checked):hover {
+  background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
+}
+
+.course-completion-row[data-course-completed="true"]:hover {
+  background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
+}
+
+.topic-completion-fill {
+  background-color: var(--topic-completion-color);
+  transform-origin: center;
+}
+
+.topic-completion-checkbox:focus-visible {
+  outline-color: var(--topic-completion-color);
+}
+
+.topic-completion-checkmark {
+  color: var(--mac-completion-mark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topic-completion-row[data-completion-animating="true"] {
+    animation: none;
+    box-shadow: 0 0 0 1px var(--topic-completion-color);
+  }
+  .course-completion-row[data-completion-animating="true"] {
+    animation: none;
+    box-shadow: 0 0 0 1px var(--topic-completion-color);
+  }
+  .topic-completion-row[data-completion-direction="off"],
+  .course-completion-row[data-completion-direction="off"] {
+    animation: none;
+  }
+  .topic-completion-row[data-completion-direction] .topic-completion-checkmark {
+    animation: none;
+  }
+
+  .topic-completion-row[data-completion-direction] .topic-completion-fill {
+    animation: none;
+  }
+  .topic-progress-range,
+  .topic-motion-width,
+  .side-panel-shell,
+  span:has(> .topic-progress-thumb) {
+    transition: none;
+  }
+  .side-panel-shell[data-panel-state] {
+    animation: none;
+  }
+}
+
+/**
+ * macOS-derived design tokens.
+ *
+ * Two layers, deliberately:
+ *
+ *   1. `--mac-*` raw tokens, redefined per theme on `[data-theme]`. These are the
+ *      only place a literal colour appears.
+ *   2. A `@theme inline` block mapping them into Tailwind's namespaces, so
+ *      `bg-window`, `text-secondary` and `rounded-control` exist as utilities and
+ *      follow the theme without a single `dark:` variant anywhere in the app.
+ *
+ * The values track Apple's macOS semantic colours (windowBackground,
+ * controlBackground, labelColor and its three lower tiers, separatorColor)
+ * rather than an arbitrary grey ramp, because their *relationships* are what
+ * make the result read as macOS — a sidebar is not "grey 100", it is a material
+ * over the desktop.
+ */
+
+/* ─── Light ─────────────────────────────────────────────────────────────── */
+
+:root,
 [data-theme="light"] {
   color-scheme: light;
-  --canvas-default: #ffffff;
-  --canvas-muted: #f6f8fa;
-  --canvas-inset: #f6f8fa;
-  --canvas-overlay: #ffffff;
-  --control-bg: #f6f8fa;
-  --control-hover: #f3f4f6;
-  --control-active: #ebecf0;
-  --fg-default: #1f2328;
-  --fg-muted: #59636e;
-  --fg-subtle: #818b98;
-  --border-default: #d1d9e0;
-  --border-muted: rgba(209, 217, 224, 0.7);
-  --accent-fg: #0969da;
-  --accent-emphasis: #1f883d;
-  --accent-muted: rgba(84, 174, 255, 0.16);
-  --success-fg: #1a7f37;
-  --danger-fg: #d1242f;
-  --danger-emphasis: #cf222e;
-  --focus-ring: #0969da;
-  --shadow-overlay: 0 8px 24px rgba(140, 149, 159, 0.2);
+
+  /* Surfaces. `window` sits behind everything; `content` is the document area,
+     which on macOS is lighter than its own window chrome. */
+  --mac-window: #ececec;
+  --mac-content: #ffffff;
+  --mac-content-alt: #f7f7f7;
+  --mac-raised: #ffffff;
+
+  /* Controls. `active` is the pressed state, not the selected state. */
+  --mac-control: #ffffff;
+  --mac-control-hover: #f2f2f2;
+  --mac-control-active: #e4e4e4;
+  --mac-control-border: rgba(0, 0, 0, 0.14);
+
+  /* Fills, for anything tinted rather than drawn: chip backgrounds, track
+     grooves, the segmented control's inactive bed. */
+  --mac-fill: rgba(0, 0, 0, 0.05);
+  --mac-fill-strong: rgba(0, 0, 0, 0.09);
+
+  /* Labels — Apple's four tiers. Alpha rather than solid grey, so text over a
+     tinted row keeps the row's hue. */
+  --mac-label: rgba(0, 0, 0, 0.85);
+  --mac-label-secondary: rgba(0, 0, 0, 0.5);
+  --mac-label-tertiary: rgba(0, 0, 0, 0.26);
+  --mac-label-quaternary: rgba(0, 0, 0, 0.1);
+
+  --mac-separator: rgba(0, 0, 0, 0.1);
+  --mac-separator-strong: rgba(0, 0, 0, 0.18);
+
+  /* Selection in an unfocused list is grey on macOS, not a dimmed accent. */
+  --mac-selected-inactive: rgba(0, 0, 0, 0.08);
+
+  /* Materials. The alpha is what makes the blur visible; without it
+     `backdrop-filter` is a no-op. */
+  --mac-material-sidebar: rgba(246, 246, 246, 0.72);
+  --mac-material-header: rgba(255, 255, 255, 0.72);
+  --mac-material-popover: rgba(250, 250, 250, 0.86);
+  /* Small labels that ride a scrolling canvas — timeline lane names. Thinner
+     than a popover, because what is behind them is content worth glimpsing. */
+  --mac-material-inline: rgba(255, 255, 255, 0.82);
+  /* A panel covering content rather than sitting beside it, on a narrow window.
+     Denser than the sidebar's own material, which is tuned for a surface with
+     nothing behind it. */
+  --mac-material-overlay: rgba(248, 248, 248, 0.94);
+  --mac-material-scrim: rgba(0, 0, 0, 0.24);
+
+  /* Semantic anchors. These stay close to red, yellow, green and blue while
+     avoiding the pure hues used to space the course palette. The light-theme
+     variants are dark enough to clear AA as text on white. */
+  --mac-negative: #d9363e;
+  --mac-warning: #8a6800;
+  --mac-positive: #238636;
+  --mac-completion-mark: #1e1e1e;
+
+  --mac-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.1);
+  --mac-shadow-popover:
+    0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 10px 30px rgba(0, 0, 0, 0.18);
+  --mac-shadow-sheet:
+    0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 24px 68px rgba(0, 0, 0, 0.3);
 }
+
+/* ─── Dark ──────────────────────────────────────────────────────────────── */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --mac-window: #1e1e1e;
+  --mac-content: #1e1e1e;
+  --mac-content-alt: #252525;
+  --mac-raised: #2c2c2e;
+
+  --mac-control: #3a3a3c;
+  --mac-control-hover: #464648;
+  --mac-control-active: #545456;
+  --mac-control-border: rgba(255, 255, 255, 0.14);
+
+  --mac-fill: rgba(255, 255, 255, 0.07);
+  --mac-fill-strong: rgba(255, 255, 255, 0.13);
+
+  --mac-label: rgba(255, 255, 255, 0.85);
+  --mac-label-secondary: rgba(255, 255, 255, 0.55);
+  --mac-label-tertiary: rgba(255, 255, 255, 0.28);
+  --mac-label-quaternary: rgba(255, 255, 255, 0.12);
+
+  --mac-separator: rgba(255, 255, 255, 0.13);
+  --mac-separator-strong: rgba(255, 255, 255, 0.22);
+
+  --mac-selected-inactive: rgba(255, 255, 255, 0.11);
+
+  --mac-material-sidebar: rgba(38, 38, 40, 0.72);
+  --mac-material-header: rgba(42, 42, 44, 0.72);
+  --mac-material-popover: rgba(48, 48, 50, 0.84);
+  --mac-material-inline: rgba(30, 30, 30, 0.8);
+  --mac-material-overlay: rgba(32, 32, 34, 0.94);
+  --mac-material-scrim: rgba(0, 0, 0, 0.42);
+
+  /* Brightened: the light-mode variants are unreadable on #1e1e1e. */
+  --mac-negative: #ff6b72;
+  --mac-warning: #ffd24a;
+  --mac-positive: #45d16f;
+  --mac-completion-mark: #1e1e1e;
+
+  --mac-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --mac-shadow-popover:
+    0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 10px 30px rgba(0, 0, 0, 0.5);
+  --mac-shadow-sheet:
+    0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 24px 68px rgba(0, 0, 0, 0.6);
+}
+
+/* ─── Accent ────────────────────────────────────────────────────────────── */
+
+/**
+ * Blue is the stable semantic anchor for selection, primary actions and focus.
+ * Course identity colours deliberately sit between it and the other anchors.
+ */
+:root {
+  --mac-accent: #1769e0;
+  --mac-on-accent: #ffffff;
+  --mac-accent-soft: color-mix(in srgb, var(--mac-accent) 14%, transparent);
+  --mac-focus-ring: color-mix(in srgb, var(--mac-accent) 45%, transparent);
+}
+
+/* Pressed accent darkens on light and lightens on dark — mixing toward black in
+   both would make the dark-mode press state read as "disabled". */
+:root,
+[data-theme="light"] {
+  --mac-accent-hover: color-mix(in srgb, var(--mac-accent) 88%, #000);
+}
+
+[data-theme="dark"] {
+  --mac-accent-hover: color-mix(in srgb, var(--mac-accent) 86%, #fff);
+}
+
+/* ─── Tailwind mapping ──────────────────────────────────────────────────── */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-body {
-  background: var(--app-bg);
-  color: var(--app-fg);
-  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
-  font-size: 14px;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-::selection {
-  background: var(--accent-muted);
-}
-
-.ion-page {
-  background: var(--app-bg);
-}
-
-.ui-button,
-.ui-icon-button {
-  display: inline-flex;
-  height: var(--control-height);
-  min-height: var(--control-height);
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  padding: 0 12px;
-  color: var(--fg-default);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 80ms linear, border-color 80ms linear;
-}
-
-.ui-icon-button {
-  width: var(--control-height);
-  min-width: var(--control-height);
-  padding: 0;
-}
-
-.ui-button-default,
-.ui-icon-button.ui-button-default {
-  background: var(--control-bg);
-}
-
-.ui-button-default:hover:not(:disabled):not(.disabled),
-.ui-icon-button.ui-button-default:hover:not(:disabled):not(.disabled) {
-  background: var(--control-hover);
-}
-
-.ui-button-primary {
-  border-color: rgba(240, 246, 252, 0.1);
-  background: #238636;
-  color: #ffffff;
-}
-
-.ui-button-primary:hover:not(:disabled) {
-  background: #2ea043;
-}
-
-[data-theme="light"] .ui-button-primary {
-  background: #1f883d;
-}
-
-.ui-button-danger {
-  color: var(--danger-fg);
-  background: transparent;
-}
-
-.ui-button-danger:hover:not(:disabled) {
-  border-color: var(--danger-emphasis);
-  background: var(--danger-emphasis);
-  color: #ffffff;
-}
-
-.ui-button-invisible {
-  border-color: transparent;
-  background: transparent;
-}
-
-.ui-button-invisible:hover:not(:disabled) {
-  background: var(--control-hover);
-}
-
-.ui-button-unstyled {
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  white-space: normal;
-}
-
-.ui-button:focus-visible,
-.ui-icon-button:focus-visible,
-.ui-input:focus-visible,
-.ui-textarea:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.ui-button:disabled,
-.ui-icon-button:disabled,
-.ui-icon-button.disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.ui-button-icon {
-  display: inline-flex;
-}
-
-.ui-field {
-  display: grid;
-  gap: 6px;
-  color: var(--fg-default);
-}
-
-.ui-field-label {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-}
-
-.ui-input,
-.ui-textarea {
-  width: 100%;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  background: var(--canvas-default);
-  color: var(--fg-default);
-  font-size: 14px;
-  line-height: 20px;
-  box-shadow: inset 0 1px 0 rgba(1, 4, 9, 0.04);
-}
-
-.ui-input {
-  height: var(--control-height);
-  padding: 5px 12px;
-}
-
-.ui-textarea {
-  min-height: 80px;
-  resize: vertical;
-  padding: 8px 12px;
-}
-
-.ui-input::placeholder,
-.ui-textarea::placeholder {
-  color: var(--fg-muted);
-}
-
-.ui-input:focus,
-.ui-textarea:focus {
-  border-color: var(--focus-ring);
-  outline: none;
-  box-shadow: 0 0 0 3px var(--accent-muted);
-}
-
-.ui-field-hint {
-  color: var(--fg-muted);
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.ui-field-hint.error {
-  color: var(--danger-fg);
-}
-
-.ui-panel {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  background: var(--canvas-default);
-}
-
-.app-shell {
-  display: flex;
-  height: 100vh;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--canvas-default);
-  color: var(--fg-default);
-}
-
-.app-header {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  display: flex;
-  min-height: 64px;
-  align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid var(--border-default);
-  background: var(--canvas-inset);
-}
-
-.plan-command {
-  display: inline-flex;
-  width: min(520px, calc(100vw - 32px));
-  height: 32px;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  background: var(--control-bg);
-  padding: 0 12px;
-  color: var(--fg-default);
-  font-size: 14px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-
-.plan-command:hover { background: var(--control-hover); }
-.plan-command span { flex: 1; }
-
-.app-header-inner {
-  display: flex;
-  min-height: 64px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 0 auto;
-  padding: 0 16px;
-}
-
-.app-mark {
-  display: flex;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  background: var(--control-bg);
-  color: var(--fg-default);
-}
-
-.app-status {
-  overflow: hidden;
-  color: var(--fg-muted);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.navigation-panel {
-  background: var(--canvas-muted);
-}
-
-.nav-row {
-  width: 100%;
-  min-height: var(--control-height);
-  border-radius: var(--radius);
-  padding: 8px;
-  color: var(--fg-default);
-  text-align: left;
-}
-
-.nav-row:hover {
-  background: var(--control-hover);
-}
-
-.nav-row.selected {
-  background: var(--accent-muted);
-  color: var(--fg-default);
-}
-
-.planner-toolbar {
-  display: flex;
-  min-height: 64px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--border-default);
-  padding: 12px 16px;
-}
-
-.surface-row {
-  min-height: 36px;
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius);
-  background: var(--canvas-muted);
-  padding: 8px 12px;
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.metric-cell {
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius);
-  background: var(--canvas-muted);
-  padding: 10px 8px;
-}
-
-.empty-state {
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius);
-  padding: 12px;
-  color: var(--fg-default);
-  font-size: 14px;
-}
-
-.empty-state-icon {
-  display: flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 8px;
-  color: var(--fg-muted);
-}
-
-.auth-panel {
-  background: var(--canvas-overlay);
-  box-shadow: var(--shadow-overlay);
-}
-
-.import-preview {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  background: var(--canvas-muted);
-  padding: 12px;
-}
-
-.ui-badge {
-  display: inline-flex;
-  min-height: 24px;
-  align-items: center;
-  border: 1px solid var(--border-default);
-  border-radius: 999px;
-  background: var(--control-bg);
-  padding: 0 8px;
-  color: var(--fg-default);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.planner-layout {
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 320px);
-  gap: 12px;
-  min-height: 0;
-  align-items: stretch;
-}
-
-.planner-workspace {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  margin: 16px;
-  overflow: hidden;
-}
-
-.planner-layout.left-collapsed {
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-}
-
-.planner-layout.right-collapsed {
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-}
-
-.planner-layout.left-collapsed.right-collapsed {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.planner-pane,
-.planner-main {
-  min-height: 0;
-  height: 100%;
-}
-
-.planner-pane {
-  overflow: auto;
-}
-
-.planner-main {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.gantt-scroll {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  overscroll-behavior-x: contain;
-  touch-action: pan-x pan-y;
-}
-
-.gantt-grid {
-  display: grid;
-  grid-template-columns: 220px repeat(var(--timeline-days, 1), 42px);
-  min-height: 100%;
-  align-content: start;
-}
-
-.gantt-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  min-height: 58px;
-  flex-direction: column;
-  justify-content: center;
-  border-right: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
-  background: var(--surface-muted);
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.gantt-header strong {
-  color: var(--app-fg);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.course-row,
-.topic-label {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  gap: 8px;
-  border-right: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
-  background: var(--surface);
-  padding: 0 12px;
-  text-align: left;
-}
-
-.course-row {
-  color: var(--app-fg);
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.course-toggle {
-  flex-shrink: 0;
-  transition: transform 160ms ease;
-}
-
-.course-toggle.collapsed {
-  transform: rotate(-90deg);
-}
-
-.topic-label {
-  color: var(--app-fg);
-  font-size: 13px;
-}
-
-.topic-label.selected {
-  background: var(--surface-active);
-}
-
-.course-band,
-.topic-track {
-  position: relative;
-  min-height: 44px;
-  border-bottom: 1px solid var(--hairline);
-  background-image: linear-gradient(to right, var(--gridline) 1px, transparent 1px);
-  background-size: 42px 100%;
-}
-
-.course-band {
-  background-color: var(--surface-muted);
-}
-
-.topic-track {
-  background-color: var(--surface);
-}
-
-.gantt-create-target {
-  cursor: pointer;
-  touch-action: pan-y;
-  user-select: none;
-}
-
-.gantt-create-target:hover {
-  background-color: var(--surface-hover);
-}
-
-.gantt-creation-preview {
-  --preview-color: var(--accent);
-  position: absolute;
-  top: 6px;
-  z-index: 2;
-  height: 32px;
-  border: 1px dashed var(--preview-color);
-  border-radius: 8px;
-  background: transparent;
-  pointer-events: none;
-}
-
-.gantt-creation-preview.hover {
-  opacity: 0.58;
-}
-
-[data-theme="dark"] .bg-white,
-[data-theme="dark"] .bg-\[\#f5f5f7\] {
-  background-color: var(--surface) !important;
-}
-
-[data-theme="dark"] .hover\:bg-\[\#eeeeef\]:hover,
-[data-theme="dark"] .hover\:bg-\[\#f5f5f7\]:hover {
-  background-color: var(--surface-hover) !important;
-}
-
-[data-theme="dark"] .bg-\[\#e2f0ff\] {
-  background-color: var(--surface-active) !important;
-}
-
-[data-theme="dark"] .text-\[\#1d1d1f\] {
-  color: var(--app-fg) !important;
-}
-
-.range-bar {
-  position: absolute;
-  top: 6px;
-  display: flex;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 4px 12px rgba(0, 0, 0, 0.12);
-  touch-action: none;
-  user-select: none;
-}
-
-.range-bar.dragging {
-  filter: saturate(1.08);
-  outline: 2px solid rgba(0, 122, 255, 0.24);
-}
-
-.range-title {
-  max-width: calc(100% - 22px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.range-handle {
-  position: absolute;
-  top: 5px;
-  z-index: 2;
-  width: 8px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.68);
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.range-bar:hover .range-handle,
-.range-bar.dragging .range-handle {
-  opacity: 1;
-}
-
-.range-handle.left {
-  left: 5px;
-  cursor: ew-resize;
-}
-
-.range-handle.right {
-  right: 5px;
-  cursor: ew-resize;
-}
-
-.ui-dialog-modal {
-  --width: min(560px, calc(100vw - 24px));
-  --height: auto;
-  --max-height: calc(100vh - 48px);
-  --border-radius: 12px;
-  --background: var(--canvas-overlay);
-  --ion-background-color: var(--canvas-overlay);
-  --ion-text-color: var(--fg-default);
-}
-
-.ui-dialog-modal::part(content) {
-  overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
-  background: var(--canvas-overlay);
-  box-shadow: var(--shadow-overlay);
-}
-
-.plan-picker-list {
-  overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-}
-
-.plan-picker-row {
-  display: grid;
-  width: 100%;
-  min-height: 56px;
-  gap: 2px;
-  border: 0;
-  border-bottom: 1px solid var(--border-muted);
-  background: var(--canvas-overlay);
-  padding: 10px 12px;
-  color: var(--fg-default);
-  text-align: left;
-  cursor: pointer;
-}
-
-.plan-picker-row:last-child { border-bottom: 0; }
-.plan-picker-row:hover, .plan-picker-row.selected { background: var(--accent-muted); }
-
-.ui-dialog {
-  display: flex;
-  max-height: calc(100vh - 48px);
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--canvas-overlay);
-  color: var(--fg-default);
-}
-
-.ui-dialog-header {
-  display: flex;
-  min-height: 56px;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid var(--border-default);
-  padding: 16px;
-}
-
-.ui-dialog-title {
-  color: var(--fg-default);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
-}
-
-.ui-dialog-close {
-  margin-left: auto;
-}
-
-.ui-dialog-icon {
-  display: flex;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  color: var(--danger-fg);
-}
-
-.ui-dialog-body {
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.ui-dialog-footer {
-  display: flex;
-  min-height: 56px;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  border-top: 1px solid var(--border-default);
-  padding: 12px 16px;
-}
-
-.planner-control-group {
-  border-top: 1px solid var(--border-muted);
-  padding-top: 16px;
-}
-
-.planner-control-label {
-  margin-bottom: 10px;
-  color: var(--fg-default);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.planner-color-grid {
-  display: grid;
-  grid-template-columns: repeat(13, 30px);
-  justify-content: space-between;
-}
-
-.planner-color-swatch {
-  width: 30px;
-  height: 30px;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
-  transition: box-shadow 80ms linear;
-}
-
-@media (max-width: 480px) {
-  .planner-color-grid {
-    grid-template-columns: repeat(13, 24px);
+  --color-window: var(--mac-window);
+  --color-content: var(--mac-content);
+  --color-content-alt: var(--mac-content-alt);
+  --color-raised: var(--mac-raised);
+
+  --color-control: var(--mac-control);
+  --color-control-hover: var(--mac-control-hover);
+  --color-control-active: var(--mac-control-active);
+
+  --color-fill: var(--mac-fill);
+  --color-fill-strong: var(--mac-fill-strong);
+
+  --color-label: var(--mac-label);
+  --color-secondary: var(--mac-label-secondary);
+  --color-tertiary: var(--mac-label-tertiary);
+  --color-quaternary: var(--mac-label-quaternary);
+
+  --color-separator: var(--mac-separator);
+  --color-separator-strong: var(--mac-separator-strong);
+  --color-selected-inactive: var(--mac-selected-inactive);
+
+  --color-accent: var(--mac-accent);
+  --color-accent-hover: var(--mac-accent-hover);
+  --color-accent-soft: var(--mac-accent-soft);
+  --color-on-accent: var(--mac-on-accent);
+
+  --color-negative: var(--mac-negative);
+  --color-warning: var(--mac-warning);
+  --color-positive: var(--mac-positive);
+
+  /* macOS text styles. Base is 13px — `body` here, not `base`, so that a bare
+     `text-sm` from muscle memory does not silently pass. */
+  --text-caption: 0.625rem; /* 10px */
+  --text-caption--line-height: 0.875rem;
+  --text-footnote: 0.6875rem; /* 11px */
+  --text-footnote--line-height: 0.9375rem;
+  --text-callout: 0.75rem; /* 12px */
+  --text-callout--line-height: 1rem;
+  --text-body: 0.8125rem; /* 13px */
+  --text-body--line-height: 1.1875rem;
+  --text-title3: 0.9375rem; /* 15px */
+  --text-title3--line-height: 1.3125rem;
+  --text-title2: 1.0625rem; /* 17px */
+  --text-title2--line-height: 1.4375rem;
+  --text-title1: 1.375rem; /* 22px */
+  --text-title1--line-height: 1.75rem;
+  --text-large-title: 1.625rem; /* 26px */
+  --text-large-title--line-height: 2rem;
+
+  /* Concentric radii: an inner element inside a 10px container wants 6px, not
+     10px, or the gap between the two curves reads as a dent. */
+  --radius-chip: 4px;
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-popover: 12px;
+  --radius-sheet: 16px;
+
+  --shadow-raised: var(--mac-shadow-raised);
+  --shadow-popover: var(--mac-shadow-popover);
+  --shadow-sheet: var(--mac-shadow-sheet);
+
+  /* Standard control height. Every control lines up on a toolbar because they
+     all read this, not because each was tuned by hand. */
+  --spacing-control: 22px;
+  --spacing-control-lg: 28px;
+
+  /**
+   * SF Pro cannot be licensed for the web, so the stack resolves to the real
+   * thing on Apple hardware and to Inter — which shares SF's proportions far
+   * more closely than any other webfont — everywhere else.
+   */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-inter), "Inter Variable",
+    system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+
+  /* Apple's default control curve. Nothing in the app should ease-linear. */
+  --ease-mac: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /**
+   * Overlay motion. Short and asymmetric — appearing is 140ms so the popover
+   * feels attached to the click, disappearing is 100ms so dismissal never feels
+   * like waiting. Scale starts at 0.96 rather than 0.9: macOS overlays grow a
+   * little, they do not zoom.
+   */
+  --animate-overlay-in: overlay-in 140ms var(--ease-mac);
+  --animate-overlay-out: overlay-out 100ms var(--ease-mac);
+  --animate-fade-in: fade-in 140ms var(--ease-mac);
+  --animate-fade-out: fade-out 100ms var(--ease-mac);
+  --animate-sheet-in: sheet-in 260ms var(--ease-mac);
+  --animate-sheet-out: sheet-out 180ms var(--ease-mac);
+
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
   }
 
-  .planner-color-swatch {
-    width: 24px;
-    height: 24px;
+  @keyframes overlay-out {
+    to {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  /* A sheet is hinged to the top of the window, so it slides out of the title
+     bar rather than scaling up from the centre. */
+  /**
+   * Y only. The sheet is centred with Tailwind's `-translate-x-1/2`, which in v4
+   * compiles to the standalone `translate` property rather than to `transform` —
+   * and the two compose. A `translate(-50%, …)` here therefore *added* to the
+   * centring, so the sheet animated in half a width to the left and jumped into
+   * place the moment the animation stopped applying.
+   */
+  @keyframes sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(-100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes sheet-out {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-100%);
+    }
   }
 }
 
-.planner-color-swatch:hover {
-  box-shadow: 0 0 0 2px var(--border-default);
-}
+/* ─── Base ──────────────────────────────────────────────────────────────── */
 
-.planner-color-swatch.selected {
-  border-color: var(--canvas-overlay);
-  box-shadow: 0 0 0 2px var(--focus-ring), inset 0 0 0 1px rgba(0, 0, 0, 0.14);
-}
-
-.planner-option-list {
-  overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-}
-
-.planner-option-row {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--border-muted);
-  background: var(--canvas-muted);
-  padding: 10px 12px;
-  color: var(--app-fg);
-  font-size: 14px;
-}
-
-.planner-option-row:last-child {
-  border-bottom: 0;
-}
-
-.planner-option-row input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-}
-
-@media (max-width: 480px) {
-  .ui-dialog-modal {
-    --width: calc(100vw - 24px);
-    --max-height: calc(100vh - 24px);
-    --border-radius: 12px;
+@layer base {
+  html {
+    /* Prevents the double-tap zoom delay without disabling pinch zoom. */
+    touch-action: manipulation;
   }
 
-  .ui-dialog-modal::part(content) {
-    border-width: 1px;
-    border-radius: 12px;
+  body {
+    background: var(--mac-window);
+    color: var(--mac-label);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    /* macOS UI text is never letter-spaced at these sizes, but browsers pick a
+       slightly wide default for Inter; this pulls it back to SF's rhythm. */
+    letter-spacing: -0.003em;
   }
 
-  .ui-dialog {
-    max-height: calc(100vh - 24px);
+  ::selection {
+    background: var(--mac-accent-soft);
+  }
+
+  /**
+   * One focus ring for the whole app: a 3px accent halo with a 1px inner ring
+   * that keeps it legible where the halo sits on a same-hue surface. Applied on
+   * `:focus-visible` only, so a mouse click never draws it.
+   */
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 1px var(--mac-content),
+      0 0 0 4px var(--mac-focus-ring);
+  }
+
+  /* Overlay scrollbars. Chromium honours these; Firefox uses the standard
+     properties below. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--mac-label-tertiary) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--mac-label-tertiary);
+    border: 3px solid transparent;
+    border-radius: 6px;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--mac-label-secondary);
+    border: 3px solid transparent;
+    background-clip: content-box;
   }
 }
 
-@media (max-width: 720px) {
-  .planner-layout,
-  .planner-layout.left-collapsed,
-  .planner-layout.right-collapsed,
-  .planner-layout.left-collapsed.right-collapsed {
-    grid-template-columns: minmax(0, 1fr);
+/* ─── Materials ─────────────────────────────────────────────────────────── */
+
+/**
+ * Chrome only — sidebar, toolbar, popovers, sheets. The timeline canvas stays
+ * opaque on purpose: `backdrop-filter` on a surface that scrolls hundreds of
+ * bars costs more than the effect is worth.
+ *
+ * `saturate()` before `blur()` is what stops blurred content going grey.
+ */
+/**
+ * The blur is applied through Tailwind's own `backdrop-*` utilities rather than
+ * by writing `backdrop-filter` here by hand. Written by hand it does not
+ * survive the build: the compiled rule came out carrying only
+ * `-webkit-backdrop-filter`, the unprefixed property having been dropped, so
+ * every material in the app was translucent but never actually blurred. The
+ * one surface that *was* frosted — a timeline label — was the one that happened
+ * to use `backdrop-blur-sm` instead.
+ *
+ * `saturate` is constant across all four; only the radius varies, with how much
+ * of what is behind should survive.
+ */
+@utility material-sidebar {
+  background: var(--mac-material-sidebar);
+  @apply backdrop-blur-[30px] backdrop-saturate-[1.8];
+}
+
+@utility material-header {
+  background: var(--mac-material-header);
+  @apply backdrop-blur-[30px] backdrop-saturate-[1.8];
+}
+
+/** A panel you are meant to read, not see past. */
+@utility material-popover {
+  background: var(--mac-material-popover);
+  @apply backdrop-blur-xl backdrop-saturate-[1.8];
+}
+
+/** Small labels riding a scrolling canvas: you should still read the chart under them. */
+@utility material-inline {
+  background: var(--mac-material-inline);
+  @apply backdrop-blur-md backdrop-saturate-[1.8];
+}
+
+/** A panel *covering* content rather than sitting beside it, on a narrow window. */
+@utility material-overlay {
+  background: var(--mac-material-overlay);
+  @apply backdrop-blur-[30px] backdrop-saturate-[1.8];
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .material-sidebar,
+  .material-header,
+  .material-popover,
+  .material-inline,
+  .material-overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
-  .planner-pane,
-  .planner-main {
-    max-height: none;
+  .material-sidebar {
+    background: var(--mac-content-alt);
   }
 
-  .gantt-grid {
-    grid-template-columns: 164px repeat(var(--timeline-days, 1), 42px);
+  .material-header {
+    background: var(--mac-content-alt);
   }
 
-  .gantt-header:first-child,
-  .course-row,
-  .topic-label {
-    width: 164px;
+  .material-popover,
+  .material-overlay {
+    background: var(--mac-raised);
   }
 
+  .material-inline {
+    background: var(--mac-content);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
