@@ -37,7 +37,7 @@ describe("semester sheets", () => {
     const user = userEvent.setup();
     render(
       <EditPlanSheet
-        plan={makePlan({ name: "Spring", startDate: "2026-03-01", endDate: "2026-07-01" })}
+        plan={makePlan({ name: "Spring" })}
         open
         onOpenChange={vi.fn()}
         onSave={onSave}

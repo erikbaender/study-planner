@@ -28,8 +28,6 @@ export default defineSchema({
     ownerId: v.id("users"),
     name: v.string(),
     notes: v.string(),
-    startDate: v.optional(v.string()),
-    endDate: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_owner", ["ownerId"]),

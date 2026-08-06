@@ -114,8 +114,6 @@ export function toPlan(plan: PlanTree): Plan {
     id: plan._id,
     name: plan.name,
     notes: plan.notes,
-    startDate: plan.startDate,
-    endDate: plan.endDate,
     courses: plan.courses.map(toCourse),
   };
 }
@@ -273,8 +271,6 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         planId: asId<"plans">(planId),
         name: input.name,
         notes: input.notes ?? "",
-        startDate: input.startDate,
-        endDate: input.endDate,
       });
     },
     async deletePlan(planId) {

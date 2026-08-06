@@ -31,13 +31,11 @@ export function EditPlanSheet({
   plan: Plan | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (input: { name: string; notes?: string; startDate?: string; endDate?: string }) => void;
+  onSave: (input: { name: string; notes?: string }) => void;
 }) {
   const [draft, setDraft] = useState(() => ({
     name: plan?.name ?? "",
     notes: plan?.notes ?? "",
-    startDate: plan?.startDate ?? "",
-    endDate: plan?.endDate ?? "",
   }));
   const [identity, setIdentity] = useState(`${plan?.id ?? ""}:${open}`);
   const nextIdentity = `${plan?.id ?? ""}:${open}`;
@@ -46,21 +44,15 @@ export function EditPlanSheet({
     setDraft({
       name: plan?.name ?? "",
       notes: plan?.notes ?? "",
-      startDate: plan?.startDate ?? "",
-      endDate: plan?.endDate ?? "",
     });
   }
 
-  const invalid =
-    draft.name.trim() === "" ||
-    Boolean(draft.startDate && draft.endDate && draft.endDate < draft.startDate);
+  const invalid = draft.name.trim() === "";
   const submit = () => {
     if (invalid) return;
     onSave({
       name: draft.name.trim(),
       notes: draft.notes.trim() || undefined,
-      startDate: draft.startDate || undefined,
-      endDate: draft.endDate || undefined,
     });
     onOpenChange(false);
   };
@@ -70,7 +62,7 @@ export function EditPlanSheet({
       open={open}
       onOpenChange={onOpenChange}
       title="Edit semester"
-      description="Change the semester name, dates, or notes."
+      description="Change the semester name or notes."
       footer={
         <>
           <Button onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -80,10 +72,6 @@ export function EditPlanSheet({
     >
       <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <TextField label="Name" autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-        <div className="grid grid-cols-2 gap-2">
-          <TextField label="Starts" type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} />
-          <TextField label="Ends" type="date" value={draft.endDate} hint={invalid && draft.name.trim() !== "" ? "Must be after the start" : undefined} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} />
-        </div>
         <TextField label="Notes" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} />
         <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only">Save</button>
       </form>

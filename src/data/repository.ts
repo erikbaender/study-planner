@@ -32,8 +32,6 @@ import type { PlannerExport } from "@/lib/import-export";
 export type PlanInput = {
   name: string;
   notes?: string;
-  startDate?: IsoDate;
-  endDate?: IsoDate;
 };
 
 export type CourseInput = {

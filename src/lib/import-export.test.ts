@@ -16,8 +16,6 @@ const fixture = () =>
       plan({
         id: "plan_a",
         name: "Winter semester",
-        startDate: "2026-09-01",
-        endDate: "2027-02-28",
         courses: [
           course({
             id: "course_a",

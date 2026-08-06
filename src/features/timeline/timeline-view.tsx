@@ -81,12 +81,76 @@ const ALL_TOPICS = "__all-topics__";
 
 const LANE_HEIGHT = 28;
 const ROW_HEIGHT = 24;
+/** The `pb-1` breathing room below an open group's last row, on the canvas side and in `GutterCard`. */
+const GROUP_GAP = 4;
 /** The two-tier header: a band of months or years over the ticks themselves. */
 const BAND_HEIGHT = 18;
 const TICK_HEIGHT = 18;
 const RULER_HEIGHT = BAND_HEIGHT + TICK_HEIGHT;
 /** Below this the pointer was steadying itself, not dragging. The old code had no threshold at all. */
 const DRAG_THRESHOLD_PX = 4;
+/** How close to an edge of the canvas triggers growing it further; see `contentRange`. */
+const EXTEND_TRIGGER_PX = 1200;
+/** How much canvas one extension adds, comfortably past `EXTEND_TRIGGER_PX` so it does not immediately re-trigger. */
+const EXTEND_CHUNK_PX = 6000;
+
+/* ─── Label gutter ──────────────────────────────────────────────────────────
+ *
+ * One width for every label in the chart — course names, topic names, "All
+ * topics" — instead of each row sizing to its own text. Independent widths
+ * made the left edge of the canvas ragged and let a long name eat width no
+ * neighbouring row needed; one shared column reads as a real gutter and costs
+ * only as much space as the longest name actually on screen.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const GUTTER_MIN = 140;
+const GUTTER_MAX = 320;
+
+type LabelKind = "allTopics" | "course" | "topicWithDot" | "topicPlain";
+
+/** Everything around the text — chevrons, dots, padding — that the column also has to fit. */
+const LABEL_CHROME: Record<LabelKind, number> = {
+  allTopics: 56, // chevron + layers icon + paddings
+  course: 56, // chevron + colour dot + paddings
+  topicWithDot: 30, // colour dot + paddings, no chevron
+  topicPlain: 40, // the nested indent, no icon
+};
+
+const LABEL_WEIGHT: Record<LabelKind, number> = {
+  allTopics: 600,
+  course: 500,
+  topicWithDot: 400,
+  topicPlain: 400,
+};
+
+/**
+ * Text width via canvas, not a DOM measurement.
+ *
+ * A DOM measurement would be exact, but costs a layout pass per label on
+ * every render. `measureText` uses the same font metrics the browser lays the
+ * text out with and is cheap enough to run for every visible row every time.
+ */
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+function textWidth(text: string, weight: number): number {
+  if (measureCtx === undefined) {
+    measureCtx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+  }
+  // SSR, or a browser that refused a 2D context: a rough estimate beats a
+  // 0-width flash on first paint.
+  if (!measureCtx) return text.length * 7;
+  measureCtx.font = `${weight} 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif`;
+  return measureCtx.measureText(text).width;
+}
+
+/** The one width every label shares, sized to whichever visible name is longest. */
+function gutterWidth(labels: readonly { text: string; kind: LabelKind }[]): number {
+  const widest = labels.reduce(
+    (max, { text, kind }) => Math.max(max, LABEL_CHROME[kind] + textWidth(text, LABEL_WEIGHT[kind])),
+    0,
+  );
+  return Math.min(GUTTER_MAX, Math.max(GUTTER_MIN, Math.ceil(widest)));
+}
+
 
 /* ─── Modes ─────────────────────────────────────────────────────────────── */
 
@@ -154,6 +218,8 @@ type Chart = {
   edit: number;
   viewport: ViewportStore;
   centreOn: (date: IsoDate) => void;
+  /** The shared label-column width; see "Label gutter" above. */
+  gutter: number;
 };
 
 const ChartContext = createContext<Chart>({
@@ -162,6 +228,7 @@ const ChartContext = createContext<Chart>({
   edit: RIGHT,
   viewport: EMPTY_VIEWPORT_STORE,
   centreOn: () => {},
+  gutter: GUTTER_MIN,
 });
 
 /**
@@ -232,7 +299,25 @@ export function TimelineView({
   /** The date to re-centre on after a zoom change; see `changeZoom`. */
   const anchorRef = useRef<IsoDate | null>(null);
 
-  const range = timelineRange(courses, today);
+  // The canvas is a window onto an unbounded timeline, not a fixed span: a
+  // plan has no "first" or "last" day, only days nothing happens to be
+  // scheduled on yet. `contentRange` is just enough to fit what is actually
+  // there; `extraBefore`/`extraAfter` are scroll-driven padding, grown by
+  // `trackVisible` as the edges are approached so the scrollbar never becomes
+  // a hard wall with real content — or the labels gutter sitting over it —
+  // stuck just past it.
+  const contentRange = timelineRange(courses, today);
+  const [extraBefore, setExtraBefore] = useState(0);
+  const [extraAfter, setExtraAfter] = useState(0);
+  /** Days to add to `scrollLeft` once `extraBefore` takes effect, so growing the canvas backward does not visually shift it. */
+  const pendingShiftRef = useRef(0);
+
+  const range = useMemo(() => {
+    const start = addDays(contentRange.start, -extraBefore);
+    const end = addDays(contentRange.end, extraAfter);
+    return { start, end, days: differenceInDays(start, end) + 1 };
+  }, [contentRange.start, contentRange.end, extraBefore, extraAfter]);
+
   const width = range.days * PX_PER_DAY[zoom];
   const ticks = ticksFor(range.start, range.end, zoom);
   const bands = bandsFor(range.start, range.end, zoom);
@@ -247,7 +332,37 @@ export function TimelineView({
     const from = dateAt(element.scrollLeft, range.start, zoom);
     const to = dateAt(element.scrollLeft + element.clientWidth, range.start, zoom);
     viewport.setSnapshot({ from, to });
+
+    // Grown well before the edge is reached, and by enough that a moment's
+    // more scrolling cannot outrun it: `EXTEND_CHUNK_PX` clears the trigger by
+    // a wide margin, so one extension is enough until the next. Guarded on an
+    // actually-scrollable canvas, not just a mounted one — an element that has
+    // not been laid out yet reports a zero `scrollWidth`, which reads as "at
+    // both edges at once" and would extend on every render.
+    if (element.scrollWidth > element.clientWidth) {
+      const chunkDays = Math.ceil(EXTEND_CHUNK_PX / PX_PER_DAY[zoom]);
+      if (element.scrollLeft < EXTEND_TRIGGER_PX) {
+        pendingShiftRef.current += chunkDays * PX_PER_DAY[zoom];
+        setExtraBefore((days) => days + chunkDays);
+      }
+      if (element.scrollWidth - (element.scrollLeft + element.clientWidth) < EXTEND_TRIGGER_PX) {
+        setExtraAfter((days) => days + chunkDays);
+      }
+    }
   }, [range.start, viewport, zoom]);
+
+  // Extending the canvas backward moves every date to a larger x (the same
+  // date is now further from the new, earlier `start`). Left uncorrected,
+  // that reads as the chart lurching forward the instant it grows; shifting
+  // `scrollLeft` by the same amount before the browser paints holds the
+  // visible content still.
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (element && pendingShiftRef.current) {
+      element.scrollLeft += pendingShiftRef.current;
+      pendingShiftRef.current = 0;
+    }
+  }, [extraBefore]);
 
   // Opening on the far left of the canvas — weeks of finished work — made
   // "press Today" the first action of every visit. Do it for them, without the
@@ -303,9 +418,30 @@ export function TimelineView({
     },
     [range.start, zoom],
   );
+  // Independent of `everyTopic` below on purpose: that array is sorted for
+  // display, this only needs to know which names are on screen and open.
+  const gutter = useMemo(() => {
+    const labels: { text: string; kind: LabelKind }[] = [];
+    const perCourse = courses.map((course) => ({ course, topics: topicsForQuery(query, course) }));
+    if (perCourse.some(({ topics }) => topics.length > 0)) {
+      labels.push({ text: "All courses", kind: "allTopics" });
+    }
+    const allTopicsOpen = open[ALL_TOPICS] ?? true;
+    for (const { course, topics } of perCourse) {
+      labels.push({ text: course.name, kind: "course" });
+      if (allTopicsOpen) {
+        for (const topic of topics) labels.push({ text: topic.name, kind: "topicWithDot" });
+      }
+      if (open[course.id]) {
+        for (const topic of topics) labels.push({ text: topic.name, kind: "topicPlain" });
+      }
+    }
+    return gutterWidth(labels);
+  }, [courses, query, open]);
+
   const chart = useMemo<Chart>(
-    () => ({ scroller: scrollRef, ...buttonsFor(mode), viewport, centreOn }),
-    [centreOn, mode, viewport],
+    () => ({ scroller: scrollRef, ...buttonsFor(mode), viewport, centreOn, gutter }),
+    [centreOn, mode, viewport, gutter],
   );
 
   if (courses.length === 0) {
@@ -675,54 +811,50 @@ function AllTopicsLane({
 
   return (
     <section className="border-b border-separator">
-      <div className="relative flex items-center" style={{ height: LANE_HEIGHT }}>
-        <button
-          type="button"
-          onClick={onToggle}
-          onPointerDown={(event) => event.stopPropagation()}
-          aria-expanded={open}
-          className="material-inline sticky left-0 z-10 flex h-full items-center gap-1.5 rounded-r-control border-r border-separator/60 pr-3 pl-2 text-left hover:bg-fill"
-        >
-          <ChevronRight
-            aria-hidden="true"
-            className={clsx(
-              "size-3.5 shrink-0 text-tertiary transition-transform duration-150 ease-mac",
-              open && "rotate-90",
-            )}
-          />
-          <Layers aria-hidden="true" className="size-3 shrink-0 text-tertiary" />
-          <span className="text-callout font-semibold">All topics</span>
-          <span className="text-caption tabular-nums text-tertiary">{entries.length}</span>
-        </button>
-
-        {!open && span ? (
-          <span
-            style={{
-              left: xOf(span.start, range.start, zoom),
-              width: widthOf(span.start, span.end, zoom),
-            }}
-            className="pointer-events-none absolute top-1.5 h-4 rounded-chip bg-fill-strong"
-          />
-        ) : null}
-      </div>
-
-      {open ? (
-        <div className="pb-1">
-          {entries.map(({ course, topic }) => (
-            <TopicLane
-              key={`${course.id}:${topic.id}`}
-              course={course}
-              topic={topic}
-              range={range}
-              zoom={zoom}
-              today={today}
-              selected={topic.id === selectedId}
-              withCourse
-              onSelect={() => onSelectTopic(course, topic)}
+      <div className="relative">
+        <div className="relative" style={{ height: LANE_HEIGHT }}>
+          {!open && span ? (
+            <span
+              style={{
+                left: xOf(span.start, range.start, zoom),
+                width: widthOf(span.start, span.end, zoom),
+              }}
+              className="pointer-events-none absolute top-1.5 h-4 rounded-chip bg-fill-strong"
             />
-          ))}
+          ) : null}
         </div>
-      ) : null}
+
+        {open
+          ? entries.map(({ course, topic }) => (
+              <TopicLane
+                key={`${course.id}:${topic.id}`}
+                course={course}
+                topic={topic}
+                range={range}
+                zoom={zoom}
+                today={today}
+                selected={topic.id === selectedId}
+                onSelect={() => onSelectTopic(course, topic)}
+              />
+            ))
+          : null}
+        {/* The same breathing room the gutter card's rows carry below the last one. */}
+        {open && entries.length > 0 ? <div style={{ height: GROUP_GAP }} /> : null}
+
+        <GutterCard
+          open={open}
+          onToggle={onToggle}
+          icon={<Layers aria-hidden="true" className="size-3 shrink-0 text-tertiary" />}
+          name="All courses"
+          bold
+          trailing={<span className="shrink-0 text-caption tabular-nums text-tertiary">{entries.length}</span>}
+          rows={entries.map(({ course, topic }) => ({
+            key: `${course.id}:${topic.id}`,
+            name: topic.name,
+            dot: courseColorValue(topic.color || course.color),
+          }))}
+        />
+      </div>
     </section>
   );
 }
@@ -755,15 +887,123 @@ function CourseLane({
 
   return (
     <section className="border-b border-separator/60">
-      <div className="relative flex items-center" style={{ height: LANE_HEIGHT }}>
-        {/* The lane's label rides the horizontal scroll so it is readable
-            wherever the chart has been scrolled to — the alternative is a fixed
-            gutter, which costs a third of the canvas at Day zoom. */}
+      <div className="relative">
+        <div className="relative" style={{ height: LANE_HEIGHT }}>
+          {!open && span ? (
+            // The roll-up: one bar covering everything the course has scheduled,
+            // filled by the course's overall progress.
+            <span
+              style={{
+                left: xOf(span.start, range.start, zoom),
+                width: widthOf(span.start, span.end, zoom),
+                background: `color-mix(in srgb, ${courseColorValue(course.color)} 25%, transparent)`,
+              }}
+              className="pointer-events-none absolute top-1.5 h-4 rounded-chip"
+            >
+              <span
+                className="block h-full rounded-chip"
+                style={{
+                  width: `${(health?.progress.ratio ?? 0) * 100}%`,
+                  background: courseColorValue(course.color),
+                  opacity: 0.8,
+                }}
+              />
+            </span>
+          ) : null}
+        </div>
+
+        {open ? (
+          topics.length === 0 ? (
+            <p className="sticky left-0 max-w-md px-8 pb-2 text-callout text-tertiary">
+              This course has no topics yet. Add material in the outline before placing study blocks.
+            </p>
+          ) : (
+            <>
+              {topics.map((topic) => (
+                <TopicLane
+                  key={topic.id}
+                  course={course}
+                  topic={topic}
+                  range={range}
+                  zoom={zoom}
+                  today={today}
+                  selected={topic.id === selectedId}
+                  onSelect={() => onSelectTopic(topic)}
+                />
+              ))}
+              {/* The same breathing room the gutter card's rows carry below the last one. */}
+              <div style={{ height: GROUP_GAP }} />
+            </>
+          )
+        ) : null}
+
+        <GutterCard
+          open={open}
+          onToggle={onToggle}
+          icon={
+            <span
+              aria-hidden="true"
+              className="size-2 shrink-0 rounded-full"
+              style={{ background: courseColorValue(course.color) }}
+            />
+          }
+          name={course.name}
+          trailing={
+            health?.pace && !health.pace.onTrack ? <Badge tone="negative">Behind</Badge> : null
+          }
+          rows={topics.map((topic) => ({ key: topic.id, name: topic.name }))}
+        />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * One course, one element.
+ *
+ * The toggle button and its topic names used to be two separate pieces of
+ * chrome — a rounded header chip sitting above an independently rounded panel
+ * of rows — which looked like two things stacked rather than one thing that
+ * opens and closes. This is the single sticky shape both live in: one
+ * background, one border, rounded once on the right where the whole shape
+ * ends, growing and shrinking as `open` toggles the row list beneath the
+ * header rather than swapping between two elements.
+ */
+function GutterCard({
+  open,
+  onToggle,
+  icon,
+  name,
+  bold = false,
+  trailing,
+  rows,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  icon: React.ReactNode;
+  name: string;
+  /** "All courses" reads as a heading over the courses beneath it, not as one of them. */
+  bold?: boolean;
+  trailing?: React.ReactNode;
+  rows: readonly { key: string; name: string; dot?: string }[];
+}) {
+  const chart = useContext(ChartContext);
+  const height = LANE_HEIGHT + (open && rows.length > 0 ? rows.length * ROW_HEIGHT + GROUP_GAP : 0);
+
+  return (
+    // Above the today line (z-30): it is chrome sitting in front of the
+    // canvas, and a marker line drawn through it read as a bug, not a layer.
+    <div className="pointer-events-none absolute inset-0 z-40">
+      <div
+        style={{ width: chart.gutter, height }}
+        className="material-inline pointer-events-auto sticky left-0 flex flex-col overflow-hidden rounded-r-control border-r border-separator/60"
+      >
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          className="material-inline sticky left-0 z-10 flex h-full items-center gap-1.5 rounded-r-control border-r border-separator/60 pr-3 pl-2 text-left hover:bg-fill"
+          style={{ height: LANE_HEIGHT }}
+          className="flex shrink-0 items-center gap-1.5 pr-3 pl-2 text-left hover:bg-fill"
         >
           <ChevronRight
             aria-hidden="true"
@@ -772,65 +1012,47 @@ function CourseLane({
               open && "rotate-90",
             )}
           />
-          <span
-            aria-hidden="true"
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: courseColorValue(course.color) }}
-          />
-          <span className="max-w-40 truncate text-callout font-medium">{course.name}</span>
-          {health?.pace && !health.pace.onTrack ? (
-            <Badge tone="negative">
-              Behind
-            </Badge>
-          ) : null}
+          {icon}
+          <span className={clsx("min-w-0 flex-1 truncate text-callout", bold ? "font-semibold" : "font-medium")}>
+            {name}
+          </span>
+          {trailing}
         </button>
 
-        {!open && span ? (
-          // The roll-up: one bar covering everything the course has scheduled,
-          // filled by the course's overall progress.
-          <span
-            style={{
-              left: xOf(span.start, range.start, zoom),
-              width: widthOf(span.start, span.end, zoom),
-              background: `color-mix(in srgb, ${courseColorValue(course.color)} 25%, transparent)`,
+        {open && rows.length > 0 ? (
+          <div
+            // The rows are chrome, not canvas: dragging here moves the chart,
+            // the same as dragging any other piece of the gutter in view mode,
+            // rather than starting an edit gesture on whatever date happens to
+            // sit beneath it.
+            onPointerDown={(event) => {
+              if (event.button === chart.pan) startPan(event, chart);
             }}
-            className="pointer-events-none absolute top-1.5 h-4 rounded-chip"
+            className="flex flex-col pb-1"
           >
-            <span
-              className="block h-full rounded-chip"
-              style={{
-                width: `${(health?.progress.ratio ?? 0) * 100}%`,
-                background: courseColorValue(course.color),
-                opacity: 0.8,
-              }}
-            />
-          </span>
-        ) : null}
-      </div>
-
-      {open ? (
-        topics.length === 0 ? (
-          <p className="sticky left-0 max-w-md px-8 pb-2 text-callout text-tertiary">
-            This course has no topics yet. Add material in the outline before placing study blocks.
-          </p>
-        ) : (
-          <div className="pb-1">
-            {topics.map((topic) => (
-              <TopicLane
-                key={topic.id}
-                course={course}
-                topic={topic}
-                range={range}
-                zoom={zoom}
-                today={today}
-                selected={topic.id === selectedId}
-                onSelect={() => onSelectTopic(topic)}
-              />
+            {rows.map((row) => (
+              <div
+                key={row.key}
+                style={{ height: ROW_HEIGHT }}
+                className={clsx(
+                  "flex shrink-0 items-center gap-1.5 pr-2 text-callout text-secondary",
+                  row.dot ? "pl-2" : "pl-8",
+                )}
+              >
+                {row.dot ? (
+                  <span
+                    aria-hidden="true"
+                    className="size-1.5 shrink-0 rounded-full"
+                    style={{ background: row.dot }}
+                  />
+                ) : null}
+                <span className="min-w-0 flex-1 truncate">{row.name}</span>
+              </div>
             ))}
           </div>
-        )
-      ) : null}
-    </section>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -841,7 +1063,6 @@ function TopicLane({
   zoom,
   today,
   selected,
-  withCourse = false,
   onSelect,
 }: {
   course: Course;
@@ -850,8 +1071,6 @@ function TopicLane({
   zoom: Zoom;
   today: IsoDate;
   selected: boolean;
-  /** Name the course too — in the combined lane a bare topic name is ambiguous. */
-  withCourse?: boolean;
   onSelect: () => void;
 }) {
   const chart = useContext(ChartContext);
@@ -924,25 +1143,8 @@ function TopicLane({
       style={{ height: ROW_HEIGHT }}
       title={`Drag to place a study block for ${topic.name}`}
     >
-      {/* Centred on the row rather than floated at its top, so it lines up with
-          the bar it names; `text-callout` on `text-secondary` rather than a
-          10px tertiary, which was too faint to read against a busy canvas. */}
-      <span
-        // The label is not canvas: an edit gesture starting on it would place a
-        // block at whatever date happens to be underneath. Panning still passes
-        // through, because the label scrolls with everything else.
-        onPointerDown={(event) => {
-          if (event.button === chart.edit) event.stopPropagation();
-        }}
-        // A right edge on the label, so a bar passing under it reads as passing
-        // *under something* rather than as a bar that has been cut in half.
-        className="material-inline sticky left-0 z-20 float-left flex h-full max-w-44 cursor-default items-center truncate rounded-r-chip border-r border-separator/60 pr-2 pl-8 text-callout text-secondary"
-      >
-        {withCourse ? (
-          <span className="mr-1 shrink-0 truncate text-tertiary">{course.name} ·</span>
-        ) : null}
-        {topic.name}
-      </span>
+      {/* The row's name now lives in the group's single `TopicLabelPanel`,
+          drawn once above every row rather than repeated per row here. */}
       <OffscreenMarkers topic={topic} />
       {draft ? (
         <span
@@ -1093,6 +1295,7 @@ function Marker({
   topic: string;
   onGo: () => void;
 }) {
+  const chart = useContext(ChartContext);
   const Chevron = side === "left" ? ChevronLeft : ChevronRight;
   const where = side === "left" ? "earlier" : "later";
 
@@ -1105,12 +1308,14 @@ function Marker({
       onClick={onGo}
       title={`${count} ${where} block${count === 1 ? "" : "s"} for ${topic} — go to ${shortDate(date)}`}
       aria-label={`${count} ${where} block${count === 1 ? "" : "s"} for ${topic}, go to ${shortDate(date)}`}
+      // Clear of the shared label column on the left, whatever width it
+      // currently is; flush with the right edge of the scrollport on the
+      // other side, which tailwind alone can express.
+      style={side === "left" ? { left: chart.gutter + 4 } : undefined}
       className={clsx(
         "material-inline sticky top-1 z-30 flex h-4 items-center gap-0.5 rounded-chip px-1 text-caption tabular-nums text-secondary",
         "hover:text-label",
-        // Clear of the sticky label column on the left; flush with the right
-        // edge of the scrollport on the other side.
-        side === "left" ? "float-left left-44 mr-1" : "float-right right-1",
+        side === "left" ? "float-left" : "float-right right-1",
       )}
     >
       {side === "left" ? <Chevron aria-hidden="true" className="size-3" /> : null}
