@@ -114,8 +114,6 @@ export type Plan = {
   id: EntityId;
   name: string;
   notes: string;
-  startDate?: IsoDate;
-  endDate?: IsoDate;
   courses: Course[];
 };
 

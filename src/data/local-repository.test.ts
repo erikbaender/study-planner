@@ -146,13 +146,6 @@ describe("persistence", () => {
 });
 
 describe("plans", () => {
-  it("rejects a plan whose range runs backwards", async () => {
-    const { repository } = setup();
-    await expect(
-      repository.createPlan({ name: "Broken", startDate: "2026-09-01", endDate: "2026-08-01" }),
-    ).rejects.toThrow("End date cannot be before start date");
-  });
-
   it("takes the study log down with the plan", async () => {
     const { repository } = setup();
     const { planId, courseId } = await withCourse(repository);

@@ -61,8 +61,6 @@ const courseSchema = z.object({
 const planSchema = z.object({
   name: z.string().min(1),
   notes: z.string().default(""),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
   courses: z.array(courseSchema).default([]),
 });
 
@@ -106,8 +104,6 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
     plans: snapshot.plans.map((plan) => ({
       name: plan.name,
       notes: plan.notes,
-      startDate: plan.startDate,
-      endDate: plan.endDate,
       courses: plan.courses.map((course) => {
         const namesById = new Map(course.topics.map((topic) => [topic.id, topic.name]));
         return {
@@ -217,8 +213,6 @@ export function toPlans(
         id: planId,
         name: planInput.name,
         notes: planInput.notes,
-        startDate: planInput.startDate,
-        endDate: planInput.endDate,
         courses: planInput.courses.map((courseInput, courseIndex) => {
           const courseId = createId("course");
           const topicIdsByName = new Map<string, string>();

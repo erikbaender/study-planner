@@ -227,19 +227,14 @@ export const createPlan = mutation({
   args: {
     name: v.string(),
     notes: v.optional(v.string()),
-    startDate: v.optional(v.string()),
-    endDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    if (args.startDate) assertOrderedDates(args.startDate, args.endDate);
     const now = Date.now();
     return await ctx.db.insert("plans", {
       ownerId: userId,
       name: args.name,
       notes: args.notes ?? "",
-      startDate: args.startDate,
-      endDate: args.endDate,
       createdAt: now,
       updatedAt: now,
     });
@@ -251,18 +246,13 @@ export const updatePlan = mutation({
     planId: v.id("plans"),
     name: v.string(),
     notes: v.string(),
-    startDate: v.optional(v.string()),
-    endDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertPlanOwner(ctx, args.planId, userId);
-    if (args.startDate) assertOrderedDates(args.startDate, args.endDate);
     await ctx.db.patch(args.planId, {
       name: args.name,
       notes: args.notes,
-      startDate: args.startDate,
-      endDate: args.endDate,
       updatedAt: Date.now(),
     });
   },
@@ -831,8 +821,6 @@ const importCourse = v.object({
 const importPlan = v.object({
   name: v.string(),
   notes: v.string(),
-  startDate: v.optional(v.string()),
-  endDate: v.optional(v.string()),
   courses: v.array(importCourse),
 });
 
@@ -916,8 +904,6 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
       ownerId: userId,
       name: planInput.name,
       notes: planInput.notes,
-      startDate: planInput.startDate,
-      endDate: planInput.endDate,
       createdAt: now,
       updatedAt: now,
     });

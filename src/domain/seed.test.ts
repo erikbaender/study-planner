@@ -54,7 +54,6 @@ describe("generateSeedData", () => {
     const shifted = generateSeedData({ today: "2027-01-15" });
     const examDates = shifted.plan.courses.map((course) => course.exams[0].startDate);
     expect(examDates.every((date) => date > "2027-01-15")).toBe(true);
-    expect(shifted.plan.startDate).toBe("2026-11-16");
   });
 
   it("gives provisional exams a window and confirmed ones a single day", () => {

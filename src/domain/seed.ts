@@ -321,8 +321,6 @@ export function generateSeedData(options: SeedOptions): SeedData {
       id: planId,
       name: "Winter semester",
       notes: "Seeded development data.",
-      startDate: addDays(today, -60),
-      endDate: addDays(today, 70),
       courses,
     },
     studyLog,

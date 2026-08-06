@@ -206,8 +206,6 @@ export function generateMhhSampleData(): SeedData {
       id: planId,
       name: "Lernplan",
       notes: "Sample captured from GitHub Project ‘Lernplan’ (erikbaender/mhh).",
-      startDate: "2026-03-16",
-      endDate: "2026-08-14",
       courses,
     },
     studyLog: [],
@@ -328,8 +326,6 @@ export function generateMhhShowcaseData(today: IsoDate): SeedData {
       name: "Lernplan · Showcase",
       notes:
         "A date-relative demonstration scenario using the courses and topics from GitHub Project ‘Lernplan’.",
-      startDate: addDays(today, -70),
-      endDate: addDays(today, 78),
       courses,
     },
     studyLog: showcaseStudyLog(courses, profiles, today, preferences),

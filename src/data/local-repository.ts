@@ -293,13 +293,10 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     createPlan(input: PlanInput) {
       return commitWithId((snapshot) => {
-        if (input.startDate && input.endDate) requireOrderedDates(input.startDate, input.endDate);
         const plan: Plan = {
           id: createId("plan"),
           name: input.name,
           notes: input.notes ?? "",
-          startDate: input.startDate,
-          endDate: input.endDate,
           courses: [],
         };
         return [withPlans(snapshot, [...snapshot.plans, plan]), plan.id];
@@ -308,15 +305,12 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     async updatePlan(planId, input) {
       await commit((snapshot) => {
-        if (input.startDate && input.endDate) requireOrderedDates(input.startDate, input.endDate);
         return withPlans(
           snapshot,
           mapPlan(snapshot, planId, (plan) => ({
             ...plan,
             name: input.name,
             notes: input.notes ?? "",
-            startDate: input.startDate,
-            endDate: input.endDate,
           })),
         );
       });
