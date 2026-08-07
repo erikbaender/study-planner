@@ -347,6 +347,8 @@ export function AppShell() {
               query={workspace.query}
               selectedId={workspace.selection?.id ?? null}
               onSelectTopic={selectTopic}
+
+              onClearSelection={() => workspace.select(null)}
               onGoToOutline={() => workspace.setView("outline")}
             />
           ) : (

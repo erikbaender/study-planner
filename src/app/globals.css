@@ -235,16 +235,45 @@ span:has(> .topic-progress-thumb) {
   initial-value: 14px;
 }
 
-.timeline-canvas {
-  /* The canvas' own `width` is a `calc()` of the same property, so it follows
-     without a transition of its own — two easings on one number would fight. */
-  transition: --timeline-day-width var(--topic-motion-duration) var(--topic-motion-curve);
+/**
+ * A course opening: the lane's rows and the gutter card's rows, as one height.
+ *
+ * `clip` rather than `hidden`, which would make this a scroll container — and
+ * the off-screen markers inside it are `position: sticky` against the chart's
+ * *own* scrollport. Under `hidden` they stuck to a box that never scrolls,
+ * which put every one of them off the side of the canvas.
+ */
+.timeline-disclosure {
+  overflow: clip;
+  /* Half the shared duration. Opening a course is a disclosure, not a
+     transition between two views: at the full length it reads as the chart
+     thinking about it. */
+  transition: height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
 }
 
-/** A course opening: the lane's rows and the gutter card's rows, as one height. */
-.timeline-disclosure {
-  overflow: hidden;
-  transition: height var(--topic-motion-duration) var(--topic-motion-curve);
+/* The thumb travels; the labels only change colour under it. */
+.segmented-thumb {
+  transition:
+    transform calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
+    width calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.segmented-item {
+  transition: color calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/**
+ * Segmented controls in the chart's toolbar, on the chart's own curve.
+ *
+ * The mode control is not only an input here: holding the right button moves
+ * its selection, so the animation is how the chart says which mode the next
+ * click is in.
+ */
+.timeline-segments button {
+  transition:
+    background-color var(--topic-motion-duration) var(--topic-motion-curve),
+    color var(--topic-motion-duration) var(--topic-motion-curve),
+    box-shadow var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
 /** Everything that changes colour rather than position: hover, selection, fades. */
@@ -265,18 +294,32 @@ span:has(> .topic-progress-thumb) {
  * says which course you are about to place work in, which is the question a
  * combined lane of ten courses actually raises.
  */
+.timeline-lane,
+.timeline-row {
+  /* Deliberately not the shared duration: a hover has to arrive with the
+     pointer. The row it lights up changes as fast as the cursor crosses rows,
+     and anything slower reads as the chart lagging behind the mouse. */
+  transition: background-color 90ms var(--topic-motion-curve);
+}
+
 .timeline-lane:hover {
   background-color: color-mix(in srgb, var(--timeline-lane-tint) 16%, transparent);
 }
 
-@keyframes timeline-marker-in {
-  from {
-    opacity: 0;
-  }
+/**
+ * The off-screen markers fade both ways.
+ *
+ * Kept mounted and hidden rather than unmounted, because an element that has
+ * left the DOM cannot animate its own departure — the entrance was animated and
+ * the exit was a cut, which is exactly the asymmetry that reads as a bug.
+ */
+.timeline-marker {
+  transition: opacity var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.timeline-marker {
-  animation: timeline-marker-in var(--topic-motion-duration) var(--topic-motion-curve);
+.timeline-marker[data-visible="false"] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ─── Timeline cursors ──────────────────────────────────────────────────────

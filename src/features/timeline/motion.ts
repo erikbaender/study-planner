@@ -81,23 +81,27 @@ export function prefersReducedMotion(): boolean {
 const running = new WeakMap<Element, number>();
 
 /**
- * Scroll to `left`, on the app's curve.
+ * Run `frame` from 0 to 1 on the app's curve.
  *
- * Deliberately not clamped to the current `scrollWidth`: during a zoom the
- * canvas is still growing, and the caller knows the width it is growing to.
+ * One loop rather than one per animated property, because a zoom moves the
+ * scroll offset *and* the width of a day and the two have to agree exactly on
+ * every frame — a CSS transition running alongside this drifts by however many
+ * frames the layout it triggers happens to cost, and the date under the pointer
+ * slides while the chart scales.
  */
-export function animateScrollLeft(element: HTMLElement, left: number): void {
+export function animate(
+  element: HTMLElement,
+  frame: (progress: number) => void,
+  done?: () => void,
+): void {
   const previous = running.get(element);
   if (previous !== undefined) cancelAnimationFrame(previous);
   running.delete(element);
 
-  const from = element.scrollLeft;
-  const to = Math.max(0, left);
-  if (Math.abs(to - from) < 1) return;
-
   const duration = motionDuration(element);
   if (prefersReducedMotion() || typeof requestAnimationFrame !== "function") {
-    element.scrollLeft = to;
+    frame(1);
+    done?.();
     return;
   }
 
@@ -105,14 +109,33 @@ export function animateScrollLeft(element: HTMLElement, left: number): void {
   const started = performance.now();
   const step = (now: number) => {
     const elapsed = Math.min(1, (now - started) / duration);
-    element.scrollLeft = from + (to - from) * ease(elapsed);
-    if (elapsed < 1) running.set(element, requestAnimationFrame(step));
-    else running.delete(element);
+    frame(ease(elapsed));
+    if (elapsed < 1) {
+      running.set(element, requestAnimationFrame(step));
+    } else {
+      running.delete(element);
+      done?.();
+    }
   };
   running.set(element, requestAnimationFrame(step));
 }
 
-/** True while `animateScrollLeft` owns this scroller's offset. */
+/**
+ * Scroll to `left`, on the app's curve.
+ *
+ * Deliberately not clamped to the current `scrollWidth`: during a zoom the
+ * canvas is still growing, and the caller knows the width it is growing to.
+ */
+export function animateScrollLeft(element: HTMLElement, left: number, done?: () => void): void {
+  const from = element.scrollLeft;
+  const to = Math.max(0, left);
+  if (Math.abs(to - from) < 1) return;
+  animate(element, (progress) => {
+    element.scrollLeft = from + (to - from) * progress;
+  }, done);
+}
+
+/** True while an animation here owns this scroller's offset. */
 export function isScrollAnimating(element: HTMLElement): boolean {
   return running.has(element);
 }

@@ -101,6 +101,14 @@ const EXTEND_TRIGGER_PX = 1200;
 const EXTEND_CHUNK_PX = 6000;
 /** Breathing room left between a revealed bar and the edge it was hiding past. */
 const REVEAL_PADDING_PX = 24;
+/**
+ * Where a date lands when the chart is asked to go somewhere: a third in from
+ * the left, not centred. What is coming matters more than what is behind, so
+ * the larger half of the view is given to it — and Today, a jump to an
+ * off-screen block and a zoom all use the same point, so the chart always
+ * settles the same way.
+ */
+const ANCHOR_FRACTION = 3;
 /** The height the "no topics yet" line occupies while a course opens onto it. */
 const EMPTY_COURSE_HEIGHT = 44;
 
@@ -184,6 +192,20 @@ const MODE_LABELS: Record<Mode, string> = { view: "View", edit: "Edit" };
  */
 const LEFT = 0;
 const RIGHT = 2;
+/** Bits in `PointerEvent.buttons`, which are not the same numbers as `button`. */
+const LEFT_BUTTON_MASK = 1;
+const RIGHT_BUTTON_MASK = 2;
+
+/**
+ * Whether a gesture is in flight, for the bridge below.
+ *
+ * Module-level rather than a ref because every gesture in the chart has to
+ * report into the same place, and there is one chart.
+ */
+let gestureActive = false;
+
+/** Whether the current gesture was recovered by the bridge in `TimelineView`. */
+let bridged = false;
 
 /** What the chart is doing *now*: the mode, inverted while the right button is held. */
 function effectiveMode(mode: Mode, editHeld: boolean): Mode {
@@ -235,11 +257,13 @@ const EMPTY_VIEWPORT_STORE: ViewportStore = {
 
 type Chart = {
   scroller: React.RefObject<HTMLDivElement | null>;
-  /** What pressing `button` means right now. `null` for a button that only modifies. */
-  gestureFor: (button: number) => Gesture | null;
+  /** What this press means. `null` for a button that only modifies. */
+  gestureFor: (event: { button: number; buttons: number }) => Gesture | null;
   viewport: ViewportStore;
   /** Bring a span just inside the given edge of the scrollport, animated. */
   reveal: (span: Span, side: "left" | "right") => void;
+  /** A tap on canvas rather than on anything in it: nothing is selected now. */
+  clearSelection: () => void;
   /** The shared label-column width; see "Label gutter" above. */
   gutter: number;
 };
@@ -249,6 +273,7 @@ const ChartContext = createContext<Chart>({
   gestureFor: () => null,
   viewport: EMPTY_VIEWPORT_STORE,
   reveal: () => {},
+  clearSelection: () => {},
   gutter: GUTTER_MIN,
 });
 
@@ -273,6 +298,7 @@ function startPan(event: React.PointerEvent, chart: Chart, onTap?: () => void) {
   const left = element.scrollLeft;
   const top = element.scrollTop;
   let panning = false;
+  gestureActive = true;
 
   const move = (pointer: PointerEvent) => {
     const deltaX = pointer.clientX - originX;
@@ -296,6 +322,7 @@ function startPan(event: React.PointerEvent, chart: Chart, onTap?: () => void) {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
     delete element.dataset.timelinePanning;
+    gestureActive = false;
     if (!panning) onTap?.();
   };
 
@@ -310,6 +337,7 @@ export function TimelineView({
   query = "",
   selectedId,
   onSelectTopic,
+  onClearSelection,
   onGoToOutline,
 }: {
   courses: readonly Course[];
@@ -318,6 +346,8 @@ export function TimelineView({
   query?: string;
   selectedId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
+  /** Selection is a mode you can leave: see `selectTopic` below. */
+  onClearSelection?: () => void;
   onGoToOutline: () => void;
 }) {
   const [zoom, setZoom] = useState<Zoom>("week");
@@ -325,46 +355,31 @@ export function TimelineView({
   const [open, setOpen] = useState<Record<string, boolean>>({ [ALL_TOPICS]: true });
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport] = useState(createViewportStore);
-  /** The date to re-centre on after a zoom change; see `changeZoom`. */
+  /** The date to re-anchor on after a zoom change; see `changeZoom`. */
   const anchorRef = useRef<IsoDate | null>(null);
 
-  // The mode the chart is *currently* in — the selected one, inverted while the
-  // right button is held — lives in a ref and a data attribute rather than in
-  // state. Every consequence of it is a cursor, which CSS can switch off one
-  // attribute, and pressing a mouse button is not worth reconciling 344 lanes.
-  const editHeldRef = useRef(false);
-  const modeRef = useRef<Mode>(mode);
-
-  const applyMode = useCallback(() => {
-    const element = scrollRef.current;
-    if (element) {
-      element.dataset.timelineMode = effectiveMode(modeRef.current, editHeldRef.current);
-    }
-  }, []);
-
-  // Before paint, so the cursor is never a frame behind the control that
-  // changed it, and before any pointer handler can read `modeRef`.
-  useLayoutEffect(() => {
-    modeRef.current = mode;
-    applyMode();
-  }, [applyMode, mode]);
-
-  const holdEdit = useCallback(
-    (held: boolean) => {
-      if (editHeldRef.current === held) return;
-      editHeldRef.current = held;
-      applyMode();
-    },
-    [applyMode],
-  );
+  // Held, the right button inverts the mode. It is state rather than a ref
+  // because the mode control is part of the answer: its selection moves to Edit
+  // while the button is down, so the chart says what the next click will do
+  // rather than leaving you to remember which button you are holding.
+  const [editHeld, setEditHeld] = useState(false);
+  const active = effectiveMode(mode, editHeld);
 
   // Released anywhere, not only over the chart — and dropped on a lost window,
   // which is the one way a held button can end without an event of its own.
   useEffect(() => {
+    if (!editHeld) return;
     const onPointerUp = (event: PointerEvent) => {
-      if (event.button === RIGHT) holdEdit(false);
+      if (event.button !== RIGHT) return;
+      setEditHeld(false);
+      // A gesture recovered from `buttons` has no release of its own to wait
+      // for if the pointer never moves again — end it with the modifier.
+      if (bridged) {
+        bridged = false;
+        window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: LEFT }));
+      }
     };
-    const onLost = () => holdEdit(false);
+    const onLost = () => setEditHeld(false);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onLost);
     window.addEventListener("blur", onLost);
@@ -373,16 +388,27 @@ export function TimelineView({
       window.removeEventListener("pointercancel", onLost);
       window.removeEventListener("blur", onLost);
     };
-  }, [holdEdit]);
+  }, [editHeld]);
 
+  /**
+   * What a press means, decided from the press itself.
+   *
+   * `buttons` is the state of *every* button at the instant of the event, so a
+   * left press made while the right one is held arrives already carrying the
+   * modifier. Reading it here rather than from state is what makes this
+   * correct no matter what happened to the press that set the modifier — which
+   * is a real hazard with the right button, whose press can be consumed by the
+   * platform's own menu handling before any listener of ours sees it.
+   */
   const gestureFor = useCallback(
-    (button: number): Gesture | null => {
+    (event: { button: number; buttons: number }): Gesture | null => {
       // The right button only ever means "the other mode"; it performs nothing,
       // so a press of it can never move a bar you were about to read.
-      if (button !== LEFT) return null;
-      return effectiveMode(modeRef.current, editHeldRef.current) === "edit" ? "edit" : "pan";
+      if (event.button !== LEFT) return null;
+      const held = (event.buttons & RIGHT_BUTTON_MASK) !== 0;
+      return effectiveMode(mode, held) === "edit" ? "edit" : "pan";
     },
-    [],
+    [mode],
   );
 
   // The canvas is a window onto an unbounded timeline, not a fixed span: a
@@ -408,13 +434,17 @@ export function TimelineView({
   const ticks = ticksFor(range.start, range.end, zoom);
   const bands = bandsFor(range.start, range.end, zoom);
 
-  // Today a third of the way in, not centred: what is coming matters more than
-  // what is behind, so the larger half of the view is given to it.
-  const todayOffset = (client: number) => xOf(today, range.start, zoom) - client / 3;
+  const todayOffset = (client: number) =>
+    xOf(today, range.start, zoom) - client / ANCHOR_FRACTION;
 
   const trackVisible = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
+    // Nothing while an animation owns the offset. Recomputing every lane's
+    // off-screen markers on each frame of a zoom is most of what made one
+    // expensive, and the answer is stale for 240ms rather than wrong: the
+    // animation runs this once more when it lands.
+    if (isScrollAnimating(element)) return;
     const from = dateAt(element.scrollLeft, range.start, zoom);
     const to = dateAt(element.scrollLeft + element.clientWidth, range.start, zoom);
     viewport.setSnapshot({ from, to });
@@ -425,10 +455,7 @@ export function TimelineView({
     // actually-scrollable canvas, not just a mounted one — an element that has
     // not been laid out yet reports a zero `scrollWidth`, which reads as "at
     // both edges at once" and would extend on every render.
-    // Never while an animated scroll owns the offset: growing the canvas
-    // backward corrects `scrollLeft` by hand, and the two would take turns
-    // writing it.
-    if (element.scrollWidth > element.clientWidth && !isScrollAnimating(element)) {
+    if (element.scrollWidth > element.clientWidth) {
       const chunkDays = Math.ceil(EXTEND_CHUNK_PX / PX_PER_DAY[zoom]);
       if (element.scrollLeft < EXTEND_TRIGGER_PX) {
         pendingShiftRef.current += chunkDays * PX_PER_DAY[zoom];
@@ -469,17 +496,23 @@ export function TimelineView({
   // months from where you were looking — and it arrived in one frame, with no
   // way to see that the scale rather than the plan had changed.
   //
-  // The day width itself animates in CSS (`--timeline-day-width`, transitioned
-  // on `.timeline-canvas`). Only the scroll offset has to be animated here, and
-  // on the same curve: both the offset and the width are linear in the day
-  // width, so identical easing holds the date under the middle of the viewport
-  // exactly still while everything around it grows.
+  // Not animated, deliberately.
+  //
+  // Every position in the chart is a `calc()` off the width of a day, so
+  // interpolating that width animates the whole chart at once — and asks the
+  // browser to re-lay-out several thousand absolutely positioned elements on
+  // every frame of it. Both implementations of that (a CSS transition on the
+  // custom property, then one rAF loop driving the width and the scroll offset
+  // together) were janky on a real semester, and a zoom that stutters is worse
+  // than one that simply arrives. The scale changes in one frame; what is held
+  // constant is the date under the middle of the viewport, which is what makes
+  // the new scale legible without hunting for where you were.
   useLayoutEffect(() => {
     const element = scrollRef.current;
     const anchor = anchorRef.current;
     anchorRef.current = null;
     if (!element || !anchor) return;
-    animateScrollLeft(element, xOf(anchor, range.start, zoom) - element.clientWidth / 2);
+    element.scrollLeft = xOf(anchor, range.start, zoom) - element.clientWidth / 2;
     trackVisible();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom]);
@@ -542,14 +575,85 @@ export function TimelineView({
         side === "left"
           ? from - gutter - REVEAL_PADDING_PX
           : to + REVEAL_PADDING_PX - element.clientWidth;
-      animateScrollLeft(element, Math.min(target, Math.max(0, width - element.clientWidth)));
+      // `trackVisible` on arrival, not on the way: the marker you just used is
+      // only stale until the scroll lands, and it used to stay on screen until
+      // the chart was dragged by hand because nothing recomputed it.
+      animateScrollLeft(
+        element,
+        Math.min(target, Math.max(0, width - element.clientWidth)),
+        trackVisible,
+      );
     },
-    [gutter, range.start, width, zoom],
+    [gutter, range.start, trackVisible, width, zoom],
+  );
+
+  /**
+   * The press the browser will not deliver.
+   *
+   * Chromium on Linux treats a held right button as a context menu in progress
+   * and swallows every mouse press until it is released — so the left click
+   * that the modifier is *for* never reaches the page at all. Cancelling
+   * `contextmenu` stops the menu appearing; it does not give the press back.
+   *
+   * Pointer *moves* are still delivered, and each one carries `buttons`: the
+   * state of every button at that moment. So the press is recovered from the
+   * first move that reports the left button down, and replayed as a real
+   * `pointerdown` on whatever is under the pointer — after which every handler
+   * in the chart behaves exactly as it does when the browser cooperates. The
+   * release is recovered the same way. Where the press *is* delivered, the
+   * gesture is already running by then and this does nothing.
+   */
+
+  const bridgeHeldPress = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const held = (event.buttons & RIGHT_BUTTON_MASK) !== 0;
+    const pressed = (event.buttons & LEFT_BUTTON_MASK) !== 0;
+    setEditHeld(held);
+    if (!(event.target instanceof Element)) return;
+
+    if (held && pressed && !gestureActive && !bridged) {
+      bridged = true;
+      event.target.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          button: LEFT,
+          buttons: event.buttons,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          pointerId: event.pointerId,
+          pointerType: "mouse",
+        }),
+      );
+    } else if (bridged && !pressed) {
+      bridged = false;
+      window.dispatchEvent(
+        new PointerEvent("pointerup", { bubbles: true, button: LEFT, buttons: event.buttons }),
+      );
+    }
+  }, []);
+
+  const clearSelection = useCallback(() => onClearSelection?.(), [onClearSelection]);
+
+  /**
+   * Selecting is a toggle.
+   *
+   * The inspector is a mode, and every way into it here — a bar, a label — is
+   * also the way out of it, because there was none: once something was
+   * selected the only way to see the plan without it was to select something
+   * else. A tap on empty canvas does the same, which is the gesture people try
+   * first.
+   */
+  const selectTopic = useCallback(
+    (course: Course, topic: Topic) => {
+      if (topic.id === selectedId) clearSelection();
+      else onSelectTopic(course, topic);
+    },
+    [clearSelection, onSelectTopic, selectedId],
   );
 
   const chart = useMemo<Chart>(
-    () => ({ scroller: scrollRef, gestureFor, viewport, reveal, gutter }),
-    [gestureFor, reveal, viewport, gutter],
+    () => ({ scroller: scrollRef, gestureFor, viewport, reveal, clearSelection, gutter }),
+    [clearSelection, gestureFor, reveal, viewport, gutter],
   );
 
   if (courses.length === 0) {
@@ -584,7 +688,7 @@ export function TimelineView({
   const scrollToToday = () => {
     const element = scrollRef.current;
     if (!element) return;
-    animateScrollLeft(element, todayOffset(element.clientWidth));
+    animateScrollLeft(element, todayOffset(element.clientWidth), trackVisible);
   };
 
   return (
@@ -599,19 +703,24 @@ export function TimelineView({
         <SegmentedControl<Zoom>
           size="sm"
           label="Zoom"
+          className="timeline-segments"
           value={zoom}
           onValueChange={changeZoom}
           segments={ZOOMS.map((candidate) => ({ value: candidate, label: ZOOM_LABELS[candidate] }))}
         />
+        {/* Shows the mode that is in force, not the one that was chosen: while
+            the right button is held the selection moves, and moves back when it
+            is let go. */}
         <SegmentedControl<Mode>
           size="sm"
           label="Mode"
-          value={mode}
+          className="timeline-segments"
+          value={active}
           onValueChange={setMode}
           segments={MODES.map((candidate) => ({ value: candidate, label: MODE_LABELS[candidate] }))}
         />
         <span className="ml-auto text-callout text-tertiary">
-          {mode === "view"
+          {active === "view"
             ? "Drag to move around the chart. Hold the right button to edit."
             : "Drag a bar to move it, drag its edge to resize. Hold the right button to move around."}
         </span>
@@ -621,20 +730,28 @@ export function TimelineView({
       <ChartContext.Provider value={chart}>
       <div
         ref={scrollRef}
+        data-timeline-mode={active}
         // The right button is a modifier here, so the browser's own menu would
         // only ever interrupt the gesture it is modifying.
         onContextMenu={(event) => event.preventDefault()}
         onScroll={trackVisible}
-        onPointerDown={(event) => {
-          if (event.button === RIGHT) {
-            // No gesture of its own: it changes what the left button means, and
-            // `preventDefault` keeps the press from starting a selection.
-            event.preventDefault();
-            holdEdit(true);
-            return;
-          }
-          if (chart.gestureFor(event.button) === "pan") startPan(event, chart);
+        // Captured rather than bubbled: a bar or a lane under the pointer
+        // handles its own press first, and the modifier has to be in force
+        // before whatever the *next* press lands on asks what it means.
+        onPointerDownCapture={(event) => {
+          // Read from `buttons`, the state of every button at this instant,
+          // rather than from `button`, the one that just changed: a press of
+          // the left button while the right is held has to arrive already
+          // knowing the modifier is down, whatever happened to the press that
+          // set it. This handler is on the capture phase for the same reason —
+          // the bar or lane the press lands on asks what it means afterwards.
+          setEditHeld((event.buttons & RIGHT_BUTTON_MASK) !== 0);
+          if (event.button === RIGHT) event.preventDefault();
         }}
+        onPointerDown={(event) => {
+          if (chart.gestureFor(event) === "pan") startPan(event, chart, chart.clearSelection);
+        }}
+        onPointerMove={bridgeHeldPress}
         className="min-h-0 flex-1 overflow-auto bg-content"
       >
         <div
@@ -665,7 +782,7 @@ export function TimelineView({
               onToggle={() =>
                 setOpen((current) => ({ ...current, [ALL_TOPICS]: !(current[ALL_TOPICS] ?? true) }))
               }
-              onSelectTopic={onSelectTopic}
+              onSelectTopic={selectTopic}
             />
             {courses.map((course) => (
               <CourseLane
@@ -681,7 +798,7 @@ export function TimelineView({
                 onToggle={() =>
                   setOpen((current) => ({ ...current, [course.id]: !current[course.id] }))
                 }
-                onSelectTopic={(topic) => onSelectTopic(course, topic)}
+                onSelectTopic={(topic) => selectTopic(course, topic)}
               />
             ))}
           </div>
@@ -996,6 +1113,8 @@ function AllTopicsLane({
                   key: `${course.id}:${topic.id}`,
                   name: topic.name,
                   dot: courseColorValue(topic.color || course.color),
+                  selected: topic.id === selectedId,
+                  onSelect: () => onSelectTopic(course, topic),
                 }))
               : []
           }
@@ -1148,7 +1267,17 @@ function CourseLane({
             health?.pace && !health.pace.onTrack ? <Badge tone="negative">Behind</Badge> : null
           }
           rowsHeight={disclosure.expanded && topics.length > 0 ? topics.length * ROW_HEIGHT + GROUP_GAP : 0}
-          rows={disclosure.mounted ? topics.map((topic) => ({ key: topic.id, name: topic.name })) : []}
+          rows={
+            disclosure.mounted
+              ? topics.map((topic) => ({
+                  key: topic.id,
+                  name: topic.name,
+                  dot: courseColorValue(topic.color || course.color),
+                  selected: topic.id === selectedId,
+                  onSelect: () => onSelectTopic(topic),
+                }))
+              : []
+          }
         />
       </div>
     </section>
@@ -1183,7 +1312,13 @@ function GutterCard({
   /** "All courses" reads as a heading over the courses beneath it, not as one of them. */
   bold?: boolean;
   trailing?: React.ReactNode;
-  rows: readonly { key: string; name: string; dot?: string }[];
+  rows: readonly {
+    key: string;
+    name: string;
+    dot?: string;
+    selected?: boolean;
+    onSelect?: () => void;
+  }[];
   /** Driven by the lane's disclosure, so the card grows in step with the rows beside it. */
   rowsHeight: number;
 }) {
@@ -1226,16 +1361,29 @@ function GutterCard({
             // rather than starting an edit gesture on whatever date happens to
             // sit beneath it.
             onPointerDown={(event) => {
-              if (chart.gestureFor(event.button) === "pan") startPan(event, chart);
+              if (chart.gestureFor(event) === "pan") startPan(event, chart);
             }}
             className="flex flex-col pb-1"
           >
             {rows.map((row) => (
-              <div
+              // A label is the row's name *and* the way into the row: reading
+              // the chart and asking about one of its topics were two different
+              // gestures in two different places, and the name is where the
+              // hand already is. Selected, it is the same tint the bars carry.
+              <button
                 key={row.key}
-                style={{ height: ROW_HEIGHT }}
+                type="button"
+                onClick={row.onSelect}
+                aria-current={row.selected ? "true" : undefined}
+                style={{
+                  height: ROW_HEIGHT,
+                  background: row.selected
+                    ? `color-mix(in srgb, ${row.dot ?? "var(--mac-accent)"} 22%, transparent)`
+                    : undefined,
+                }}
                 className={clsx(
-                  "flex shrink-0 items-center gap-1.5 pr-2 text-callout text-secondary",
+                  "timeline-row flex shrink-0 items-center gap-1.5 pr-2 text-left text-callout",
+                  row.selected ? "text-label" : "text-secondary hover:bg-fill",
                   row.dot ? "pl-2" : "pl-8",
                 )}
               >
@@ -1247,7 +1395,7 @@ function GutterCard({
                   />
                 ) : null}
                 <span className="min-w-0 flex-1 truncate">{row.name}</span>
-              </div>
+              </button>
             ))}
           </div>
         ) : null}
@@ -1303,6 +1451,7 @@ function TopicLane({
     // click on a lane used to commit a one-day block nobody asked for, and the
     // only way to notice was to find it later and delete it.
     let dragging = false;
+    gestureActive = true;
 
     const move = (pointer: PointerEvent) => {
       if (!dragging && Math.abs(pointer.clientX - originX) < DRAG_THRESHOLD_PX) return;
@@ -1325,6 +1474,7 @@ function TopicLane({
       if (pointer.button !== event.button) return;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      gestureActive = false;
       setDraft(null);
       setReadout(null);
       if (!dragging) return;
@@ -1347,15 +1497,15 @@ function TopicLane({
       ref={laneRef}
       data-topic-lane={topic.id}
       onPointerDown={(event) => {
-        const gesture = chart.gestureFor(event.button);
+        const gesture = chart.gestureFor(event);
         if (gesture === "edit") startCreate(event);
-        else if (gesture === "pan") startPan(event, chart);
+        else if (gesture === "pan") startPan(event, chart, chart.clearSelection);
       }}
       // The hover is the row's own course colour rather than a neutral fill: in
       // a lane of ten courses' topics, "which course is this row" is the thing
       // the highlight can answer for free. Cursors come from the chart's mode,
       // in CSS — see `globals.css`.
-      className="timeline-lane timeline-tint relative"
+      className="timeline-lane relative"
       style={{ height: ROW_HEIGHT, "--timeline-lane-tint": tint } as React.CSSProperties}
       title={`Drag to place a study block for ${topic.name}`}
     >
@@ -1403,28 +1553,40 @@ function TopicLane({
 function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }) {
   const chart = useContext(ChartContext);
   const markers = useOffscreenMarkerState(topic.blocks, chart.viewport);
-  if (!markers.before && !markers.after) return null;
+  // Both sides stay mounted while the row has anything to point at, and the
+  // last thing each pointed at is kept while it fades: an element removed from
+  // the DOM cannot animate its own departure.
+  const [shown, setShown] = useState(markers);
+  if (
+    (markers.before && markers.before !== shown.before) ||
+    (markers.after && markers.after !== shown.after)
+  ) {
+    setShown({ before: markers.before ?? shown.before, after: markers.after ?? shown.after });
+  }
+  if (topic.blocks.length === 0) return null;
 
   return (
     <>
-      {markers.before ? (
+      {shown.before ? (
         <Marker
           side="left"
           tint={tint}
-          count={markers.before.count}
-          date={markers.before.block.endDate}
+          visible={markers.before !== null}
+          count={shown.before.count}
+          date={shown.before.block.endDate}
           topic={topic.name}
-          onGo={() => chart.reveal(markers.before!.block, "left")}
+          onGo={() => chart.reveal(shown.before!.block, "left")}
         />
       ) : null}
-      {markers.after ? (
+      {shown.after ? (
         <Marker
           side="right"
           tint={tint}
-          count={markers.after.count}
-          date={markers.after.block.startDate}
+          visible={markers.after !== null}
+          count={shown.after.count}
+          date={shown.after.block.startDate}
           topic={topic.name}
-          onGo={() => chart.reveal(markers.after!.block, "right")}
+          onGo={() => chart.reveal(shown.after!.block, "right")}
         />
       ) : null}
     </>
@@ -1503,6 +1665,7 @@ function useOffscreenMarkerState(
 function Marker({
   side,
   tint,
+  visible,
   count,
   date,
   topic,
@@ -1510,6 +1673,8 @@ function Marker({
 }: {
   side: "left" | "right";
   tint: string;
+  /** Kept mounted while false, so it can fade out rather than vanish. */
+  visible: boolean;
   count: number;
   date: IsoDate;
   topic: string;
@@ -1526,6 +1691,9 @@ function Marker({
       // block; the marker is chrome, not canvas.
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onGo}
+      data-visible={visible}
+      aria-hidden={!visible}
+      tabIndex={visible ? undefined : -1}
       title={`${count} ${where} block${count === 1 ? "" : "s"} for ${topic} — go to ${shortDate(date)}`}
       aria-label={`${count} ${where} block${count === 1 ? "" : "s"} for ${topic}, go to ${shortDate(date)}`}
       // Clear of the shared label column on the left, whatever width it
@@ -1540,8 +1708,12 @@ function Marker({
         background: `color-mix(in srgb, ${tint} 22%, var(--mac-material-inline))`,
         color: tint,
       }}
+      // `mt-1` rather than a sticky `top`: a float sits at the top of the row,
+      // and the offset of a sticky element is where it pins against the
+      // *scrollport*, not where it sits in its row. The margin puts it on the
+      // bars' own centre line, at the bars' own height.
       className={clsx(
-        "timeline-chrome timeline-marker timeline-tint material-inline sticky top-1 z-30",
+        "timeline-chrome timeline-marker material-inline sticky z-30 mt-1",
         "flex h-4 items-center gap-0.5 rounded-chip px-1 text-caption font-semibold tabular-nums",
         "hover:brightness-110",
         side === "left" ? "float-left" : "float-right right-1",
@@ -1620,6 +1792,7 @@ function BlockBar({
     const originX = event.clientX;
     const origin = { startDate: block.startDate, endDate: block.endDate };
     let dragging = false;
+    gestureActive = true;
     let latest = origin;
 
     const move = (pointer: PointerEvent) => {
@@ -1659,6 +1832,7 @@ function BlockBar({
       if (pointer.button !== event.button) return;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      gestureActive = false;
       setReadout(null);
       if (dragging) commit(latest);
       else setDraft(null);
@@ -1717,7 +1891,7 @@ function BlockBar({
       <button
         type="button"
         onPointerDown={(event) => {
-          const gesture = chart.gestureFor(event.button);
+          const gesture = chart.gestureFor(event);
           if (gesture === "edit") startDrag(event, "move");
           else if (gesture === "pan") startPan(event, chart, onSelect);
         }}
@@ -1779,7 +1953,7 @@ function BlockBar({
         <span
           aria-hidden="true"
           onPointerDown={(event) => {
-            if (chart.gestureFor(event.button) === "edit") startDrag(event, "start");
+            if (chart.gestureFor(event) === "edit") startDrag(event, "start");
           }}
           className="timeline-bar-handle timeline-tint absolute inset-y-0 left-0 w-1.5 opacity-0"
           style={{ background: "var(--mac-label-secondary)" }}
@@ -1787,7 +1961,7 @@ function BlockBar({
         <span
           aria-hidden="true"
           onPointerDown={(event) => {
-            if (chart.gestureFor(event.button) === "edit") startDrag(event, "end");
+            if (chart.gestureFor(event) === "edit") startDrag(event, "end");
           }}
           className="timeline-bar-handle timeline-tint absolute inset-y-0 right-0 w-1.5 opacity-0"
           style={{ background: "var(--mac-label-secondary)" }}

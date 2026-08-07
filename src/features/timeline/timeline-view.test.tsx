@@ -107,12 +107,12 @@ describe("TimelineView", () => {
 
     // The right button on its own is a modifier: it draws nothing, so a plan
     // you are only reading cannot be disturbed by pressing it.
-    fireEvent.pointerDown(lane, { button: 2, clientX: 140 });
+    fireEvent.pointerDown(lane, { button: 2, buttons: 2, clientX: 140 });
     fireEvent.pointerMove(window, { clientX: 200 });
     expect(repository.createStudyBlock).not.toHaveBeenCalled();
 
     // Held, it makes the left button the editing one.
-    fireEvent.pointerDown(lane, { button: 0, clientX: 140 });
+    fireEvent.pointerDown(lane, { button: 0, buttons: 3, clientX: 140 });
     fireEvent.pointerMove(window, { clientX: 168 });
     fireEvent.pointerUp(window, { button: 0 });
     expect(repository.createStudyBlock).toHaveBeenCalledTimes(1);

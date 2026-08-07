@@ -14,7 +14,7 @@
 
 import { clsx } from "clsx";
 import { ToggleGroup } from "radix-ui";
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 export type Segment<T extends string> = {
   value: T;
@@ -43,6 +43,28 @@ export function SegmentedControl<T extends string>({
   /** The region this control switches, when it drives one. */
   "aria-controls"?: string;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const thumbRef = useRef<HTMLSpanElement>(null);
+
+  /**
+   * The selection slides.
+   *
+   * macOS moves the thumb of a segmented control between segments; fading one
+   * segment's fill out while another fades in loses the thing the motion is
+   * for, which is showing *which way* the value moved. Measured from the live
+   * item rather than computed from an index, because the segments are as wide
+   * as their labels.
+   */
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const thumb = thumbRef.current;
+    const selected = root?.querySelector<HTMLElement>('[data-state="on"]');
+    if (!root || !thumb || !selected) return;
+    thumb.style.width = `${selected.offsetWidth}px`;
+    thumb.style.transform = `translateX(${selected.offsetLeft - root.clientLeft}px)`;
+    thumb.style.opacity = "1";
+  }, [value, segments, size]);
+
   const move = (delta: number) => {
     const enabled = segments.filter((segment) => !segment.disabled);
     const index = enabled.findIndex((segment) => segment.value === value);
@@ -70,12 +92,20 @@ export function SegmentedControl<T extends string>({
         if (event.key === "ArrowRight" || event.key === "ArrowDown") move(1);
         else if (event.key === "ArrowLeft" || event.key === "ArrowUp") move(-1);
       }}
+      ref={rootRef}
       className={clsx(
-        "inline-flex items-center gap-0.5 rounded-control bg-fill p-0.5",
+        "relative inline-flex items-center gap-0.5 rounded-control bg-fill p-0.5",
         size === "sm" ? "h-control" : "h-control-lg",
         className,
       )}
     >
+      {/* Behind the labels, not around them: one thumb that travels, rather
+          than a fill that belongs to whichever segment currently owns it. */}
+      <span
+        ref={thumbRef}
+        aria-hidden="true"
+        className="segmented-thumb pointer-events-none absolute top-0.5 bottom-0.5 left-0 rounded-[4px] bg-accent opacity-0 shadow-raised"
+      />
       {segments.map((segment) => (
         <ToggleGroup.Item
           key={segment.value}
@@ -83,14 +113,13 @@ export function SegmentedControl<T extends string>({
           disabled={segment.disabled}
           aria-label={segment.ariaLabel}
           className={clsx(
-            "inline-flex h-full min-w-[1.75rem] items-center justify-center gap-1.5 rounded-[4px] px-2.5",
+            "relative z-10 inline-flex h-full min-w-[1.75rem] items-center justify-center gap-1.5 rounded-[4px] px-2.5",
             "font-medium whitespace-nowrap select-none",
             size === "sm" ? "text-caption" : "text-callout",
-            "transition-[background-color,color,box-shadow] duration-100 ease-mac",
-            "text-secondary hover:text-label",
-            // The selected segment is a raised thumb sitting in the bed, which
-            // is what distinguishes this from a row of pill buttons.
-            "data-[state=on]:bg-accent data-[state=on]:text-on-accent data-[state=on]:shadow-raised",
+            "segmented-item text-secondary hover:text-label",
+            // The selected segment is the one the thumb is under; only its
+            // label changes colour, so the fill itself can travel.
+            "data-[state=on]:text-on-accent",
             "disabled:pointer-events-none disabled:opacity-40",
             "[&_svg]:size-3.5",
           )}
