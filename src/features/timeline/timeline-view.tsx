@@ -495,11 +495,19 @@ export function TimelineView({
 
     // Grown well before the edge is reached, and by enough that a moment's
     // more scrolling cannot outrun it: `EXTEND_CHUNK_PX` clears the trigger by
-    // a wide margin, so one extension is enough until the next. Guarded on an
-    // actually-scrollable canvas, not just a mounted one — an element that has
-    // not been laid out yet reports a zero `scrollWidth`, which reads as "at
-    // both edges at once" and would extend on every render.
-    if (element.scrollWidth > element.clientWidth) {
+    // a wide margin, so one extension is enough until the next.
+    //
+    // Guarded on a *laid-out* canvas rather than an already-scrollable one. The
+    // old test was `scrollWidth > clientWidth`, which is the one case that most
+    // needs extending: a plan whose whole span fits on screen has no scroll to
+    // give, so it could never fire the scroll event that was the only thing
+    // asking it to grow. It stayed exactly as wide as its content, which is
+    // what "the chart abruptly ends" is — an unscrollable canvas with a hard
+    // edge a fortnight either side of the work. An element that has not been
+    // laid out yet reports zero for both, which reads as "at both edges at
+    // once"; a canvas with any width at all rules that out, and a real one
+    // always has width — it is days times the width of a day.
+    if (element.scrollWidth > 0) {
       const chunkDays = Math.ceil(EXTEND_CHUNK_PX / PX_PER_DAY[zoom]);
       if (element.scrollLeft < EXTEND_TRIGGER_PX) {
         pendingShiftRef.current += chunkDays * PX_PER_DAY[zoom];
@@ -524,16 +532,45 @@ export function TimelineView({
     }
   }, [extraBefore]);
 
-  // Opening on the far left of the canvas — weeks of finished work — made
-  // "press Today" the first action of every visit. Do it for them, without the
-  // animation, so the first paint is already in the right place.
+  /**
+   * Opening on today — once the plan is there to open onto.
+   *
+   * Opening on the far left of the canvas — weeks of finished work — made
+   * "press Today" the first action of every visit, so this does it for them,
+   * without the animation, so the first paint is already in the right place.
+   *
+   * It cannot be a mount-only effect, because the timeline mounts before the
+   * repository has answered. With no courses, `timelineRange` is a fortnight
+   * around today: a canvas narrower than the scrollport, already showing
+   * everything it has. Priming *that* and never again left the chart on a
+   * range it had outgrown — and the canvas only extends from `trackVisible`,
+   * which nothing calls again once the scrolling is over, so the chart stayed
+   * short, unscrollable, and abrupt at both ends for the rest of the visit.
+   * The tell was that selecting a topic fixed it: the inspector opening
+   * resizes the scrollport, and the resize observer below runs `trackVisible`.
+   *
+   * So it waits for a plan and then runs exactly once. Re-running after that
+   * would yank the canvas back to today while someone is reading elsewhere.
+   */
+  const primedRef = useRef(false);
   useEffect(() => {
     const element = scrollRef.current;
-    if (element) element.scrollLeft = todayOffset();
+    if (!element || primedRef.current || courses.length === 0) return;
+    primedRef.current = true;
+    element.scrollLeft = todayOffset();
     trackVisible();
-    // Mount only: re-running would yank the canvas back while someone reads it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [courses.length]);
+
+  // And the canvas keeps growing without being scrolled. Extension used to be
+  // driven only by `onScroll`, which cannot start: a canvas that is not yet
+  // wider than its scrollport has no scroll to fire the event that would widen
+  // it. Re-checking whenever the range or the scale changes breaks that
+  // circle, and settles — each extension clears `EXTEND_TRIGGER_PX` by a wide
+  // margin, so the next pass has nothing left to do.
+  useEffect(() => {
+    trackVisible();
+  }, [trackVisible]);
 
   // Zooming used to be a teleport twice over: the scroll offset was kept in
   // pixels while the pixels changed meaning, so leaving Week for Day landed you
