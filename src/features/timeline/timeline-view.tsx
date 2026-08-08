@@ -705,6 +705,7 @@ export function TimelineView({
     if (courses.length === 0 || typeof requestAnimationFrame === "undefined") return;
     let secondFrame = 0;
     let revealFrame = 0;
+    const revealTimeout = window.setTimeout(revealInitialChart, 500);
     const firstFrame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(() => {
         if (userNavigatedRef.current) return;
@@ -720,11 +721,12 @@ export function TimelineView({
       cancelAnimationFrame(firstFrame);
       cancelAnimationFrame(secondFrame);
       cancelAnimationFrame(revealFrame);
+      window.clearTimeout(revealTimeout);
     };
     // This is the mount/data-load settling pass; zoom and range changes have
     // their own positioning paths and must not reframe an active chart.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courses.length, primeToday, revealInitialChart]);
+  }, [courses.length]);
 
   // And the canvas keeps growing without being scrolled. Extension used to be
   // driven only by `onScroll`, which cannot start: a canvas that is not yet
