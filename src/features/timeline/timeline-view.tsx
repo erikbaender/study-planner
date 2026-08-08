@@ -79,7 +79,14 @@ import {
   type Zoom,
 } from "./geometry";
 import { clampToLimits, fillsByBlock, limitsAround, limitsFor, type Span } from "./blocks";
-import { animateScrollLeft, isScrollAnimating, motionDuration } from "./motion";
+import {
+  animateScrollLeft,
+  isScrollAnimating,
+  motionCurveValue,
+  motionDuration,
+  prefersReducedMotion,
+  stopScrollAnimation,
+} from "./motion";
 import { topicsForQuery } from "@/features/workspace/scope";
 
 /** The virtual lane's key in the open/closed map. No course can collide with it. */
@@ -101,14 +108,6 @@ const EXTEND_TRIGGER_PX = 1200;
 const EXTEND_CHUNK_PX = 6000;
 /** Breathing room left between a revealed bar and the edge it was hiding past. */
 const REVEAL_PADDING_PX = 24;
-/**
- * Where a date lands when the chart is asked to go somewhere: a third in from
- * the left, not centred. What is coming matters more than what is behind, so
- * the larger half of the view is given to it — and Today, a jump to an
- * off-screen block and a zoom all use the same point, so the chart always
- * settles the same way.
- */
-const ANCHOR_FRACTION = 3;
 /** The height the "no topics yet" line occupies while a course opens onto it. */
 const EMPTY_COURSE_HEIGHT = 44;
 
@@ -291,6 +290,8 @@ function startPan(event: React.PointerEvent, chart: Chart, onTap?: () => void) {
   if (!element) return;
   event.preventDefault();
   event.stopPropagation();
+  // A hand on the chart outranks anything it was doing by itself.
+  stopScrollAnimation(element);
 
   const button = event.button;
   const originX = event.clientX;
@@ -355,8 +356,9 @@ export function TimelineView({
   const [open, setOpen] = useState<Record<string, boolean>>({ [ALL_TOPICS]: true });
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport] = useState(createViewportStore);
-  /** The date to re-anchor on after a zoom change; see `changeZoom`. */
-  const anchorRef = useRef<IsoDate | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  /** The scale being left, and where today sat on screen; see `changeZoom`. */
+  const zoomFromRef = useRef<{ zoom: Zoom; todayScreenX: number } | null>(null);
 
   // Held, the right button inverts the mode. It is state rather than a ref
   // because the mode control is part of the answer: its selection moves to Edit
@@ -434,8 +436,9 @@ export function TimelineView({
   const ticks = ticksFor(range.start, range.end, zoom);
   const bands = bandsFor(range.start, range.end, zoom);
 
-  const todayOffset = (client: number) =>
-    xOf(today, range.start, zoom) - client / ANCHOR_FRACTION;
+  // Today just clear of the label gutter, not a third of the way in: what is
+  // coming is what the chart is for, so the whole width goes to it.
+  const todayOffset = () => xOf(today, range.start, zoom) - gutter - REVEAL_PADDING_PX;
 
   const trackVisible = useCallback(() => {
     const element = scrollRef.current;
@@ -485,7 +488,7 @@ export function TimelineView({
   // animation, so the first paint is already in the right place.
   useEffect(() => {
     const element = scrollRef.current;
-    if (element) element.scrollLeft = todayOffset(element.clientWidth);
+    if (element) element.scrollLeft = todayOffset();
     trackVisible();
     // Mount only: re-running would yank the canvas back while someone reads it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -496,24 +499,58 @@ export function TimelineView({
   // months from where you were looking — and it arrived in one frame, with no
   // way to see that the scale rather than the plan had changed.
   //
-  // Not animated, deliberately.
-  //
-  // Every position in the chart is a `calc()` off the width of a day, so
-  // interpolating that width animates the whole chart at once — and asks the
-  // browser to re-lay-out several thousand absolutely positioned elements on
-  // every frame of it. Both implementations of that (a CSS transition on the
-  // custom property, then one rAF loop driving the width and the scroll offset
-  // together) were janky on a real semester, and a zoom that stutters is worse
-  // than one that simply arrives. The scale changes in one frame; what is held
-  // constant is the date under the middle of the viewport, which is what makes
-  // the new scale legible without hunting for where you were.
+  /**
+   * The zoom, as a transform.
+   *
+   * Two earlier attempts animated the *geometry* — a transition on the
+   * day-width custom property, then one rAF loop driving width and scroll
+   * offset together — and both stuttered, for a reason no amount of tuning
+   * fixes: every position in the chart is a `calc()` off that one value, so
+   * each frame re-lays-out several thousand absolutely positioned elements,
+   * and at Day zoom the ruler alone is a tick per day.
+   *
+   * So the geometry is not animated at all. The new scale is committed in one
+   * frame, the canvas is put back at the *old* scale with a `scaleX`, and that
+   * transform is released — which the compositor does without consulting
+   * layout even once, at any zoom, on any size of plan.
+   *
+   * The transform's origin is the today marker, and `scrollLeft` is set so the
+   * marker keeps the screen position it already had: the one thing that must
+   * not move while the scale changes is the thing you navigate by. The chrome
+   * riding on the canvas — the ruler, the label gutter — would be stretched by
+   * the same transform, so it steps out and comes back instead.
+   */
   useLayoutEffect(() => {
     const element = scrollRef.current;
-    const anchor = anchorRef.current;
-    anchorRef.current = null;
-    if (!element || !anchor) return;
-    element.scrollLeft = xOf(anchor, range.start, zoom) - element.clientWidth / 2;
+    const canvas = canvasRef.current;
+    const zoomed = zoomFromRef.current;
+    zoomFromRef.current = null;
+    if (!element || !canvas || !zoomed) return;
+
+    element.scrollLeft = xOf(today, range.start, zoom) - zoomed.todayScreenX;
     trackVisible();
+
+    const scale = PX_PER_DAY[zoomed.zoom] / PX_PER_DAY[zoom];
+    if (prefersReducedMotion()) return;
+    const duration = motionDuration(element);
+
+    canvas.classList.add("timeline-zooming");
+    canvas.style.transformOrigin = `${xOf(today, range.start, zoom)}px top`;
+    canvas.style.transition = "none";
+    canvas.style.transform = `scaleX(${scale})`;
+    // Read, so the browser takes the line above as this transition's start
+    // rather than collapsing the two writes into no change at all.
+    void canvas.offsetWidth;
+    canvas.style.transition = `transform ${duration}ms ${motionCurveValue(element)}`;
+    canvas.style.transform = "scaleX(1)";
+
+    const settle = window.setTimeout(() => {
+      canvas.classList.remove("timeline-zooming");
+      canvas.style.transition = "";
+      canvas.style.transform = "";
+      canvas.style.transformOrigin = "";
+    }, duration);
+    return () => window.clearTimeout(settle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom]);
 
@@ -530,7 +567,12 @@ export function TimelineView({
   const changeZoom = (next: Zoom) => {
     const element = scrollRef.current;
     if (element) {
-      anchorRef.current = dateAt(element.scrollLeft + element.clientWidth / 2, range.start, zoom);
+      // Where today is on screen right now, which is where it will still be
+      // when the new scale settles.
+      zoomFromRef.current = {
+        zoom,
+        todayScreenX: xOf(today, range.start, zoom) - element.scrollLeft,
+      };
     }
     setZoom(next);
   };
@@ -688,7 +730,7 @@ export function TimelineView({
   const scrollToToday = () => {
     const element = scrollRef.current;
     if (!element) return;
-    animateScrollLeft(element, todayOffset(element.clientWidth), trackVisible);
+    animateScrollLeft(element, todayOffset(), trackVisible);
   };
 
   return (
@@ -755,6 +797,7 @@ export function TimelineView({
         className="min-h-0 flex-1 overflow-auto bg-content"
       >
         <div
+          ref={canvasRef}
           // Every position below is a `calc()` off this one length, so the
           // transition on `.timeline-canvas` is the whole zoom animation.
           style={
@@ -876,8 +919,9 @@ function Ruler({
           one marker that answers "where is now" off screen. */}
       <span
         aria-hidden="true"
+        // Centred on the line it caps, not started at it.
         style={{ left: xCss(today, range.start), height: RULER_HEIGHT }}
-        className="pointer-events-none absolute top-0 -ml-1 flex items-center"
+        className="pointer-events-none absolute top-0 flex -translate-x-1/2 items-center"
       >
         <span className="rounded-chip bg-accent px-1 text-caption font-semibold text-on-accent">
           Today
@@ -1057,6 +1101,7 @@ function AllTopicsLane({
   onSelectTopic: (course: Course, topic: Topic) => void;
 }) {
   const disclosure = useDisclosure(open);
+  const rowsRef = useReorderAnimation(entries.map(({ course, topic }) => `${course.id}:${topic.id}`));
   if (entries.length === 0) return null;
   const span = rollUpSpan(entries.map((entry) => entry.topic));
   const rowsHeight = entries.length * ROW_HEIGHT + GROUP_GAP;
@@ -1082,11 +1127,16 @@ function AllTopicsLane({
           ) : null}
         </div>
 
-        <div className="timeline-disclosure" style={{ height: disclosure.expanded ? rowsHeight : 0 }}>
+        <div
+          ref={rowsRef}
+          className="timeline-disclosure"
+          style={{ height: disclosure.expanded ? rowsHeight : 0 }}
+        >
           {disclosure.mounted
             ? entries.map(({ course, topic }) => (
                 <TopicLane
                   key={`${course.id}:${topic.id}`}
+                  rowKey={`${course.id}:${topic.id}`}
                   course={course}
                   topic={topic}
                   range={range}
@@ -1240,6 +1290,7 @@ function CourseLane({
             topics.map((topic) => (
               <TopicLane
                 key={topic.id}
+                rowKey={topic.id}
                 course={course}
                 topic={topic}
                 range={range}
@@ -1373,17 +1424,15 @@ function GutterCard({
               <button
                 key={row.key}
                 type="button"
+                data-timeline-row={row.key}
                 onClick={row.onSelect}
+                // Selection is blue everywhere in the app; a row selected in
+                // its course's own colour said "this course" a second time
+                // rather than "this is the one you are looking at".
                 aria-current={row.selected ? "true" : undefined}
-                style={{
-                  height: ROW_HEIGHT,
-                  background: row.selected
-                    ? `color-mix(in srgb, ${row.dot ?? "var(--mac-accent)"} 22%, transparent)`
-                    : undefined,
-                }}
+                style={{ height: ROW_HEIGHT }}
                 className={clsx(
-                  "timeline-row flex shrink-0 items-center gap-1.5 pr-2 text-left text-callout",
-                  row.selected ? "text-label" : "text-secondary hover:bg-fill",
+                  "timeline-row flex shrink-0 items-center gap-1.5 pr-2 text-left text-callout text-secondary",
                   row.dot ? "pl-2" : "pl-8",
                 )}
               >
@@ -1404,9 +1453,16 @@ function GutterCard({
   );
 }
 
+/** The gutter row belonging to a lane, lit without a render. */
+function lightLabel(key: string, hovered: boolean) {
+  const label = document.querySelector<HTMLElement>(`[data-timeline-row="${CSS.escape(key)}"]`);
+  if (label) label.dataset.hovered = String(hovered);
+}
+
 function TopicLane({
   course,
   topic,
+  rowKey,
   range,
   zoom,
   today,
@@ -1415,6 +1471,8 @@ function TopicLane({
 }: {
   course: Course;
   topic: Topic;
+  /** Ties this row to its label in the gutter card; see `lightLabel`. */
+  rowKey: string;
   range: Range;
   zoom: Zoom;
   today: IsoDate;
@@ -1501,12 +1559,14 @@ function TopicLane({
         if (gesture === "edit") startCreate(event);
         else if (gesture === "pan") startPan(event, chart, chart.clearSelection);
       }}
-      // The hover is the row's own course colour rather than a neutral fill: in
-      // a lane of ten courses' topics, "which course is this row" is the thing
-      // the highlight can answer for free. Cursors come from the chart's mode,
-      // in CSS — see `globals.css`.
+      // The canvas half of the row highlights itself; the label half is told
+      // to, because it lives in the gutter card drawn over the chart and no
+      // selector reaches across. Written straight to the DOM: a hover is not
+      // worth a render, and it has to be instant.
+      onPointerEnter={() => lightLabel(rowKey, true)}
+      onPointerLeave={() => lightLabel(rowKey, false)}
       className="timeline-lane relative"
-      style={{ height: ROW_HEIGHT, "--timeline-lane-tint": tint } as React.CSSProperties}
+      style={{ height: ROW_HEIGHT }}
       title={`Drag to place a study block for ${topic.name}`}
     >
       {/* The row's name now lives in the group's single `GutterCard`, drawn

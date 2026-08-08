@@ -29,6 +29,11 @@ export function motionDuration(element: Element): number {
   return Number.isFinite(milliseconds) && milliseconds > 0 ? milliseconds : DEFAULT_DURATION_MS;
 }
 
+/** The curve as CSS wrote it, for handing back to a CSS transition. */
+export function motionCurveValue(element: Element): string {
+  return customProperty(element, "--topic-motion-curve") || `cubic-bezier(${DEFAULT_CURVE.join(",")})`;
+}
+
 function motionCurve(element: Element): Curve {
   const value = customProperty(element, "--topic-motion-curve");
   const numbers = value
@@ -138,4 +143,19 @@ export function animateScrollLeft(element: HTMLElement, left: number, done?: () 
 /** True while an animation here owns this scroller's offset. */
 export function isScrollAnimating(element: HTMLElement): boolean {
   return running.has(element);
+}
+
+/**
+ * Give the offset back.
+ *
+ * A hand on the chart outranks anything the chart decided to do by itself: an
+ * animation still running under a drag writes `scrollLeft` on every frame and
+ * the drag appears simply not to work. Worse, a tab hidden mid-animation stops
+ * receiving frames without ending the animation, so the chart could be left
+ * owned by something that would only resume when the tab came back.
+ */
+export function stopScrollAnimation(element: HTMLElement): void {
+  const frame = running.get(element);
+  if (frame !== undefined) cancelAnimationFrame(frame);
+  running.delete(element);
 }

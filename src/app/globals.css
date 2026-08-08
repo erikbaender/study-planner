@@ -294,16 +294,39 @@ span:has(> .topic-progress-thumb) {
  * says which course you are about to place work in, which is the question a
  * combined lane of ten courses actually raises.
  */
-.timeline-lane,
-.timeline-row {
-  /* Deliberately not the shared duration: a hover has to arrive with the
-     pointer. The row it lights up changes as fast as the cursor crosses rows,
-     and anything slower reads as the chart lagging behind the mouse. */
-  transition: background-color 90ms var(--topic-motion-curve);
+/**
+ * Hover is not animated, at all.
+ *
+ * A highlight that fades is a highlight that is wrong for as long as it fades,
+ * and the row under the pointer changes as fast as the pointer crosses rows.
+ * This is the one thing in the chart that has to be instant.
+ */
+.timeline-lane:hover,
+.timeline-row[data-hovered="true"],
+.timeline-row:hover {
+  background-color: var(--mac-fill);
 }
 
-.timeline-lane:hover {
-  background-color: color-mix(in srgb, var(--timeline-lane-tint) 16%, transparent);
+/* The row and its label light up together. The canvas half sits behind the
+   label panel, so the panel is told directly which of its rows to light. */
+.timeline-row[aria-current="true"] {
+  background-color: var(--mac-accent-soft);
+  color: var(--mac-label);
+}
+
+/* A zoom scales the canvas; the chrome riding on it would be scaled with it,
+   so it steps out of the way and comes back rather than stretching. */
+.timeline-chrome {
+  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.timeline-zooming .timeline-chrome {
+  opacity: 0;
+}
+
+/* Two rows trading places when a block moves past another topic's start. */
+.timeline-reorder {
+  transition: transform var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
 /**
