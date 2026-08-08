@@ -15,6 +15,7 @@ const run = vi.fn((promise: Promise<unknown>) => promise);
 
 vi.mock("@/data/use-repository", () => ({
   useRepository: () => repository,
+  usePlannerRun: () => run,
   usePlannerErrors: () => ({ run, error: null, clear: vi.fn() }),
 }));
 
@@ -200,5 +201,37 @@ describe("TimelineView", () => {
     // scroll notification escaped the marker subscription and reconciled the
     // entire chart again.
     expect(healthLookup).not.toHaveBeenCalled();
+  });
+
+  it("keeps the chart mounted while the sidebar hides every course", () => {
+    const topic = makeTopic({ name: "Glycolysis", blocks: [] });
+    const course = makeCourse({ name: "Biochemistry", topics: [topic] });
+    const onGoToOutline = vi.fn();
+    const { container, rerender } = render(
+      <TimelineView
+        courses={[course]}
+        health={new Map()}
+        today="2026-05-01"
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onGoToOutline={onGoToOutline}
+      />,
+    );
+    const chart = container.querySelector(".timeline-scrollport");
+    expect(chart).toBeInTheDocument();
+
+    rerender(
+      <TimelineView
+        courses={[]}
+        health={new Map()}
+        today="2026-05-01"
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onGoToOutline={onGoToOutline}
+      />,
+    );
+
+    expect(container.querySelector(".timeline-scrollport")).toBe(chart);
+    expect(screen.getByRole("button", { name: "Open the outline" })).toBeInTheDocument();
   });
 });

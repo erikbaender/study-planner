@@ -272,6 +272,38 @@ span:has(> .topic-progress-thumb) {
   overflow-anchor: none;
 }
 
+/**
+ * A semester can contain hundreds of fixed-height lanes. Let the browser skip
+ * painting/layout of rows outside the vertical viewport while retaining their
+ * exact flow size. This is the native form of timeline virtualization: no
+ * React state follows scrollTop, and rows become real again as they approach.
+ */
+.timeline-lane {
+  content-visibility: auto;
+  contain-intrinsic-size: 24px;
+}
+
+.timeline-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 24px;
+}
+
+/**
+ * Timeline chrome scrolls over a large chart. A translucent fill preserves the
+ * hierarchy here; backdrop blur would make every horizontal scroll repaint the
+ * chart behind each sticky label and marker.
+ */
+.timeline-scrollport .material-inline {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@utility timeline-inline {
+  background: var(--mac-material-inline);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* The thumb travels; the labels only change colour under it. */
 .segmented-thumb {
   transition:
@@ -392,6 +424,25 @@ span:has(> .topic-progress-thumb) {
 
 [data-timeline-mode="edit"] .timeline-bar {
   cursor: move;
+}
+
+/**
+ * Bar labels are always in the DOM, but the container decides whether there is
+ * enough room to show one. This lets a zoom change update the custom day width
+ * without re-rendering every bar just to recalculate a text threshold.
+ */
+.timeline-bar {
+  container-type: inline-size;
+}
+
+.timeline-bar-label {
+  display: none;
+}
+
+@container (min-width: 64px) {
+  .timeline-bar-label {
+    display: flex;
+  }
 }
 
 [data-timeline-mode="edit"] .timeline-bar-handle {

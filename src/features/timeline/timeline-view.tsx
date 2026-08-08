@@ -36,12 +36,14 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  memo,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
-import { usePlannerErrors, useRepository } from "@/data/use-repository";
+import { usePlannerRun, useRepository } from "@/data/use-repository";
+import type { PlannerRepository } from "@/data/repository";
 import {
   addDays,
   clampDate,
@@ -52,6 +54,7 @@ import {
   minDate,
   topicProgress,
   UNIT_LABELS,
+  weekdayOf,
   type Course,
   type CourseHealth,
   type IsoDate,
@@ -69,7 +72,6 @@ import {
   shortDate,
   ticksFor,
   timelineRange,
-  weekendsIn,
   widthCss,
   widthOf,
   xCss,
@@ -88,9 +90,6 @@ import {
   stopScrollAnimation,
 } from "./motion";
 import { topicsForQuery } from "@/features/workspace/scope";
-
-/** The virtual lane's key in the open/closed map. No course can collide with it. */
-const ALL_TOPICS = "__all-topics__";
 
 const LANE_HEIGHT = 28;
 const ROW_HEIGHT = 24;
@@ -233,6 +232,30 @@ type ViewportStore = {
   setSnapshot: (next: Exclude<Viewport, null>) => void;
 };
 
+type EditHeldStore = {
+  subscribe: (listener: () => void) => () => void;
+  getSnapshot: () => boolean;
+  set: (next: boolean) => void;
+};
+
+function createEditHeldStore(): EditHeldStore {
+  let snapshot = false;
+  const listeners = new Set<() => void>();
+
+  return {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getSnapshot: () => snapshot,
+    set(next) {
+      if (snapshot === next) return;
+      snapshot = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
 function createViewportStore(): ViewportStore {
   let snapshot: Viewport = null;
   const listeners = new Set<() => void>();
@@ -259,6 +282,11 @@ const EMPTY_VIEWPORT_STORE: ViewportStore = {
 
 type Chart = {
   scroller: React.RefObject<HTMLDivElement | null>;
+  /** Shared mutation services, resolved once for the whole chart. */
+  repository: PlannerRepository | null;
+  run: (action: Promise<unknown>) => void;
+  /** The committed scale for pointer hit-testing without a row render. */
+  zoomRef: React.RefObject<Zoom>;
   /** What this press means. `null` for a button that only modifies. */
   gestureFor: (event: { button: number; buttons: number }) => Gesture | null;
   viewport: ViewportStore;
@@ -272,6 +300,9 @@ type Chart = {
 
 const ChartContext = createContext<Chart>({
   scroller: { current: null },
+  repository: null,
+  run: () => {},
+  zoomRef: { current: "week" },
   gestureFor: () => null,
   viewport: EMPTY_VIEWPORT_STORE,
   reveal: () => {},
@@ -349,8 +380,10 @@ function startPan(event: React.PointerEvent, chart: Chart, onTap?: () => void) {
     // The closed hand, for as long as the hand is closed. Written to the DOM
     // rather than to state: a cursor is not worth reconciling 344 lanes for.
     element.dataset.timelinePanning = "true";
-    element.scrollLeft -= pointer.clientX - lastX;
-    element.scrollTop -= pointer.clientY - lastY;
+    const deltaX = pointer.clientX - lastX;
+    const deltaY = pointer.clientY - lastY;
+    if (deltaX) element.scrollLeft -= deltaX;
+    if (deltaY) element.scrollTop -= deltaY;
     lastX = pointer.clientX;
     lastY = pointer.clientY;
   };
@@ -372,16 +405,7 @@ function startPan(event: React.PointerEvent, chart: Chart, onTap?: () => void) {
   window.addEventListener("pointerup", up);
 }
 
-export function TimelineView({
-  courses,
-  health,
-  today,
-  query = "",
-  selectedId,
-  onSelectTopic,
-  onClearSelection,
-  onGoToOutline,
-}: {
+type TimelineProps = {
   courses: readonly Course[];
   health: Map<string, CourseHealth>;
   today: IsoDate;
@@ -391,12 +415,73 @@ export function TimelineView({
   /** Selection is a mode you can leave: see `selectTopic` below. */
   onClearSelection?: () => void;
   onGoToOutline: () => void;
-}) {
+};
+
+/**
+ * Keep an expensive chart alive while a focus filter is briefly empty.
+ *
+ * The sidebar's "hide every course" action is a visibility change, not a plan
+ * deletion. Removing hundreds of rows in the same commit that shows the empty
+ * state makes that harmless click compete with React's largest possible unmount.
+ * Retaining the last non-empty chart, hidden and inert, makes the visible state
+ * change a small overlay update; the chart is ready to reappear when courses
+ * are shown again.
+ */
+export function TimelineView(props: TimelineProps) {
+  const [retainedCourses, setRetainedCourses] = useState<readonly Course[]>(props.courses);
+  // Capture the latest non-empty list before the commit that can make the
+  // visible focus empty. This render-phase adjustment is bounded to actual
+  // course-list changes; the chart uses `props.courses` directly for every
+  // non-empty render, so it never shows stale data.
+  if (props.courses.length > 0 && !sameCourseList(retainedCourses, props.courses)) {
+    setRetainedCourses(props.courses);
+  }
+
+  const chartCourses = props.courses.length > 0 ? props.courses : retainedCourses;
+  const chart = <MemoTimelineChart {...props} courses={chartCourses} />;
+  const keepChart = props.courses.length === 0 && retainedCourses.length > 0;
+
+  // The wrapper and chart stay at the same tree position in both states. A
+  // changed parent shape would itself unmount the expensive child before the
+  // memo comparator had a chance to protect it.
+  return (
+    <div className="relative h-full">
+      <div
+        className={keepChart ? "pointer-events-none invisible absolute inset-0" : "h-full"}
+        aria-hidden={keepChart || undefined}
+      >
+        {chart}
+      </div>
+      {keepChart ? (
+        <div className="relative flex h-full items-center justify-center">
+          <NoTimelineCourses onGoToOutline={props.onGoToOutline} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TimelineChart({
+  courses,
+  health,
+  today,
+  query = "",
+  selectedId,
+  onSelectTopic,
+  onClearSelection,
+  onGoToOutline,
+}: TimelineProps) {
   const [zoom, setZoom] = useState<Zoom>("week");
-  const [mode, setMode] = useState<Mode>("view");
-  const [open, setOpen] = useState<Record<string, boolean>>({ [ALL_TOPICS]: true });
+  const zoomRef = useRef<Zoom>("week");
+  useLayoutEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport] = useState(createViewportStore);
+  const [editHeldStore] = useState(createEditHeldStore);
+  const modeRef = useRef<Mode>("view");
+  const repository = useRepository();
+  const run = usePlannerRun();
   const canvasRef = useRef<HTMLDivElement>(null);
   /** Where today sat on screen when the zoom gesture began; see `changeZoom`. */
   const zoomFromRef = useRef<{ todayScreenX: number } | null>(null);
@@ -404,17 +489,28 @@ export function TimelineView({
   const zoomTargetRef = useRef<Zoom | null>(null);
   const zoomTimerRef = useRef(0);
 
-  // Held, the right button inverts the mode. It is state rather than a ref
-  // because the mode control is part of the answer: its selection moves to Edit
-  // while the button is down, so the chart says what the next click will do
-  // rather than leaving you to remember which button you are holding.
-  const [editHeld, setEditHeld] = useState(false);
-  const active = effectiveMode(mode, editHeld);
+  /** Keep the cursor mode in the DOM; changing it does not invalidate lanes. */
+  const syncMode = useCallback(
+    (held = editHeldStore.getSnapshot()) => {
+      const element = scrollRef.current;
+      if (element) element.dataset.timelineMode = effectiveMode(modeRef.current, held);
+    },
+    [editHeldStore],
+  );
+
+  const setEditHeld = useCallback(
+    (held: boolean) => {
+      if (editHeldStore.getSnapshot() === held) return;
+      editHeldStore.set(held);
+      syncMode(held);
+    },
+    [editHeldStore, syncMode],
+  );
 
   // Released anywhere, not only over the chart — and dropped on a lost window,
   // which is the one way a held button can end without an event of its own.
+  // This store only wakes the compact mode control, never the chart tree.
   useEffect(() => {
-    if (!editHeld) return;
     const onPointerUp = (event: PointerEvent) => {
       if (event.button !== RIGHT) return;
       setEditHeld(false);
@@ -434,7 +530,7 @@ export function TimelineView({
       window.removeEventListener("pointercancel", onLost);
       window.removeEventListener("blur", onLost);
     };
-  }, [editHeld]);
+  }, [setEditHeld]);
 
   /**
    * What a press means, decided from the press itself.
@@ -452,9 +548,9 @@ export function TimelineView({
       // so a press of it can never move a bar you were about to read.
       if (event.button !== LEFT) return null;
       const held = (event.buttons & RIGHT_BUTTON_MASK) !== 0;
-      return effectiveMode(mode, held) === "edit" ? "edit" : "pan";
+      return effectiveMode(modeRef.current, held) === "edit" ? "edit" : "pan";
     },
-    [mode],
+    [],
   );
 
   // The canvas is a window onto an unbounded timeline, not a fixed span: a
@@ -464,21 +560,26 @@ export function TimelineView({
   // `trackVisible` as the edges are approached so the scrollbar never becomes
   // a hard wall with real content — or the labels gutter sitting over it —
   // stuck just past it.
-  const contentRange = timelineRange(courses, today);
+  const contentRange = useMemo(() => timelineRange(courses, today), [courses, today]);
   const [extraBefore, setExtraBefore] = useState(0);
   const [extraAfter, setExtraAfter] = useState(0);
   /** Days to add to `scrollLeft` once `extraBefore` takes effect, so growing the canvas backward does not visually shift it. */
   const pendingShiftRef = useRef(0);
+  /** Prevent a burst of native scroll events from scheduling the same extension repeatedly. */
+  const extendingBeforeRef = useRef(false);
+  const extendingAfterRef = useRef(false);
   /** Once the user navigates, live plan updates must not reframe their view. */
   const userNavigatedRef = useRef(false);
   /** Keep the first layout correction invisible until its final position is ready. */
   const initializingRef = useRef(true);
-  const [initializing, setInitializing] = useState(true);
 
   const revealInitialChart = useCallback(() => {
     if (!initializingRef.current) return;
     initializingRef.current = false;
-    setInitializing(false);
+    // This is a visual settling flag, not application state. Removing it
+    // directly avoids reconciling the entire timeline on the first pointer
+    // press while the initial chart is fading in.
+    canvasRef.current?.removeAttribute("data-timeline-zooming");
   }, []);
 
   const range = useMemo(() => {
@@ -486,31 +587,45 @@ export function TimelineView({
     const end = addDays(contentRange.end, extraAfter);
     return { start, end, days: differenceInDays(start, end) + 1 };
   }, [contentRange.start, contentRange.end, extraBefore, extraAfter]);
+  const rangeRef = useRef(range);
+  useLayoutEffect(() => {
+    rangeRef.current = range;
+  }, [range]);
 
   // Independent of `everyTopic` below on purpose: that array is sorted for
-  // display, this only needs to know which names are on screen and open.
+  // display, this only needs to know which names are on screen.
+  const visibleCourseTopics = useMemo(
+    () => courses.map((course) => ({ course, topics: topicsForQuery(query, course) })),
+    [courses, query],
+  );
+
   const gutter = useMemo(() => {
     const labels: { text: string; kind: LabelKind }[] = [];
-    const perCourse = courses.map((course) => ({ course, topics: topicsForQuery(query, course) }));
-    if (perCourse.some(({ topics }) => topics.length > 0)) {
+    if (visibleCourseTopics.some(({ topics }) => topics.length > 0)) {
       labels.push({ text: "All courses", kind: "allTopics" });
     }
-    const allTopicsOpen = open[ALL_TOPICS] ?? true;
-    for (const { course, topics } of perCourse) {
+    for (const { course, topics } of visibleCourseTopics) {
       labels.push({ text: course.name, kind: "course" });
-      if (allTopicsOpen) {
-        for (const topic of topics) labels.push({ text: topic.name, kind: "topicWithDot" });
-      }
-      if (open[course.id]) {
-        for (const topic of topics) labels.push({ text: topic.name, kind: "topicPlain" });
+      // The gutter width is structural, so it must not change as a disclosure
+      // opens. Accounting for both label variants once keeps opening a course a
+      // local update and avoids moving every sticky card in the chart.
+      for (const topic of topics) {
+        labels.push({ text: topic.name, kind: "topicWithDot" });
+        labels.push({ text: topic.name, kind: "topicPlain" });
       }
     }
     return gutterWidth(labels);
-  }, [courses, query, open]);
+  }, [visibleCourseTopics]);
+  const gutterRef = useRef(gutter);
 
-  const width = range.days * PX_PER_DAY[zoom];
-  const ticks = ticksFor(range.start, range.end, zoom);
-  const bands = bandsFor(range.start, range.end, zoom);
+  const width = useMemo(() => range.days * PX_PER_DAY[zoom], [range.days, zoom]);
+  const widthRef = useRef(width);
+  useLayoutEffect(() => {
+    gutterRef.current = gutter;
+    widthRef.current = width;
+  }, [gutter, width]);
+  const ticks = useMemo(() => ticksFor(range.start, range.end, zoom), [range.start, range.end, zoom]);
+  const bands = useMemo(() => bandsFor(range.start, range.end, zoom), [range.start, range.end, zoom]);
 
   // Today just clear of the label gutter, not a third of the way in: what is
   // coming is what the chart is for, so the whole width goes to it.
@@ -547,11 +662,16 @@ export function TimelineView({
     // always has width — it is days times the width of a day.
     if (element.scrollWidth > 0) {
       const chunkDays = Math.ceil(EXTEND_CHUNK_PX / PX_PER_DAY[zoom]);
-      if (element.scrollLeft < EXTEND_TRIGGER_PX) {
+      if (element.scrollLeft < EXTEND_TRIGGER_PX && !extendingBeforeRef.current) {
+        extendingBeforeRef.current = true;
         pendingShiftRef.current += chunkDays * PX_PER_DAY[zoom];
         setExtraBefore((days) => days + chunkDays);
       }
-      if (element.scrollWidth - (element.scrollLeft + element.clientWidth) < EXTEND_TRIGGER_PX) {
+      if (
+        element.scrollWidth - (element.scrollLeft + element.clientWidth) < EXTEND_TRIGGER_PX &&
+        !extendingAfterRef.current
+      ) {
+        extendingAfterRef.current = true;
         setExtraAfter((days) => days + chunkDays);
       }
     }
@@ -593,7 +713,9 @@ export function TimelineView({
       element.scrollLeft += pendingShiftRef.current;
       pendingShiftRef.current = 0;
     }
-  }, [extraBefore]);
+    extendingBeforeRef.current = false;
+    extendingAfterRef.current = false;
+  }, [extraBefore, extraAfter]);
 
   /**
    * Opening on today — once the plan is there to open onto.
@@ -863,27 +985,30 @@ export function TimelineView({
    * had and adds the bar to it — clear of the label gutter on the left, and of
    * the scrollport's own edge on the right, with room to read either way.
    */
-  const reveal = useCallback(
-    (span: Span, side: "left" | "right") => {
-      const element = scrollRef.current;
-      if (!element) return;
-      const from = xOf(span.startDate, range.start, zoom);
-      const to = from + widthOf(span.startDate, span.endDate, zoom);
-      const target =
-        side === "left"
-          ? from - gutter - REVEAL_PADDING_PX
-          : to + REVEAL_PADDING_PX - element.clientWidth;
-      // `trackVisible` on arrival, not on the way: the marker you just used is
-      // only stale until the scroll lands, and it used to stay on screen until
-      // the chart was dragged by hand because nothing recomputed it.
-      animateScrollLeft(
-        element,
-        Math.min(target, Math.max(0, width - element.clientWidth)),
-        trackVisible,
-      );
-    },
-    [gutter, range.start, trackVisible, width, zoom],
-  );
+  const trackVisibleRef = useRef<() => void>(() => {});
+  useLayoutEffect(() => {
+    trackVisibleRef.current = trackVisible;
+  }, [trackVisible]);
+  const reveal = useCallback((span: Span, side: "left" | "right") => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const currentRange = rangeRef.current;
+    const currentZoom = zoomRef.current;
+    const from = xOf(span.startDate, currentRange.start, currentZoom);
+    const to = from + widthOf(span.startDate, span.endDate, currentZoom);
+    const target =
+      side === "left"
+        ? from - gutterRef.current - REVEAL_PADDING_PX
+        : to + REVEAL_PADDING_PX - element.clientWidth;
+    // `trackVisible` on arrival, not on the way: the marker you just used is
+    // only stale until the scroll lands, and it used to stay on screen until
+    // the chart was dragged by hand because nothing recomputed it.
+    animateScrollLeft(
+      element,
+      Math.min(target, Math.max(0, widthRef.current - element.clientWidth)),
+      () => trackVisibleRef.current(),
+    );
+  }, []);
 
   /**
    * The press the browser will not deliver.
@@ -928,9 +1053,16 @@ export function TimelineView({
         new PointerEvent("pointerup", { bubbles: true, button: LEFT, buttons: event.buttons }),
       );
     }
-  }, []);
+  }, [setEditHeld]);
 
-  const clearSelection = useCallback(() => onClearSelection?.(), [onClearSelection]);
+  // The shell recreates its tiny action closures when sidebar state changes.
+  // Keep the latest one available without making the chart context — and every
+  // row consuming it — change for an unrelated shell render.
+  const onClearSelectionRef = useRef(onClearSelection);
+  useLayoutEffect(() => {
+    onClearSelectionRef.current = onClearSelection;
+  }, [onClearSelection]);
+  const clearSelection = useCallback(() => onClearSelectionRef.current?.(), []);
 
   /**
    * Selecting is a toggle.
@@ -950,39 +1082,44 @@ export function TimelineView({
   );
 
   const chart = useMemo<Chart>(
-    () => ({ scroller: scrollRef, gestureFor, viewport, reveal, clearSelection, gutter }),
-    [clearSelection, gestureFor, reveal, viewport, gutter],
+    () => ({
+      scroller: scrollRef,
+      repository,
+      run,
+      zoomRef,
+      gestureFor,
+      viewport,
+      reveal,
+      clearSelection,
+      gutter,
+    }),
+    [clearSelection, gestureFor, gutter, repository, reveal, run, viewport],
   );
 
-  if (courses.length === 0) {
-    return (
-      <EmptyState
-        icon={<CalendarRange />}
-        title="Nothing to show"
-        description="No course matches the current focus. Widen it in the sidebar, or add material in the outline."
-        action={
-          <Button variant="accent" onClick={onGoToOutline}>
-            Open the outline
-          </Button>
-        }
-      />
-    );
-  }
   // Chronological, not grouped: the combined lane exists to show the plan as a
   // sequence, and a topic's place in that sequence is where its work *starts* —
   // its earliest block, whatever else it has scheduled later. Topics with
   // nothing scheduled have no place in the order, so they go to the end, where
-  // they read as a backlog waiting to be placed.
-  const everyTopic = courses
-    .flatMap((course) => topicsForQuery(query, course).map((topic) => ({ course, topic })))
-    .map((entry) => ({ ...entry, from: firstBlockStart(entry.topic) }))
-    .sort((left, right) => {
-      if (left.from === right.from) return left.topic.name.localeCompare(right.topic.name);
-      if (!left.from) return 1;
-      if (!right.from) return -1;
-      return compareDates(left.from, right.from);
-    });
+  // they read as a backlog waiting to be placed. Keep this derived list stable
+  // while a local disclosure is animating; rebuilding it used to make every
+  // course toggle pay for a full sort of the plan.
+  const everyTopic = useMemo(
+    () =>
+      visibleCourseTopics
+        .flatMap(({ course, topics }) => topics.map((topic) => ({ course, topic })))
+        .map((entry) => ({ ...entry, from: firstBlockStart(entry.topic) }))
+        .sort((left, right) => {
+          if (left.from === right.from) return left.topic.name.localeCompare(right.topic.name);
+          if (!left.from) return 1;
+          if (!right.from) return -1;
+          return compareDates(left.from, right.from);
+        }),
+    [visibleCourseTopics],
+  );
 
+  if (courses.length === 0) {
+    return <NoTimelineCourses onGoToOutline={onGoToOutline} />;
+  }
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-separator px-4 py-2">
@@ -1001,26 +1138,17 @@ export function TimelineView({
         {/* Shows the mode that is in force, not the one that was chosen: while
             the right button is held the selection moves, and moves back when it
             is let go. */}
-        <SegmentedControl<Mode>
-          size="sm"
-          label="Mode"
-          className="timeline-segments"
-          value={active}
-          onValueChange={setMode}
-          segments={MODES.map((candidate) => ({ value: candidate, label: MODE_LABELS[candidate] }))}
-        />
-        <span className="ml-auto shrink-0 whitespace-nowrap text-callout text-tertiary">
-          {active === "view"
-            ? "Drag to move around the chart. Hold the right button to edit."
-            : "Drag a bar to move it, drag its edge to resize. Hold the right button to move around."}
-        </span>
+        <ModeControl editHeldStore={editHeldStore} onChange={(next) => {
+          modeRef.current = next;
+          syncMode();
+        }} />
         <Legend />
       </div>
 
       <ChartContext.Provider value={chart}>
       <div
         ref={scrollRef}
-        data-timeline-mode={active}
+        data-timeline-mode="view"
         // The right button is a modifier here, so the browser's own menu would
         // only ever interrupt the gesture it is modifying.
         onContextMenu={(event) => event.preventDefault()}
@@ -1058,44 +1186,34 @@ export function TimelineView({
             { width: daysCss(range.days), [DAY_WIDTH_PROPERTY]: `${PX_PER_DAY[zoom]}px` } as React.CSSProperties
           }
           className="timeline-canvas relative"
-          data-timeline-zooming={initializing ? "true" : undefined}
+          data-timeline-zooming="true"
         >
-          <Ruler ticks={ticks} bands={bands} range={range} today={today} />
+          <Ruler ticks={ticks} bands={bands} range={range} today={today} zoom={zoom} />
 
           {/* Drawn once behind every lane rather than per lane, so the rules are
               continuous down the whole chart instead of restarting at each. */}
           <Weekends range={range} zoom={zoom} />
-          <Rules ticks={ticks} range={range} />
+          <Rules ticks={ticks} range={range} zoom={zoom} />
           <ExamMarkers courses={courses} range={range} />
           <TodayLine today={today} range={range} />
 
           <div className="relative">
-            <AllTopicsLane
+            <MemoAllTopicsLane
               entries={everyTopic}
               range={range}
-              zoom={zoom}
               today={today}
               selectedId={selectedId}
-              open={open[ALL_TOPICS] ?? true}
-              onToggle={() =>
-                setOpen((current) => ({ ...current, [ALL_TOPICS]: !(current[ALL_TOPICS] ?? true) }))
-              }
               onSelectTopic={selectTopic}
             />
             {courses.map((course) => (
-              <CourseLane
+              <MemoCourseLane
                 key={course.id}
                 course={course}
                 health={health.get(course.id)}
+                topics={visibleCourseTopics.find((entry) => entry.course === course)?.topics ?? []}
                 range={range}
-                zoom={zoom}
                 today={today}
-                query={query}
                 selectedId={selectedId}
-                open={open[course.id] ?? false}
-                onToggle={() =>
-                  setOpen((current) => ({ ...current, [course.id]: !current[course.id] }))
-                }
                 onSelectTopic={(topic) => selectTopic(course, topic)}
               />
             ))}
@@ -1104,6 +1222,21 @@ export function TimelineView({
       </div>
       </ChartContext.Provider>
     </div>
+  );
+}
+
+function NoTimelineCourses({ onGoToOutline }: { onGoToOutline: () => void }) {
+  return (
+    <EmptyState
+      icon={<CalendarRange />}
+      title="Nothing to show"
+      description="No course matches the current focus. Widen it in the sidebar, or add material in the outline."
+      action={
+        <Button variant="accent" onClick={onGoToOutline}>
+          Open the outline
+        </Button>
+      }
+    />
   );
 }
 
@@ -1146,6 +1279,50 @@ function ZoomControl({ zoom, onChange }: { zoom: Zoom; onChange: (next: Zoom) =>
   );
 }
 
+/**
+ * Mode is chart chrome, not chart data.
+ *
+ * Keeping its small piece of state here means switching View/Edit, or holding
+ * the right-button modifier, changes the toolbar and one DOM attribute without
+ * reconciling every lane and bar underneath it.
+ */
+function ModeControl({
+  editHeldStore,
+  onChange,
+}: {
+  editHeldStore: EditHeldStore;
+  onChange: (next: Mode) => void;
+}) {
+  const [mode, setMode] = useState<Mode>("view");
+  const editHeld = useSyncExternalStore(
+    editHeldStore.subscribe,
+    editHeldStore.getSnapshot,
+    editHeldStore.getSnapshot,
+  );
+  const active = effectiveMode(mode, editHeld);
+
+  return (
+    <>
+      <SegmentedControl<Mode>
+        size="sm"
+        label="Mode"
+        className="timeline-segments"
+        value={active}
+        onValueChange={(next) => {
+          setMode(next);
+          onChange(next);
+        }}
+        segments={MODES.map((candidate) => ({ value: candidate, label: MODE_LABELS[candidate] }))}
+      />
+      <span className="ml-auto shrink-0 whitespace-nowrap text-callout text-tertiary">
+        {active === "view"
+          ? "Drag to move around the chart. Hold the right button to edit."
+          : "Drag a bar to move it, drag its edge to resize. Hold the right button to move around."}
+      </span>
+    </>
+  );
+}
+
 type Range = { start: IsoDate; end: IsoDate; days: number };
 
 /**
@@ -1162,12 +1339,34 @@ function Ruler({
   bands,
   range,
   today,
+  zoom,
 }: {
   ticks: ReturnType<typeof ticksFor>;
   bands: ReturnType<typeof bandsFor>;
   range: Range;
   today: IsoDate;
+  zoom: Zoom;
 }) {
+  const chart = useContext(ChartContext);
+  const viewport = useSyncExternalStore(
+    chart.viewport.subscribe,
+    chart.viewport.getSnapshot,
+    chart.viewport.getSnapshot,
+  );
+  const visible = useMemo(() => {
+    if (!viewport) return { ticks, bands };
+    // Keep a generous horizontal buffer so a quick drag does not add/remove
+    // labels on every tiny scroll. The first frame still renders the complete
+    // ruler until the viewport store has its initial snapshot.
+    const bufferDays = Math.max(30, Math.ceil(1800 / PX_PER_DAY[zoom]));
+    const from = maxDate(range.start, addDays(viewport.from, -bufferDays));
+    const to = minDate(range.end, addDays(viewport.to, bufferDays));
+    return {
+      ticks: ticks.filter((tick) => tick.date >= from && tick.date <= to),
+      bands: bands.filter((band) => band.end >= from && band.start <= to),
+    };
+  }, [bands, range.end, range.start, ticks, viewport, zoom]);
+
   return (
     <div
       // Above the label gutter (z-40), not under it. The gutter is a column of
@@ -1178,7 +1377,7 @@ function Ruler({
       style={{ height: RULER_HEIGHT }}
     >
       <div className="timeline-zoom-layer absolute inset-0">
-        {bands.map((band) => (
+        {visible.bands.map((band) => (
           <span
             key={band.key}
             style={{
@@ -1191,7 +1390,7 @@ function Ruler({
             <span className="sticky left-0 truncate px-1.5">{band.label}</span>
           </span>
         ))}
-        {ticks.map((tick) => (
+        {visible.ticks.map((tick) => (
           <span
             key={tick.date}
             style={{ left: xCss(tick.date, range.start), top: BAND_HEIGHT, height: TICK_HEIGHT }}
@@ -1225,7 +1424,26 @@ function Ruler({
   );
 }
 
-function Rules({ ticks, range }: { ticks: ReturnType<typeof ticksFor>; range: Range }) {
+function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; range: Range; zoom: Zoom }) {
+  // At Day and Week zoom the grid is regular. One painted gradient replaces
+  // thousands of absolutely positioned rules without changing the geometry
+  // under the bars. Month and Quarter retain their calendar-aware tick nodes.
+  if (zoom === "day" || zoom === "week") {
+    const unit = zoom === "day" ? 1 : 7;
+    const step = `calc(var(${DAY_WIDTH_PROPERTY}) * ${unit})`;
+    const line = `calc(var(${DAY_WIDTH_PROPERTY}) * ${unit} - 1px)`;
+    return (
+      <div
+        aria-hidden="true"
+        className="timeline-zoom-layer pointer-events-none absolute inset-0"
+        style={{
+          top: RULER_HEIGHT,
+          backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent ${line}, color-mix(in srgb, var(--mac-separator) 40%, transparent) ${line}, color-mix(in srgb, var(--mac-separator) 40%, transparent) ${step})`,
+        }}
+      />
+    );
+  }
+
   return (
     <div
       aria-hidden="true"
@@ -1251,20 +1469,25 @@ function Rules({ ticks, range }: { ticks: ReturnType<typeof ticksFor>; range: Ra
  */
 function Weekends({ range, zoom }: { range: Range; zoom: Zoom }) {
   if (zoom !== "day" && zoom !== "week") return null;
+  const firstWeekday = weekdayOf(range.start);
+  const weekend = "color-mix(in srgb, var(--mac-fill) 50%, transparent)";
+  const stops = Array.from({ length: 7 }, (_, offset) => {
+    const weekday = (firstWeekday + offset) % 7;
+    const color = weekday === 0 || weekday === 6 ? weekend : "transparent";
+    return `${color} ${daysCss(offset)}, ${color} ${daysCss(offset + 1)}`;
+  }).join(", ");
+
   return (
     <div
       aria-hidden="true"
       className="timeline-zoom-layer pointer-events-none absolute inset-0"
-      style={{ top: RULER_HEIGHT }}
-    >
-      {weekendsIn(range.start, range.end).map((date) => (
-        <span
-          key={date}
-          style={{ left: xCss(date, range.start), width: daysCss(1) }}
-          className="absolute inset-y-0 bg-fill/50"
-        />
-      ))}
-    </div>
+      style={{
+        top: RULER_HEIGHT,
+        backgroundImage: `linear-gradient(to right, ${stops})`,
+        backgroundSize: `${daysCss(7)} 100%`,
+        backgroundRepeat: "repeat-x",
+      }}
+    />
   );
 }
 
@@ -1386,26 +1609,21 @@ function ExamMarkers({ courses, range }: { courses: readonly Course[]; range: Ra
 function AllTopicsLane({
   entries,
   range,
-  zoom,
   today,
   selectedId,
-  open,
-  onToggle,
   onSelectTopic,
 }: {
   entries: readonly { course: Course; topic: Topic }[];
   range: Range;
-  zoom: Zoom;
   today: IsoDate;
   selectedId: string | null;
-  open: boolean;
-  onToggle: () => void;
   onSelectTopic: (course: Course, topic: Topic) => void;
 }) {
+  const [open, setOpen] = useState(true);
   const disclosure = useDisclosure(open);
   const rowsRef = useReorderAnimation(entries.map(({ course, topic }) => `${course.id}:${topic.id}`));
+  const span = useMemo(() => rollUpSpan(entries.map((entry) => entry.topic)), [entries]);
   if (entries.length === 0) return null;
-  const span = rollUpSpan(entries.map((entry) => entry.topic));
   const rowsHeight = entries.length * ROW_HEIGHT + GROUP_GAP;
 
   return (
@@ -1437,13 +1655,12 @@ function AllTopicsLane({
         >
           {disclosure.mounted
             ? entries.map(({ course, topic }) => (
-                <TopicLane
+                <MemoTopicLane
                   key={`${course.id}:${topic.id}`}
                   rowKey={`${course.id}:${topic.id}`}
                   course={course}
                   topic={topic}
                   range={range}
-                  zoom={zoom}
                   today={today}
                   selected={topic.id === selectedId}
                   onSelect={() => onSelectTopic(course, topic)}
@@ -1454,7 +1671,7 @@ function AllTopicsLane({
 
         <GutterCard
           open={open}
-          onToggle={onToggle}
+          onToggle={() => setOpen((current) => !current)}
           icon={<Layers aria-hidden="true" className="size-3 shrink-0 text-tertiary" />}
           name="All courses"
           bold
@@ -1604,29 +1821,23 @@ function useReorderAnimation(keys: readonly string[]) {
 function CourseLane({
   course,
   health,
+  topics,
   range,
-  zoom,
   today,
-  query,
   selectedId,
-  open,
-  onToggle,
   onSelectTopic,
 }: {
   course: Course;
   health: CourseHealth | undefined;
+  topics: readonly Topic[];
   range: Range;
-  zoom: Zoom;
   today: IsoDate;
-  query: string;
   selectedId: string | null;
-  open: boolean;
-  onToggle: () => void;
   onSelectTopic: (topic: Topic) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const disclosure = useDisclosure(open);
-  const topics = topicsForQuery(query, course);
-  const span = rollUpSpan(topics);
+  const span = useMemo(() => rollUpSpan(topics), [topics]);
   // A course with nothing in it opens onto one line of prose rather than rows,
   // and that line still has to have a height to grow to.
   const rowsHeight = topics.length === 0 ? EMPTY_COURSE_HEIGHT : topics.length * ROW_HEIGHT + GROUP_GAP;
@@ -1669,13 +1880,12 @@ function CourseLane({
             </p>
           ) : (
             topics.map((topic) => (
-              <TopicLane
+              <MemoTopicLane
                 key={topic.id}
                 rowKey={topic.id}
                 course={course}
                 topic={topic}
                 range={range}
-                zoom={zoom}
                 today={today}
                 selected={topic.id === selectedId}
                 onSelect={() => onSelectTopic(topic)}
@@ -1686,7 +1896,7 @@ function CourseLane({
 
         <GutterCard
           open={open}
-          onToggle={onToggle}
+          onToggle={() => setOpen((current) => !current)}
           icon={
             <span
               aria-hidden="true"
@@ -1763,7 +1973,7 @@ function GutterCard({
     <div className="timeline-chrome pointer-events-none absolute inset-0 z-40">
       <div
         style={{ width: chart.gutter, height: LANE_HEIGHT + rowsHeight }}
-        className="timeline-disclosure material-inline pointer-events-auto sticky left-0 flex flex-col rounded-r-control border-r border-separator/60"
+        className="timeline-disclosure timeline-inline pointer-events-auto sticky left-0 flex flex-col rounded-r-control border-r border-separator/60"
       >
         <button
           type="button"
@@ -1870,7 +2080,6 @@ function TopicLane({
   topic,
   rowKey,
   range,
-  zoom,
   today,
   selected,
   onSelect,
@@ -1880,18 +2089,18 @@ function TopicLane({
   /** Ties this row to its label in the gutter card; see `lightLabel`. */
   rowKey: string;
   range: Range;
-  zoom: Zoom;
   today: IsoDate;
   selected: boolean;
   onSelect: () => void;
 }) {
   const chart = useContext(ChartContext);
-  const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const repository = chart.repository;
+  const { run } = chart;
   const laneRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<Span | null>(null);
   const [readout, setReadout] = useState<Readout | null>(null);
   const tint = courseColorValue(topic.color || course.color);
+  const progress = useMemo(() => topicProgress(topic), [topic]);
   // One pass for the row: each bar is drawn with its share of the topic's
   // progress rather than with all of it. See `blocks.ts`.
   const fills = useMemo(() => fillsByBlock(topic), [topic]);
@@ -1903,7 +2112,11 @@ function TopicLane({
     event.preventDefault();
     const bounds = lane.getBoundingClientRect();
     const dateUnderPointer = (clientX: number) =>
-      clampDate(dateAt(clientX - bounds.left, range.start, zoom), range.start, range.end);
+      clampDate(
+        dateAt(clientX - bounds.left, range.start, chart.zoomRef.current),
+        range.start,
+        range.end,
+      );
     const originX = event.clientX;
     const origin = dateUnderPointer(event.clientX);
     // Held inside the gap it started in, for the same reason a move is: two
@@ -1942,6 +2155,7 @@ function TopicLane({
       setDraft(null);
       setReadout(null);
       if (!dragging) return;
+      if (!repository) return;
       run(
         repository.createStudyBlock({
           topicId: topic.id,
@@ -1978,7 +2192,7 @@ function TopicLane({
     >
       {/* The row's name now lives in the group's single `GutterCard`, drawn
           once above every row rather than repeated per row here. */}
-      <OffscreenMarkers topic={topic} tint={tint} />
+      {topic.blocks.length > 0 ? <OffscreenMarkers topic={topic} tint={tint} /> : null}
       {draft ? (
         <span
           aria-hidden="true"
@@ -1991,14 +2205,14 @@ function TopicLane({
       ) : null}
       <DragReadout readout={readout} />
       {topic.blocks.map((block) => (
-        <BlockBar
+        <MemoBlockBar
           key={block.id}
           course={course}
           topic={topic}
           block={block}
           fill={fills.get(block.id) ?? 0}
+          progress={progress}
           range={range}
-          zoom={zoom}
           today={today}
           selected={selected}
           onSelect={onSelect}
@@ -2188,7 +2402,7 @@ function Marker({
       // *scrollport*, not where it sits in its row. The margin puts it on the
       // bars' own centre line, at the bars' own height.
       className={clsx(
-        "timeline-chrome timeline-marker material-inline sticky z-30 mt-1",
+        "timeline-chrome timeline-marker timeline-inline sticky z-30 mt-1",
         "flex h-4 items-center gap-0.5 rounded-chip px-1 text-caption font-semibold tabular-nums",
         "hover:brightness-110",
         side === "left" ? "float-left" : "float-right right-1",
@@ -2210,8 +2424,8 @@ function BlockBar({
   topic,
   block,
   fill,
+  progress,
   range,
-  zoom,
   today,
   selected,
   onSelect,
@@ -2221,20 +2435,19 @@ function BlockBar({
   block: StudyBlock;
   /** This bar's share of the topic's progress, 0–1. See `blocks.ts`. */
   fill: number;
+  progress: ReturnType<typeof topicProgress>;
   range: Range;
-  zoom: Zoom;
   today: IsoDate;
   selected: boolean;
   onSelect: () => void;
 }) {
   const chart = useContext(ChartContext);
-  const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const repository = chart.repository;
+  const { run } = chart;
   const [draft, setDraft] = useState<Span | null>(null);
   const [readout, setReadout] = useState<Readout | null>(null);
 
   const shown = draft ?? block;
-  const progress = topicProgress(topic);
   const unit = UNIT_LABELS[topic.unit].plural;
   const tint = courseColorValue(topic.color || course.color);
   // The neighbours this bar may not be dragged into. Read from the stored
@@ -2244,6 +2457,7 @@ function BlockBar({
   const commit = (next: Span) => {
     setDraft(null);
     if (next.startDate === block.startDate && next.endDate === block.endDate) return;
+    if (!repository) return;
     run(
       repository.updateStudyBlock(block.id, {
         startDate: next.startDate,
@@ -2275,7 +2489,7 @@ function BlockBar({
       if (!dragging && Math.abs(deltaX) < DRAG_THRESHOLD_PX) return;
       dragging = true;
 
-      const days = daysMoved(deltaX, zoom);
+      const days = daysMoved(deltaX, chart.zoomRef.current);
       if (mode === "move") {
         latest = {
           startDate: addDays(origin.startDate, days),
@@ -2350,10 +2564,7 @@ function BlockBar({
   // unfinished work is the one thing on this chart that needs acting on, and it
   // used to be drawn *fainter* than everything else.
   const overdue = past && (progress.ratio ?? 0) < 1;
-  const barWidth = Math.max(widthOf(shown.startDate, shown.endDate, zoom), 6);
-  // Only when the text will not be a clipped stub. Below this the bar's own
-  // length is the only honest label it can carry.
-  const label = barWidth >= 64 ? `${shortDate(shown.startDate)} – ${shortDate(shown.endDate)}` : null;
+  const label = `${shortDate(shown.startDate)} – ${shortDate(shown.endDate)}`;
 
   return (
     <>
@@ -2415,14 +2626,12 @@ function BlockBar({
         />
         {/* The dates, in the bar, when there is room for them. A chart of
             anonymous rectangles makes you hover every one to read it back. */}
-        {label ? (
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 flex items-center justify-center px-1.5 text-caption tabular-nums whitespace-nowrap text-secondary"
-          >
-            {label}
-          </span>
-        ) : null}
+        <span
+          aria-hidden="true"
+          className="timeline-bar-label pointer-events-none absolute inset-0 items-center justify-center px-1.5 text-caption tabular-nums whitespace-nowrap text-secondary"
+        >
+          {label}
+        </span>
         {/* Shown, and hit, only in edit mode: in view mode a bar is part of the
             picture rather than a handle, and see `globals.css` for both. */}
         <span
@@ -2446,6 +2655,63 @@ function BlockBar({
     </>
   );
 }
+
+function sameCourseList(left: readonly Course[], right: readonly Course[]): boolean {
+  if (left === right) return true;
+  return left.length === right.length && left.every((course, index) => course === right[index]);
+}
+
+/** The shell can re-render for a hidden-course toggle without changing chart data. */
+const MemoTimelineChart = memo(TimelineChart, (left, right) =>
+  sameCourseList(left.courses, right.courses) &&
+  left.health === right.health &&
+  left.today === right.today &&
+  (left.query ?? "") === (right.query ?? "") &&
+  left.selectedId === right.selectedId,
+);
+
+/**
+ * The chart owns a lot of rows, but their data is intentionally stable while a
+ * sibling disclosure, hover, or local drag changes. These comparators ignore
+ * callback identity because the callbacks are actions over the same stable
+ * course/topic ids; the visible selection and data props still invalidate the
+ * row when their meaning changes.
+ */
+const MemoAllTopicsLane = memo(AllTopicsLane, (left, right) =>
+  left.entries === right.entries &&
+  left.range === right.range &&
+  left.today === right.today &&
+  left.selectedId === right.selectedId,
+);
+
+const MemoCourseLane = memo(CourseLane, (left, right) =>
+  left.course === right.course &&
+  left.health === right.health &&
+  left.topics === right.topics &&
+  left.range === right.range &&
+  left.today === right.today &&
+  left.selectedId === right.selectedId,
+);
+
+const MemoTopicLane = memo(TopicLane, (left, right) =>
+  left.course === right.course &&
+  left.topic === right.topic &&
+  left.rowKey === right.rowKey &&
+  left.range === right.range &&
+  left.today === right.today &&
+  left.selected === right.selected,
+);
+
+const MemoBlockBar = memo(BlockBar, (left, right) =>
+  left.course === right.course &&
+  left.topic === right.topic &&
+  left.block === right.block &&
+  left.fill === right.fill &&
+  left.progress === right.progress &&
+  left.range === right.range &&
+  left.today === right.today &&
+  left.selected === right.selected,
+);
 
 /** Where the pointer is, and what the drag under it currently means. */
 type Readout = { x: number; y: number; startDate: IsoDate; endDate: IsoDate };
