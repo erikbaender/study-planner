@@ -304,6 +304,12 @@ span:has(> .topic-progress-thumb) {
   -webkit-backdrop-filter: none;
 }
 
+/** The course gutter keeps its frosted surface; markers stay opaque because they multiply over the chart. */
+@utility timeline-course-panel {
+  background: var(--mac-material-inline);
+  @apply backdrop-blur-md backdrop-saturate-[1.8];
+}
+
 /* The thumb travels; the labels only change colour under it. */
 .segmented-thumb {
   transition:

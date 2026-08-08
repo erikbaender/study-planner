@@ -1973,7 +1973,7 @@ function GutterCard({
     <div className="timeline-chrome pointer-events-none absolute inset-0 z-40">
       <div
         style={{ width: chart.gutter, height: LANE_HEIGHT + rowsHeight }}
-        className="timeline-disclosure timeline-inline pointer-events-auto sticky left-0 flex flex-col rounded-r-control border-r border-separator/60"
+        className="timeline-disclosure timeline-course-panel pointer-events-auto sticky left-0 flex flex-col rounded-r-control border-r border-separator/60"
       >
         <button
           type="button"
