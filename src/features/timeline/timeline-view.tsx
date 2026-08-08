@@ -689,7 +689,7 @@ export function TimelineView({
     // A browser-restored scroll can arrive after the canvas has already
     // painted. Until the user touches the chart, that event is not intent and
     // must not replace the initial Today position.
-    if (initializingRef.current && !userNavigatedRef.current && !isScrollAnimating(element)) {
+    if (!userNavigatedRef.current && !isScrollAnimating(element)) {
       primedRef.current = false;
       scrollToToday(false);
       return;
