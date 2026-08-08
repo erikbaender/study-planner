@@ -469,6 +469,17 @@ export function TimelineView({
   const [extraAfter, setExtraAfter] = useState(0);
   /** Days to add to `scrollLeft` once `extraBefore` takes effect, so growing the canvas backward does not visually shift it. */
   const pendingShiftRef = useRef(0);
+  /** Once the user navigates, live plan updates must not reframe their view. */
+  const userNavigatedRef = useRef(false);
+  /** Keep the first layout correction invisible until its final position is ready. */
+  const initializingRef = useRef(true);
+  const [initializing, setInitializing] = useState(true);
+
+  const revealInitialChart = useCallback(() => {
+    if (!initializingRef.current) return;
+    initializingRef.current = false;
+    setInitializing(false);
+  }, []);
 
   const range = useMemo(() => {
     const start = addDays(contentRange.start, -extraBefore);
@@ -476,13 +487,37 @@ export function TimelineView({
     return { start, end, days: differenceInDays(start, end) + 1 };
   }, [contentRange.start, contentRange.end, extraBefore, extraAfter]);
 
+  // Independent of `everyTopic` below on purpose: that array is sorted for
+  // display, this only needs to know which names are on screen and open.
+  const gutter = useMemo(() => {
+    const labels: { text: string; kind: LabelKind }[] = [];
+    const perCourse = courses.map((course) => ({ course, topics: topicsForQuery(query, course) }));
+    if (perCourse.some(({ topics }) => topics.length > 0)) {
+      labels.push({ text: "All courses", kind: "allTopics" });
+    }
+    const allTopicsOpen = open[ALL_TOPICS] ?? true;
+    for (const { course, topics } of perCourse) {
+      labels.push({ text: course.name, kind: "course" });
+      if (allTopicsOpen) {
+        for (const topic of topics) labels.push({ text: topic.name, kind: "topicWithDot" });
+      }
+      if (open[course.id]) {
+        for (const topic of topics) labels.push({ text: topic.name, kind: "topicPlain" });
+      }
+    }
+    return gutterWidth(labels);
+  }, [courses, query, open]);
+
   const width = range.days * PX_PER_DAY[zoom];
   const ticks = ticksFor(range.start, range.end, zoom);
   const bands = bandsFor(range.start, range.end, zoom);
 
   // Today just clear of the label gutter, not a third of the way in: what is
   // coming is what the chart is for, so the whole width goes to it.
-  const todayOffset = () => xOf(today, range.start, zoom) - gutter - REVEAL_PADDING_PX;
+  const todayOffset = useCallback(
+    () => xOf(today, range.start, zoom) - gutter - REVEAL_PADDING_PX,
+    [gutter, range.start, today, zoom],
+  );
 
   const trackVisible = useCallback(() => {
     const element = scrollRef.current;
@@ -522,6 +557,31 @@ export function TimelineView({
     }
   }, [range.start, viewport, zoom]);
 
+  /**
+   * The one definition of where Today belongs. Initial positioning uses the
+   * instant form; the toolbar uses the animated form, but both always target
+   * this same current range and gutter.
+   */
+  const scrollToToday = useCallback(
+    (animated: boolean) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      if (animated) {
+        userNavigatedRef.current = true;
+        revealInitialChart();
+      }
+      const target = todayOffset();
+      if (animated) {
+        animateScrollLeft(element, target, trackVisible);
+      } else {
+        stopScrollAnimation(element);
+        element.scrollLeft = target;
+        trackVisible();
+      }
+    },
+    [revealInitialChart, todayOffset, trackVisible],
+  );
+
   // Extending the canvas backward moves every date to a larger x (the same
   // date is now further from the new, earlier `start`). Left uncorrected,
   // that reads as the chart lurching forward the instant it grows; shifting
@@ -556,12 +616,16 @@ export function TimelineView({
    * would yank the canvas back to today while someone is reading elsewhere.
    */
   const primedRef = useRef(false);
+  /** The range used for the last initial-prime check, before live data settles. */
+  const primedContentRangeRef = useRef<{ start: IsoDate; end: IsoDate } | null>(null);
+  /** The rendered range for which the initial scroll target was calculated. */
+  const primedRenderedRangeRef = useRef<IsoDate | null>(null);
   /**
    * Also: not until the chart is actually on screen.
    *
    * Switching to the timeline from another view can mount it — or reveal it —
-   * with a scrollport that has no width yet, and an offset written to a
-   * zero-width scroller is discarded. That is why arriving from Today or
+   * with a scrollport or canvas that has no width yet, and an offset written to
+   * it is discarded. That is why arriving from Today or
    * Outline used to land the chart nowhere in particular while a reload landed
    * it on today. `clientWidth` is the test for "displayed", and the resize
    * observer below calls this again the moment that becomes true.
@@ -570,13 +634,97 @@ export function TimelineView({
     const element = scrollRef.current;
     if (!element || primedRef.current) return;
     if (courses.length === 0 || element.clientWidth === 0) return;
+    // A visible scrollport can briefly exist before its canvas has laid out.
+    // Do not consume the one-time prime in that frame: a write would clamp to
+    // zero and the later layout would otherwise leave the chart there.
+    if (element.scrollWidth === 0) return;
     primedRef.current = true;
-    element.scrollLeft = todayOffset();
-    trackVisible();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courses.length, trackVisible]);
+    primedRenderedRangeRef.current = range.start;
+    scrollToToday(false);
+  }, [courses.length, range.start, scrollToToday]);
 
-  useEffect(primeToday, [primeToday]);
+  // Run before the first visible paint when the timeline is already laid out;
+  // the ResizeObserver below covers the case where the view is revealed later.
+  useLayoutEffect(primeToday, [primeToday]);
+
+  // Repository-backed plans can arrive in more than one commit. If the first
+  // commit primed against a short/old range, the canvas moves its historical
+  // left edge when the complete range arrives. Re-prime that initial view so
+  // it lands at Today; after any user navigation, preserve their position.
+  useLayoutEffect(() => {
+    const previous = primedContentRangeRef.current;
+    primedContentRangeRef.current = { start: contentRange.start, end: contentRange.end };
+    if (
+      previous &&
+      (previous.start !== contentRange.start || previous.end !== contentRange.end) &&
+      !userNavigatedRef.current
+    ) {
+      primedRef.current = false;
+      primeToday();
+    }
+  }, [contentRange.start, contentRange.end, primeToday]);
+
+  // A left-edge extension changes the x-coordinate of Today. The pending
+  // scroll correction above preserves the old picture, which is right during
+  // normal scrolling but can follow the initial prime and leave it historical.
+  // Recalculate once for the new range while initialization still owns the
+  // position.
+  useLayoutEffect(() => {
+    if (
+      userNavigatedRef.current ||
+      !primedRef.current ||
+      primedRenderedRangeRef.current === null ||
+      primedRenderedRangeRef.current === range.start
+    ) {
+      return;
+    }
+    pendingShiftRef.current = 0;
+    primedRef.current = false;
+    primeToday();
+  }, [range.start, primeToday]);
+
+  const handleScroll = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    // A browser-restored scroll can arrive after the canvas has already
+    // painted. Until the user touches the chart, that event is not intent and
+    // must not replace the initial Today position.
+    if (initializingRef.current && !userNavigatedRef.current && !isScrollAnimating(element)) {
+      primedRef.current = false;
+      scrollToToday(false);
+      return;
+    }
+    trackVisible();
+  }, [scrollToToday, trackVisible]);
+
+  // Edge and Chromium-based browsers can restore a previous horizontal
+  // scrollLeft after the first layout pass. Give that restoration two frames
+  // to finish, then make the initial Today position authoritative. This pass
+  // is intentionally skipped after the user has touched the chart.
+  useEffect(() => {
+    if (courses.length === 0 || typeof requestAnimationFrame === "undefined") return;
+    let secondFrame = 0;
+    let revealFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        if (userNavigatedRef.current) return;
+        primedRef.current = false;
+        primeToday();
+        // `primeToday` can grow the range. Wait one more frame so that the
+        // resulting layout and scroll correction are committed before fading
+        // the chart into view.
+        revealFrame = requestAnimationFrame(revealInitialChart);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+      cancelAnimationFrame(revealFrame);
+    };
+    // This is the mount/data-load settling pass; zoom and range changes have
+    // their own positioning paths and must not reframe an active chart.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courses.length, primeToday, revealInitialChart]);
 
   // And the canvas keeps growing without being scrolled. Extension used to be
   // driven only by `onScroll`, which cannot start: a canvas that is not yet
@@ -605,10 +753,11 @@ export function TimelineView({
    * redrawn.
    *
    * So nothing pretends to be the intermediate scale, because there isn't one.
-   * The canvas fades out to the surface behind it, the new scale is committed
-   * while there is nothing on screen to see it land, and it fades back. Two
-   * short halves of the shared duration on the shared curve, and the only
-   * property animating is opacity.
+   * The chart layers fade out to the surface behind them, the new scale is
+   * committed while there is nothing on screen to see it land, and they fade
+   * back. Two short halves of the shared duration on the shared curve, and the
+   * only property animating is opacity. The course/topic gutter stays visible
+   * throughout because it is a separate overlay layer.
    *
    * `scrollLeft` is set here, in the dark, so the today marker keeps the screen
    * position it had when the gesture started — the one thing that must not move
@@ -624,27 +773,36 @@ export function TimelineView({
 
     element.scrollLeft = xOf(today, range.start, zoom) - zoomed.todayScreenX;
     trackVisible();
-    canvas.style.opacity = "1";
-    const settle = window.setTimeout(() => {
-      canvas.style.transition = "";
-      canvas.style.opacity = "";
-    }, motionDuration(element) / 2);
-    return () => window.clearTimeout(settle);
+    // The geometry has landed while the chart was hidden. Releasing this
+    // attribute starts the same chart-only fade-in for every zoom level; the
+    // gutter is not a descendant of any faded layer.
+    canvas.dataset.timelineZooming = "false";
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom]);
 
-  useEffect(() => () => window.clearTimeout(zoomTimerRef.current), []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(zoomTimerRef.current);
+      canvasRef.current?.removeAttribute("data-timeline-zooming");
+    },
+    [],
+  );
 
   // A sidebar or inspector resize changes the right edge without a scroll.
   // Keep markers correct without making viewport dimensions React state.
   useEffect(() => {
     const element = scrollRef.current;
+    const canvas = canvasRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       primeToday();
       trackVisible();
     });
     observer.observe(element);
+    // The scrollport can have a size before the timeline canvas does. That
+    // ordering is common when switching views, and observing only the former
+    // leaves a skipped initial prime stranded at scrollLeft 0.
+    if (canvas) observer.observe(canvas);
     return () => observer.disconnect();
   }, [primeToday, trackVisible]);
 
@@ -653,14 +811,14 @@ export function TimelineView({
    *
    * Everything here reads geometry that is already on screen — today's x at the
    * *committed* scale — so it costs nothing and runs in the click's own frame.
-   * The transform is the only thing that moves; `zoom` follows it, `duration`
-   * later, in the effect above.
+   * The fade is the only thing that moves; `zoom` follows it, `duration` later,
+   * in the effect above.
    *
    * Zooming again mid-flight retargets rather than restarting: `zoom` has not
    * changed, so the origin and the geometry under it have not either, and
-   * writing a new `scaleX` lets the same transition carry on from wherever it
-   * had got to. That is also why the scale is always measured from the
-   * committed zoom rather than from the one being left.
+   * leaving the fade in place lets the same transition carry on from wherever
+   * it had got to. That is also why the screen position is always measured from
+   * the committed zoom rather than from the one being left.
    */
   const changeZoom = (next: Zoom) => {
     const element = scrollRef.current;
@@ -672,10 +830,13 @@ export function TimelineView({
         ? { todayScreenX: xOf(today, range.start, zoom) - element.scrollLeft }
         : { todayScreenX: 0 };
       setZoom(next);
+      revealInitialChart();
       return;
     }
 
     window.clearTimeout(zoomTimerRef.current);
+    userNavigatedRef.current = true;
+    revealInitialChart();
     // Captured once per gesture: zooming again mid-fade is still aiming at the
     // place the first click started from, and `zoom` has not moved yet either.
     zoomFromRef.current ??= {
@@ -684,31 +845,12 @@ export function TimelineView({
     zoomTargetRef.current = next;
 
     const half = motionDuration(element) / 2;
-    canvas.style.transition = `opacity ${half}ms ${motionCurveValue(element)}`;
-    canvas.style.opacity = "0";
+    // If the chart is already fading out it stays hidden. If a click arrives
+    // during the fade-in, the same transition reverses from its current
+    // opacity. Replacing the timer below means only the latest target lands.
+    canvas.dataset.timelineZooming = "true";
     zoomTimerRef.current = window.setTimeout(() => setZoom(next), half);
   };
-
-  // Independent of `everyTopic` below on purpose: that array is sorted for
-  // display, this only needs to know which names are on screen and open.
-  const gutter = useMemo(() => {
-    const labels: { text: string; kind: LabelKind }[] = [];
-    const perCourse = courses.map((course) => ({ course, topics: topicsForQuery(query, course) }));
-    if (perCourse.some(({ topics }) => topics.length > 0)) {
-      labels.push({ text: "All courses", kind: "allTopics" });
-    }
-    const allTopicsOpen = open[ALL_TOPICS] ?? true;
-    for (const { course, topics } of perCourse) {
-      labels.push({ text: course.name, kind: "course" });
-      if (allTopicsOpen) {
-        for (const topic of topics) labels.push({ text: topic.name, kind: "topicWithDot" });
-      }
-      if (open[course.id]) {
-        for (const topic of topics) labels.push({ text: topic.name, kind: "topicPlain" });
-      }
-    }
-    return gutterWidth(labels);
-  }, [courses, query, open]);
 
   /**
    * Bring a span just inside an edge, rather than centring it.
@@ -839,19 +981,18 @@ export function TimelineView({
       return compareDates(left.from, right.from);
     });
 
-  const scrollToToday = () => {
-    const element = scrollRef.current;
-    if (!element) return;
-    animateScrollLeft(element, todayOffset(), trackVisible);
-  };
-
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-separator px-4 py-2">
         {/* First, and the one filled control on the bar: "where am I now" is the
             question this chart is asked most, and the answer should not have to
             be found among the settings for how it is drawn. */}
-        <Button size="sm" variant="accent" leadingIcon={<CalendarDays />} onClick={scrollToToday}>
+        <Button
+          size="sm"
+          variant="accent"
+          leadingIcon={<CalendarDays />}
+          onClick={() => scrollToToday(true)}
+        >
           Today
         </Button>
         <ZoomControl zoom={zoom} onChange={changeZoom} />
@@ -866,7 +1007,7 @@ export function TimelineView({
           onValueChange={setMode}
           segments={MODES.map((candidate) => ({ value: candidate, label: MODE_LABELS[candidate] }))}
         />
-        <span className="ml-auto text-callout text-tertiary">
+        <span className="ml-auto shrink-0 whitespace-nowrap text-callout text-tertiary">
           {active === "view"
             ? "Drag to move around the chart. Hold the right button to edit."
             : "Drag a bar to move it, drag its edge to resize. Hold the right button to move around."}
@@ -881,7 +1022,7 @@ export function TimelineView({
         // The right button is a modifier here, so the browser's own menu would
         // only ever interrupt the gesture it is modifying.
         onContextMenu={(event) => event.preventDefault()}
-        onScroll={trackVisible}
+        onScroll={handleScroll}
         // Captured rather than bubbled: a bar or a lane under the pointer
         // handles its own press first, and the modifier has to be in force
         // before whatever the *next* press lands on asks what it means.
@@ -892,14 +1033,20 @@ export function TimelineView({
           // knowing the modifier is down, whatever happened to the press that
           // set it. This handler is on the capture phase for the same reason —
           // the bar or lane the press lands on asks what it means afterwards.
+          userNavigatedRef.current = true;
+          revealInitialChart();
           setEditHeld((event.buttons & RIGHT_BUTTON_MASK) !== 0);
           if (event.button === RIGHT) event.preventDefault();
         }}
         onPointerDown={(event) => {
           if (chart.gestureFor(event) === "pan") startPan(event, chart, chart.clearSelection);
         }}
+        onWheel={() => {
+          userNavigatedRef.current = true;
+          revealInitialChart();
+        }}
         onPointerMove={bridgeHeldPress}
-        className="min-h-0 flex-1 overflow-auto bg-content"
+        className="timeline-scrollport min-h-0 flex-1 overflow-auto bg-content"
       >
         <div
           ref={canvasRef}
@@ -909,6 +1056,7 @@ export function TimelineView({
             { width: daysCss(range.days), [DAY_WIDTH_PROPERTY]: `${PX_PER_DAY[zoom]}px` } as React.CSSProperties
           }
           className="timeline-canvas relative"
+          data-timeline-zooming={initializing ? "true" : undefined}
         >
           <Ruler ticks={ticks} bands={bands} range={range} today={today} />
 
@@ -1027,55 +1175,61 @@ function Ruler({
       className="timeline-chrome sticky top-0 z-50 border-b border-separator bg-content"
       style={{ height: RULER_HEIGHT }}
     >
-      {bands.map((band) => (
+      <div className="timeline-zoom-layer absolute inset-0">
+        {bands.map((band) => (
+          <span
+            key={band.key}
+            style={{
+              left: xCss(band.start, range.start),
+              width: widthCss(band.start, band.end),
+              height: BAND_HEIGHT,
+            }}
+            className="absolute top-0 flex items-center overflow-hidden border-r border-separator/60 text-caption font-semibold text-secondary"
+          >
+            <span className="sticky left-0 truncate px-1.5">{band.label}</span>
+          </span>
+        ))}
+        {ticks.map((tick) => (
+          <span
+            key={tick.date}
+            style={{ left: xCss(tick.date, range.start), top: BAND_HEIGHT, height: TICK_HEIGHT }}
+            className={clsx(
+              "timeline-tint absolute flex items-center pl-1 text-caption tabular-nums whitespace-nowrap",
+              tick.date === today
+                ? "font-semibold text-accent"
+                : tick.major
+                  ? "font-semibold text-secondary"
+                  : "text-tertiary",
+            )}
+          >
+            {tick.label}
+          </span>
+        ))}
+        {/* The today chip belongs to the ruler, not to the line it caps: drawn
+            on the canvas it scrolled up out of the chart with the lanes, leaving
+            the one marker that answers "where is now" off screen. */}
         <span
-          key={band.key}
-          style={{
-            left: xCss(band.start, range.start),
-            width: widthCss(band.start, band.end),
-            height: BAND_HEIGHT,
-          }}
-          className="absolute top-0 flex items-center overflow-hidden border-r border-separator/60 text-caption font-semibold text-secondary"
+          aria-hidden="true"
+          // Centred on the line it caps, not started at it.
+          style={{ left: xCss(today, range.start), height: RULER_HEIGHT }}
+          className="pointer-events-none absolute top-0 flex -translate-x-1/2 items-center"
         >
-          <span className="sticky left-0 truncate px-1.5">{band.label}</span>
+          <span className="rounded-chip bg-accent px-1 text-caption font-semibold text-on-accent">
+            Today
+          </span>
         </span>
-      ))}
-      {ticks.map((tick) => (
-        <span
-          key={tick.date}
-          style={{ left: xCss(tick.date, range.start), top: BAND_HEIGHT, height: TICK_HEIGHT }}
-          className={clsx(
-            "timeline-tint absolute flex items-center pl-1 text-caption tabular-nums whitespace-nowrap",
-            tick.date === today
-              ? "font-semibold text-accent"
-              : tick.major
-                ? "font-semibold text-secondary"
-                : "text-tertiary",
-          )}
-        >
-          {tick.label}
-        </span>
-      ))}
-      {/* The today chip belongs to the ruler, not to the line it caps: drawn on
-          the canvas it scrolled up out of the chart with the lanes, leaving the
-          one marker that answers "where is now" off screen. */}
-      <span
-        aria-hidden="true"
-        // Centred on the line it caps, not started at it.
-        style={{ left: xCss(today, range.start), height: RULER_HEIGHT }}
-        className="pointer-events-none absolute top-0 flex -translate-x-1/2 items-center"
-      >
-        <span className="rounded-chip bg-accent px-1 text-caption font-semibold text-on-accent">
-          Today
-        </span>
-      </span>
+        </div>
     </div>
   );
 }
 
 function Rules({ ticks, range }: { ticks: ReturnType<typeof ticksFor>; range: Range }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ top: RULER_HEIGHT }}>
+    <div
+      aria-hidden="true"
+      className="timeline-zoom-layer pointer-events-none absolute inset-0"
+      style={{ top: RULER_HEIGHT }}
+    >
       {ticks.map((tick) => (
         <span
           key={tick.date}
@@ -1096,7 +1250,11 @@ function Rules({ ticks, range }: { ticks: ReturnType<typeof ticksFor>; range: Ra
 function Weekends({ range, zoom }: { range: Range; zoom: Zoom }) {
   if (zoom !== "day" && zoom !== "week") return null;
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ top: RULER_HEIGHT }}>
+    <div
+      aria-hidden="true"
+      className="timeline-zoom-layer pointer-events-none absolute inset-0"
+      style={{ top: RULER_HEIGHT }}
+    >
       {weekendsIn(range.start, range.end).map((date) => (
         <span
           key={date}
@@ -1147,7 +1305,7 @@ function TodayLine({ today, range }: { today: IsoDate; range: Range }) {
       // Over the bars, under the label gutter, and with its chip left in the
       // ruler: a marker line drawn through the gutter read as a bug, not a
       // layer, and a chip that scrolled away with the lanes read as neither.
-      className="pointer-events-none absolute inset-y-0 z-30 w-px bg-accent"
+      className="timeline-zoom-layer pointer-events-none absolute inset-y-0 z-30 w-px bg-accent"
     />
   );
 }
@@ -1164,7 +1322,7 @@ function ExamMarkers({ courses, range }: { courses: readonly Course[]; range: Ra
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 z-10"
+      className="timeline-zoom-layer pointer-events-none absolute inset-0 z-10"
       style={{ top: RULER_HEIGHT }}
     >
       {courses.flatMap((course) =>
@@ -1254,7 +1412,7 @@ function AllTopicsLane({
           a row is its lane *and* its label in the gutter card below, and both
           have to travel together. */}
       <div ref={rowsRef} className="relative">
-        <div className="relative" style={{ height: LANE_HEIGHT }}>
+        <div className="timeline-zoom-layer relative" style={{ height: LANE_HEIGHT }}>
           {span ? (
             // Crossfaded rather than swapped: the roll-up and the rows it rolls
             // up are the same work at two scales, and one replacing the other
@@ -1272,7 +1430,7 @@ function AllTopicsLane({
         </div>
 
         <div
-          className="timeline-disclosure"
+          className="timeline-disclosure timeline-zoom-layer"
           style={{ height: disclosure.expanded ? rowsHeight : 0 }}
         >
           {disclosure.mounted
@@ -1474,7 +1632,7 @@ function CourseLane({
   return (
     <section className="border-b border-separator/60">
       <div className="relative">
-        <div className="relative" style={{ height: LANE_HEIGHT }}>
+        <div className="timeline-zoom-layer relative" style={{ height: LANE_HEIGHT }}>
           {span ? (
             // The roll-up: one bar covering everything the course has scheduled,
             // filled by the course's overall progress, fading out as the rows it
@@ -1499,7 +1657,10 @@ function CourseLane({
           ) : null}
         </div>
 
-        <div className="timeline-disclosure" style={{ height: disclosure.expanded ? rowsHeight : 0 }}>
+        <div
+          className="timeline-disclosure timeline-zoom-layer"
+          style={{ height: disclosure.expanded ? rowsHeight : 0 }}
+        >
           {!disclosure.mounted ? null : topics.length === 0 ? (
             <p className="sticky left-0 max-w-md px-8 pb-2 text-callout text-tertiary">
               This course has no topics yet. Add material in the outline before placing study blocks.

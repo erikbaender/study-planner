@@ -251,6 +251,27 @@ span:has(> .topic-progress-thumb) {
   transition: height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
 }
 
+/* Fade chart content independently from the course/topic gutter over it. */
+.timeline-zoom-layer {
+  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.timeline-disclosure.timeline-zoom-layer {
+  transition:
+    height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
+    opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.timeline-canvas[data-timeline-zooming="true"] .timeline-zoom-layer {
+  opacity: 0;
+}
+
+/* Do not let the browser preserve a historical horizontal anchor while the
+   timeline's full date range is being laid out. Initial positioning owns it. */
+.timeline-scrollport {
+  overflow-anchor: none;
+}
+
 /* The thumb travels; the labels only change colour under it. */
 .segmented-thumb {
   transition:
@@ -398,6 +419,7 @@ span:has(> .topic-progress-thumb) {
 @media (prefers-reduced-motion: reduce) {
   .timeline-canvas,
   .timeline-disclosure,
+  .timeline-zoom-layer,
   .timeline-tint {
     transition: none;
   }
