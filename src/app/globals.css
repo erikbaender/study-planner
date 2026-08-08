@@ -288,29 +288,35 @@ span:has(> .topic-progress-thumb) {
 }
 
 /**
- * The row hover, in the row's own course colour.
+ * The row highlight: one row, both halves, no fade.
  *
- * A neutral grey highlight said "this row" and nothing else; the course tint
- * says which course you are about to place work in, which is the question a
- * combined lane of ten courses actually raises.
- */
-/**
- * Hover is not animated, at all.
+ * A row is a lane on the canvas and a label in the gutter card over it, and
+ * `:hover` reaches only the half the pointer is on — so the highlight used to
+ * stop at the edge of the label panel, with the canvas half hidden behind it.
+ * Both halves carry the same `data-row-key` and are lit together by
+ * `lightRow`, which is the shape the *selected* row already had; hover is now
+ * simply the same highlight in a quieter colour.
  *
- * A highlight that fades is a highlight that is wrong for as long as it fades,
- * and the row under the pointer changes as fast as the pointer crosses rows.
- * This is the one thing in the chart that has to be instant.
+ * Not animated, at all. A highlight that fades is a highlight that is wrong for
+ * as long as it fades, and the row under the pointer changes as fast as the
+ * pointer crosses rows. This is the one thing in the chart that has to be
+ * instant.
  */
-.timeline-lane:hover,
-.timeline-row[data-hovered="true"],
-.timeline-row:hover {
+.timeline-lane[data-hovered="true"],
+.timeline-row[data-hovered="true"] {
   background-color: var(--mac-fill);
 }
 
-/* The row and its label light up together. The canvas half sits behind the
-   label panel, so the panel is told directly which of its rows to light. */
-.timeline-row[aria-current="true"] {
+/* Selection outranks hover: the row you are inspecting stays the blue one while
+   the pointer travels over it. Blue, because selection is blue everywhere in
+   the app — the course's own colour said "this course" a second time rather
+   than "this is the one you are looking at". */
+.timeline-lane[data-selected="true"],
+.timeline-row[data-selected="true"] {
   background-color: var(--mac-accent-soft);
+}
+
+.timeline-row[data-selected="true"] {
   color: var(--mac-label);
 }
 

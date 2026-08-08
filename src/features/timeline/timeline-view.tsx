@@ -277,6 +277,27 @@ const ChartContext = createContext<Chart>({
 });
 
 /**
+ * A drag is not a click.
+ *
+ * The chart can be grabbed anywhere, including on top of real buttons — a
+ * course header, an off-screen marker — and the browser still reports a click
+ * on whatever the press started on once the hand comes up. Dragging the canvas
+ * from a course name used to collapse the course, which reads as the chart
+ * fighting the gesture. The one click a completed pan produces is eaten on the
+ * capture phase, before the button under it hears about it; the timeout is for
+ * the rare drag that ends where no click follows, so the guard never survives
+ * into someone's next press.
+ */
+function swallowNextClick() {
+  const swallow = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  window.addEventListener("click", swallow, { capture: true, once: true });
+  window.setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+}
+
+/**
  * Grab-scrolling.
  *
  * The canvas moves under the pointer rather than the pointer picking anything
@@ -296,23 +317,39 @@ function startPan(event: React.PointerEvent, chart: Chart, onTap?: () => void) {
   const button = event.button;
   const originX = event.clientX;
   const originY = event.clientY;
-  const left = element.scrollLeft;
-  const top = element.scrollTop;
+  let lastX = event.clientX;
+  let lastY = event.clientY;
   let panning = false;
   gestureActive = true;
 
+  /**
+   * Frame to frame, not press to now.
+   *
+   * The offset used to be recomputed from the position of the press — and the
+   * chart moves the offset out from under a drag by itself: reaching the left
+   * of the canvas grows it backward and shifts `scrollLeft` to hold the picture
+   * still (see `pendingShiftRef`). Against an absolute origin the next move
+   * undid that shift, which put the chart back where it had been, which
+   * triggered the extension again. Dragging left simply stopped working, right
+   * where the canvas has to grow. Applying each frame's delta instead means
+   * anything else that legitimately moves the offset is left alone.
+   */
   const move = (pointer: PointerEvent) => {
-    const deltaX = pointer.clientX - originX;
-    const deltaY = pointer.clientY - originY;
-    if (!panning && Math.abs(deltaX) < DRAG_THRESHOLD_PX && Math.abs(deltaY) < DRAG_THRESHOLD_PX) {
+    if (
+      !panning &&
+      Math.abs(pointer.clientX - originX) < DRAG_THRESHOLD_PX &&
+      Math.abs(pointer.clientY - originY) < DRAG_THRESHOLD_PX
+    ) {
       return;
     }
     panning = true;
     // The closed hand, for as long as the hand is closed. Written to the DOM
     // rather than to state: a cursor is not worth reconciling 344 lanes for.
     element.dataset.timelinePanning = "true";
-    element.scrollLeft = left - deltaX;
-    element.scrollTop = top - deltaY;
+    element.scrollLeft -= pointer.clientX - lastX;
+    element.scrollTop -= pointer.clientY - lastY;
+    lastX = pointer.clientX;
+    lastY = pointer.clientY;
   };
 
   // Only the button that started this. With the right button held as a
@@ -324,7 +361,8 @@ function startPan(event: React.PointerEvent, chart: Chart, onTap?: () => void) {
     window.removeEventListener("pointerup", up);
     delete element.dataset.timelinePanning;
     gestureActive = false;
-    if (!panning) onTap?.();
+    if (panning) swallowNextClick();
+    else onTap?.();
   };
 
   window.addEventListener("pointermove", move);
@@ -357,8 +395,11 @@ export function TimelineView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport] = useState(createViewportStore);
   const canvasRef = useRef<HTMLDivElement>(null);
-  /** The scale being left, and where today sat on screen; see `changeZoom`. */
-  const zoomFromRef = useRef<{ zoom: Zoom; todayScreenX: number } | null>(null);
+  /** Where today sat on screen when the zoom gesture began; see `changeZoom`. */
+  const zoomFromRef = useRef<{ todayScreenX: number } | null>(null);
+  /** The scale being animated *towards*, which `zoom` does not become until it lands. */
+  const zoomTargetRef = useRef<Zoom | null>(null);
+  const zoomTimerRef = useRef(0);
 
   // Held, the right button inverts the mode. It is state rather than a ref
   // because the mode control is part of the answer: its selection moves to Edit
@@ -500,7 +541,7 @@ export function TimelineView({
   // way to see that the scale rather than the plan had changed.
   //
   /**
-   * The zoom, as a transform.
+   * The zoom, as a transform — and the transform first.
    *
    * Two earlier attempts animated the *geometry* — a transition on the
    * day-width custom property, then one rAF loop driving width and scroll
@@ -509,50 +550,50 @@ export function TimelineView({
    * each frame re-lays-out several thousand absolutely positioned elements,
    * and at Day zoom the ruler alone is a tick per day.
    *
-   * So the geometry is not animated at all. The new scale is committed in one
-   * frame, the canvas is put back at the *old* scale with a `scaleX`, and that
-   * transform is released — which the compositor does without consulting
-   * layout even once, at any zoom, on any size of plan.
+   * So the geometry is not animated at all: the whole zoom is one `scaleX` on
+   * the canvas, which the compositor runs without consulting layout even once,
+   * at any scale, on any size of plan.
    *
-   * The transform's origin is the today marker, and `scrollLeft` is set so the
-   * marker keeps the screen position it already had: the one thing that must
-   * not move while the scale changes is the thing you navigate by. The chrome
-   * riding on the canvas — the ruler, the label gutter — would be stretched by
-   * the same transform, so it steps out and comes back instead.
+   * A third attempt committed the new scale first and scaled *back* to it. That
+   * is the same animation and it looked wrong, because of what happens before
+   * it: re-rendering every lane and re-laying-out the canvas at the new day
+   * width costs a few hundred milliseconds on a real plan, and all of it landed
+   * between the click and the first frame of motion. The control moved, then
+   * the chart sat still, then it animated — which reads as the chart having
+   * missed the click and caught up late.
+   *
+   * So the order is inverted. `changeZoom` starts the transform on the click
+   * itself, from geometry that already exists, and `zoom` is not committed
+   * until the transform has finished travelling — this effect. The re-render is
+   * just as expensive, but it now happens against a canvas that is already
+   * showing the new scale, where the one frame it costs is invisible: the
+   * layout it produces is the transform, resolved.
+   *
+   * The transform's origin is the today marker, and `scrollLeft` is set here so
+   * the marker keeps the screen position it had when the gesture started. The
+   * one thing that must not move while the scale changes is the thing you
+   * navigate by. The chrome riding on the canvas — the ruler, the label gutter —
+   * would be stretched by the same transform, so it steps out and comes back.
    */
   useLayoutEffect(() => {
     const element = scrollRef.current;
     const canvas = canvasRef.current;
     const zoomed = zoomFromRef.current;
     zoomFromRef.current = null;
+    zoomTargetRef.current = null;
     if (!element || !canvas || !zoomed) return;
 
+    // The scale is now real geometry, so the transform standing in for it goes.
+    canvas.classList.remove("timeline-zooming");
+    canvas.style.transition = "";
+    canvas.style.transform = "";
+    canvas.style.transformOrigin = "";
     element.scrollLeft = xOf(today, range.start, zoom) - zoomed.todayScreenX;
     trackVisible();
-
-    const scale = PX_PER_DAY[zoomed.zoom] / PX_PER_DAY[zoom];
-    if (prefersReducedMotion()) return;
-    const duration = motionDuration(element);
-
-    canvas.classList.add("timeline-zooming");
-    canvas.style.transformOrigin = `${xOf(today, range.start, zoom)}px top`;
-    canvas.style.transition = "none";
-    canvas.style.transform = `scaleX(${scale})`;
-    // Read, so the browser takes the line above as this transition's start
-    // rather than collapsing the two writes into no change at all.
-    void canvas.offsetWidth;
-    canvas.style.transition = `transform ${duration}ms ${motionCurveValue(element)}`;
-    canvas.style.transform = "scaleX(1)";
-
-    const settle = window.setTimeout(() => {
-      canvas.classList.remove("timeline-zooming");
-      canvas.style.transition = "";
-      canvas.style.transform = "";
-      canvas.style.transformOrigin = "";
-    }, duration);
-    return () => window.clearTimeout(settle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom]);
+
+  useEffect(() => () => window.clearTimeout(zoomTimerRef.current), []);
 
   // A sidebar or inspector resize changes the right edge without a scroll.
   // Keep markers correct without making viewport dimensions React state.
@@ -564,17 +605,47 @@ export function TimelineView({
     return () => observer.disconnect();
   }, [trackVisible]);
 
+  /**
+   * The zoom, started on the click.
+   *
+   * Everything here reads geometry that is already on screen — today's x at the
+   * *committed* scale — so it costs nothing and runs in the click's own frame.
+   * The transform is the only thing that moves; `zoom` follows it, `duration`
+   * later, in the effect above.
+   *
+   * Zooming again mid-flight retargets rather than restarting: `zoom` has not
+   * changed, so the origin and the geometry under it have not either, and
+   * writing a new `scaleX` lets the same transition carry on from wherever it
+   * had got to. That is also why the scale is always measured from the
+   * committed zoom rather than from the one being left.
+   */
   const changeZoom = (next: Zoom) => {
     const element = scrollRef.current;
-    if (element) {
-      // Where today is on screen right now, which is where it will still be
-      // when the new scale settles.
-      zoomFromRef.current = {
-        zoom,
-        todayScreenX: xOf(today, range.start, zoom) - element.scrollLeft,
-      };
+    const canvas = canvasRef.current;
+    if (next === (zoomTargetRef.current ?? zoom)) return;
+
+    if (!element || !canvas || prefersReducedMotion()) {
+      zoomFromRef.current = element
+        ? { todayScreenX: xOf(today, range.start, zoom) - element.scrollLeft }
+        : { todayScreenX: 0 };
+      setZoom(next);
+      return;
     }
-    setZoom(next);
+
+    window.clearTimeout(zoomTimerRef.current);
+    const todayX = xOf(today, range.start, zoom);
+    // Captured once per gesture, not once per click: today does not move while
+    // the transform runs — it is the origin — so a second click mid-flight is
+    // still aiming at the place the first one started from.
+    zoomFromRef.current ??= { todayScreenX: todayX - element.scrollLeft };
+    zoomTargetRef.current = next;
+
+    const duration = motionDuration(element);
+    canvas.classList.add("timeline-zooming");
+    canvas.style.transformOrigin = `${todayX}px top`;
+    canvas.style.transition = `transform ${duration}ms ${motionCurveValue(element)}`;
+    canvas.style.transform = `scaleX(${PX_PER_DAY[next] / PX_PER_DAY[zoom]})`;
+    zoomTimerRef.current = window.setTimeout(() => setZoom(next), duration);
   };
 
   // Independent of `everyTopic` below on purpose: that array is sorted for
@@ -742,14 +813,7 @@ export function TimelineView({
         <Button size="sm" variant="accent" leadingIcon={<CalendarDays />} onClick={scrollToToday}>
           Today
         </Button>
-        <SegmentedControl<Zoom>
-          size="sm"
-          label="Zoom"
-          className="timeline-segments"
-          value={zoom}
-          onValueChange={changeZoom}
-          segments={ZOOMS.map((candidate) => ({ value: candidate, label: ZOOM_LABELS[candidate] }))}
-        />
+        <ZoomControl zoom={zoom} onChange={changeZoom} />
         {/* Shows the mode that is in force, not the one that was chosen: while
             the right button is held the selection moves, and moves back when it
             is let go. */}
@@ -853,6 +917,43 @@ export function TimelineView({
 }
 
 /* ─── Chrome ────────────────────────────────────────────────────────────── */
+
+/**
+ * The zoom control, with its own idea of the value.
+ *
+ * `zoom` does not change until the transform that stands in for it has finished
+ * travelling (see `changeZoom`), and a control that waited that long for its
+ * thumb to move would be the very lag the animation was reordered to remove.
+ * Holding the pressed value locally keeps the thumb on the click *and* keeps
+ * the chart out of the re-render it would otherwise cost — a state update in
+ * `TimelineView` reconciles every lane in the plan; one in here reconciles four
+ * buttons.
+ */
+function ZoomControl({ zoom, onChange }: { zoom: Zoom; onChange: (next: Zoom) => void }) {
+  const [shown, setShown] = useState(zoom);
+  const [committed, setCommitted] = useState(zoom);
+  // Whatever else moved it — a scale landing, a zoom refused — the control says
+  // what the chart is actually drawn at. Adjusted during render rather than in
+  // an effect, so the thumb never spends a frame on the wrong segment.
+  if (committed !== zoom) {
+    setCommitted(zoom);
+    setShown(zoom);
+  }
+
+  return (
+    <SegmentedControl<Zoom>
+      size="sm"
+      label="Zoom"
+      className="timeline-segments"
+      value={shown}
+      onValueChange={(next) => {
+        setShown(next);
+        onChange(next);
+      }}
+      segments={ZOOMS.map((candidate) => ({ value: candidate, label: ZOOM_LABELS[candidate] }))}
+    />
+  );
+}
 
 type Range = { start: IsoDate; end: IsoDate; days: number };
 
@@ -1108,7 +1209,10 @@ function AllTopicsLane({
 
   return (
     <section className="border-b border-separator">
-      <div className="relative">
+      {/* The reorder animation is scoped here rather than to the rows alone:
+          a row is its lane *and* its label in the gutter card below, and both
+          have to travel together. */}
+      <div ref={rowsRef} className="relative">
         <div className="relative" style={{ height: LANE_HEIGHT }}>
           {span ? (
             // Crossfaded rather than swapped: the roll-up and the rows it rolls
@@ -1128,7 +1232,6 @@ function AllTopicsLane({
         </div>
 
         <div
-          ref={rowsRef}
           className="timeline-disclosure"
           style={{ height: disclosure.expanded ? rowsHeight : 0 }}
         >
@@ -1218,6 +1321,84 @@ function useDisclosure(open: boolean): { mounted: boolean; expanded: boolean } {
   }, [open]);
 
   return { mounted, expanded };
+}
+
+/**
+ * Two rows trading places.
+ *
+ * The combined lane is sorted by where each topic's work *starts*, so dragging
+ * a block past a neighbour's first day reorders the list under the drag. That
+ * was a cut: the row you were holding and the one it passed swapped in a single
+ * frame, and the only way to know which two had moved was to have been watching
+ * the right part of the screen.
+ *
+ * This is FLIP, with the "first" read for free. Every row in this lane is
+ * exactly `ROW_HEIGHT` tall, so a row's old position is its old *index* — no
+ * measuring, no forced layout, and nothing that costs anything on the renders
+ * where the order did not change. Each moved row is put back where it was with
+ * a transform, and that transform is released on the shared curve; the label in
+ * the gutter carries the same `data-row-key` and is moved by the same loop, so
+ * both halves of the row travel together.
+ */
+function useReorderAnimation(keys: readonly string[]) {
+  const ref = useRef<HTMLDivElement>(null);
+  const previous = useRef<readonly string[]>(keys);
+  // Renders are frequent and reorders are not, and `keys` is a fresh array on
+  // every one of them. The effect is keyed on the order *as a string*, so it
+  // does nothing at all on the renders where nothing swapped — and `keys`
+  // itself is read from the closure, which is the array from precisely the
+  // render that changed it.
+  const order = keys.join("|");
+
+  useLayoutEffect(() => {
+    const container = ref.current;
+    const was = previous.current;
+    const now = keys;
+    previous.current = now;
+    if (!container || prefersReducedMotion()) return;
+
+    const from = new Map(was.map((key, index) => [key, index]));
+    const moved = now
+      .map((key, index) => ({ key, by: (from.get(key) ?? index) - index }))
+      .filter(({ by }) => by !== 0);
+    if (moved.length === 0) return;
+
+    const rows = moved.flatMap(({ key, by }) =>
+      Array.from(
+        container.querySelectorAll<HTMLElement>(`[data-row-key="${CSS.escape(key)}"]`),
+        (element) => ({ element, by }),
+      ),
+    );
+    if (rows.length === 0) return;
+
+    for (const { element, by } of rows) {
+      element.style.transition = "none";
+      element.style.transform = `translateY(${by * ROW_HEIGHT}px)`;
+    }
+    // Read, so the browser takes the offsets above as the transition's start
+    // rather than collapsing both writes into no change at all.
+    void container.offsetWidth;
+
+    const duration = motionDuration(container);
+    for (const { element } of rows) {
+      element.style.transition = `transform ${duration}ms ${motionCurveValue(container)}`;
+      element.style.transform = "";
+    }
+
+    const settle = window.setTimeout(() => {
+      for (const { element } of rows) element.style.transition = "";
+    }, duration);
+    return () => {
+      window.clearTimeout(settle);
+      for (const { element } of rows) {
+        element.style.transition = "";
+        element.style.transform = "";
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order]);
+
+  return ref;
 }
 
 function CourseLane({
@@ -1389,7 +1570,10 @@ function GutterCard({
           onClick={onToggle}
           aria-expanded={open}
           style={{ height: LANE_HEIGHT }}
-          className="timeline-tint flex shrink-0 items-center gap-1.5 pr-3 pl-2 text-left hover:bg-fill"
+          // No `timeline-tint` here: its hover is a highlight like any other in
+          // the chart and lands instantly. The chevron keeps its own, because a
+          // chevron turning is motion rather than a highlight.
+          className="flex shrink-0 items-center gap-1.5 pr-3 pl-2 text-left hover:bg-fill"
         >
           <ChevronRight
             aria-hidden="true"
@@ -1424,12 +1608,17 @@ function GutterCard({
               <button
                 key={row.key}
                 type="button"
-                data-timeline-row={row.key}
+                // The same key its lane on the canvas carries: the two halves
+                // light together and travel together. See `lightRow`.
+                data-row-key={row.key}
+                onPointerEnter={() => lightRow(row.key, true)}
+                onPointerLeave={() => lightRow(row.key, false)}
                 onClick={row.onSelect}
                 // Selection is blue everywhere in the app; a row selected in
                 // its course's own colour said "this course" a second time
                 // rather than "this is the one you are looking at".
                 aria-current={row.selected ? "true" : undefined}
+                data-selected={row.selected ? "true" : undefined}
                 style={{ height: ROW_HEIGHT }}
                 className={clsx(
                   "timeline-row flex shrink-0 items-center gap-1.5 pr-2 text-left text-callout text-secondary",
@@ -1453,10 +1642,27 @@ function GutterCard({
   );
 }
 
-/** The gutter row belonging to a lane, lit without a render. */
-function lightLabel(key: string, hovered: boolean) {
-  const label = document.querySelector<HTMLElement>(`[data-timeline-row="${CSS.escape(key)}"]`);
-  if (label) label.dataset.hovered = String(hovered);
+/**
+ * A row lights up whole, from either half of it.
+ *
+ * A row is two elements in two stacking contexts: the lane on the canvas, and
+ * its label in the gutter card drawn over the canvas. A `:hover` rule reaches
+ * only whichever half the pointer is actually over, so the highlight stopped
+ * dead at the edge of the label panel — and the panel is opaque, so the canvas
+ * half was not merely unlit but hidden behind it. Raising the lane's highlight
+ * over the panel would only move the problem: it would then sit in front of the
+ * bars it is supposed to be behind.
+ *
+ * So neither half hovers. Both carry the same `data-row-key`, and entering
+ * either one lights both — the same shape the selected row already has, which
+ * is the one highlight in the chart that was never split in two.
+ *
+ * Written straight to the DOM: a hover is not worth reconciling 344 lanes for,
+ * and it has to be instant.
+ */
+function lightRow(key: string, hovered: boolean) {
+  const halves = document.querySelectorAll<HTMLElement>(`[data-row-key="${CSS.escape(key)}"]`);
+  for (const half of halves) half.dataset.hovered = String(hovered);
 }
 
 function TopicLane({
@@ -1554,17 +1760,17 @@ function TopicLane({
     <div
       ref={laneRef}
       data-topic-lane={topic.id}
+      // Ties the lane to its label in the gutter card — for the shared
+      // highlight, and for the reorder animation that has to move both.
+      data-row-key={rowKey}
+      data-selected={selected ? "true" : undefined}
       onPointerDown={(event) => {
         const gesture = chart.gestureFor(event);
         if (gesture === "edit") startCreate(event);
         else if (gesture === "pan") startPan(event, chart, chart.clearSelection);
       }}
-      // The canvas half of the row highlights itself; the label half is told
-      // to, because it lives in the gutter card drawn over the chart and no
-      // selector reaches across. Written straight to the DOM: a hover is not
-      // worth a render, and it has to be instant.
-      onPointerEnter={() => lightLabel(rowKey, true)}
-      onPointerLeave={() => lightLabel(rowKey, false)}
+      onPointerEnter={() => lightRow(rowKey, true)}
+      onPointerLeave={() => lightRow(rowKey, false)}
       className="timeline-lane relative"
       style={{ height: ROW_HEIGHT }}
       title={`Drag to place a study block for ${topic.name}`}
@@ -1747,9 +1953,17 @@ function Marker({
   return (
     <button
       type="button"
-      // The lane underneath would read this as the start of a pan or of a new
-      // block; the marker is chrome, not canvas.
-      onPointerDown={(event) => event.stopPropagation()}
+      // The lane underneath would read this as the start of a *new block*; the
+      // marker is chrome, not canvas. Panning it is still panning the chart,
+      // though — these chips are pinned to both edges of the scrollport on
+      // every row that has work off screen, and a press that landed on one used
+      // to be a press the chart ignored. `startPan` eats the click a real drag
+      // would otherwise leave behind, so a tap still goes there and a drag does
+      // not.
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        if (chart.gestureFor(event) === "pan") startPan(event, chart);
+      }}
       onClick={onGo}
       data-visible={visible}
       aria-hidden={!visible}
