@@ -302,9 +302,12 @@ span:has(> .topic-progress-thumb) {
  * pointer crosses rows. This is the one thing in the chart that has to be
  * instant.
  */
+/* In the row's own course colour, not a neutral grey: a grey highlight said
+   "this row" and nothing else, while the tint says which course you are about
+   to place work in — the question a combined lane of ten courses raises. */
 .timeline-lane[data-hovered="true"],
 .timeline-row[data-hovered="true"] {
-  background-color: var(--mac-fill);
+  background-color: color-mix(in srgb, var(--timeline-row-tint, var(--mac-label)) 16%, transparent);
 }
 
 /* Selection outranks hover: the row you are inspecting stays the blue one while
@@ -318,16 +321,6 @@ span:has(> .topic-progress-thumb) {
 
 .timeline-row[data-selected="true"] {
   color: var(--mac-label);
-}
-
-/* A zoom scales the canvas; the chrome riding on it would be scaled with it,
-   so it steps out of the way and comes back rather than stretching. */
-.timeline-chrome {
-  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
-}
-
-.timeline-zooming .timeline-chrome {
-  opacity: 0;
 }
 
 /* Two rows trading places when a block moves past another topic's start. */
