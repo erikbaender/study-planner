@@ -1,5 +1,17 @@
 # Agent instructions
 
+## Usage conservation
+
+- Optimize for completing the requested task accurately and efficiently while conserving model, tool, and external-service usage.
+- Before committing to a plan, consider the likely cost of executing it and prefer the smallest effective approach.
+- Avoid exploratory, repetitive, or speculative work that is not needed for the task.
+- Write tests, perform broad refactors, polish unrelated areas, and run other nonessential activities only when they are essential to accomplishing the given task or validating a consequential change.
+- Before substantial work, run `pnpm usage -- --json` when the usage check is available. Treat `conservativeAction: "conserve"` or an unavailable/failed check as a reason to choose the smallest effective approach; do not make a model request solely to check usage.
+- Use the usage record for the provider you are running on: Codex uses `checks[].provider == "openai"`, and Claude uses `checks[].provider == "anthropic"`. Do not use the other provider's limits as a substitute.
+- Consider both `session.remainingPercent` and `weekly.remainingPercent`, along with their `reset` times, before choosing a plan. A `null` value or a `status` other than `available` means that limit is unknown; do not guess.
+- OpenAI's session limit may have `status: "temporarily_removed"`; in that case use its weekly limit when available. If the weekly limit is also unavailable, conserve usage and choose the smallest viable approach.
+- When remaining usage is low or the reset is distant, prioritize the requested outcome and omit exploratory work, broad refactors, polish, and nonessential tests.
+
 ## Running the app
 
 - Port 3000 is shared across worktrees, and only one worktree can own the development server at a time. Do not start a second server on another port, use a temporary project copy, or create a separate deployment.
