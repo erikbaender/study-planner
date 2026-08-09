@@ -219,6 +219,272 @@ span:has(> .topic-progress-thumb) {
   color: var(--mac-completion-mark);
 }
 
+/* ─── Timeline ──────────────────────────────────────────────────────────── */
+
+/**
+ * The width of one day, as an animatable length.
+ *
+ * Registered rather than declared, because an unregistered custom property is
+ * an unparsed token to the browser and cannot be interpolated. Every position
+ * in the chart is a `calc()` off this one value, so a zoom change is a single
+ * transition here rather than a re-render of every lane per frame.
+ */
+@property --timeline-day-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 14px;
+}
+
+/**
+ * A course opening: the lane's rows and the gutter card's rows, as one height.
+ *
+ * `clip` rather than `hidden`, which would make this a scroll container — and
+ * the off-screen markers inside it are `position: sticky` against the chart's
+ * *own* scrollport. Under `hidden` they stuck to a box that never scrolls,
+ * which put every one of them off the side of the canvas.
+ */
+.timeline-disclosure {
+  overflow: clip;
+  /* Half the shared duration. Opening a course is a disclosure, not a
+     transition between two views: at the full length it reads as the chart
+     thinking about it. */
+  transition: height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/* Fade chart content independently from the course/topic gutter over it. */
+.timeline-zoom-layer {
+  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.timeline-disclosure.timeline-zoom-layer {
+  transition:
+    height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
+    opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.timeline-canvas[data-timeline-zooming="true"] .timeline-zoom-layer {
+  opacity: 0;
+}
+
+/* Do not let the browser preserve a historical horizontal anchor while the
+   timeline's full date range is being laid out. Initial positioning owns it. */
+.timeline-scrollport {
+  overflow-anchor: none;
+}
+
+/**
+ * A semester can contain hundreds of fixed-height lanes. Let the browser skip
+ * painting/layout of rows outside the vertical viewport while retaining their
+ * exact flow size. This is the native form of timeline virtualization: no
+ * React state follows scrollTop, and rows become real again as they approach.
+ */
+.timeline-lane {
+  content-visibility: auto;
+  contain-intrinsic-size: 24px;
+}
+
+.timeline-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 24px;
+}
+
+/**
+ * Timeline chrome scrolls over a large chart. A translucent fill preserves the
+ * hierarchy here; backdrop blur would make every horizontal scroll repaint the
+ * chart behind each sticky label and marker.
+ */
+.timeline-scrollport .material-inline {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@utility timeline-inline {
+  background: var(--mac-material-inline);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/** The course gutter keeps its frosted surface; markers stay opaque because they multiply over the chart. */
+@utility timeline-course-panel {
+  background: var(--mac-material-inline);
+  @apply backdrop-blur-md backdrop-saturate-[1.8];
+}
+
+/* The thumb travels; the labels only change colour under it. */
+.segmented-thumb {
+  transition:
+    transform calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
+    width calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.segmented-item {
+  transition: color calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/**
+ * Segmented controls in the chart's toolbar, on the chart's own curve.
+ *
+ * The mode control is not only an input here: holding the right button moves
+ * its selection, so the animation is how the chart says which mode the next
+ * click is in.
+ */
+.timeline-segments button {
+  transition:
+    background-color var(--topic-motion-duration) var(--topic-motion-curve),
+    color var(--topic-motion-duration) var(--topic-motion-curve),
+    box-shadow var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/** Everything that changes colour rather than position: hover, selection, fades. */
+.timeline-tint {
+  transition:
+    background-color var(--topic-motion-duration) var(--topic-motion-curve),
+    color var(--topic-motion-duration) var(--topic-motion-curve),
+    opacity var(--topic-motion-duration) var(--topic-motion-curve),
+    outline-color var(--topic-motion-duration) var(--topic-motion-curve),
+    box-shadow var(--topic-motion-duration) var(--topic-motion-curve),
+    transform var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/**
+ * The row highlight: one row, both halves, no fade.
+ *
+ * A row is a lane on the canvas and a label in the gutter card over it, and
+ * `:hover` reaches only the half the pointer is on — so the highlight used to
+ * stop at the edge of the label panel, with the canvas half hidden behind it.
+ * Both halves carry the same `data-row-key` and are lit together by
+ * `lightRow`, which is the shape the *selected* row already had; hover is now
+ * simply the same highlight in a quieter colour.
+ *
+ * Not animated, at all. A highlight that fades is a highlight that is wrong for
+ * as long as it fades, and the row under the pointer changes as fast as the
+ * pointer crosses rows. This is the one thing in the chart that has to be
+ * instant.
+ */
+/* In the row's own course colour, not a neutral grey: a grey highlight said
+   "this row" and nothing else, while the tint says which course you are about
+   to place work in — the question a combined lane of ten courses raises. */
+.timeline-lane[data-hovered="true"],
+.timeline-row[data-hovered="true"] {
+  background-color: color-mix(in srgb, var(--timeline-row-tint, var(--mac-label)) 16%, transparent);
+}
+
+/* Selection outranks hover: the row you are inspecting stays the blue one while
+   the pointer travels over it. Blue, because selection is blue everywhere in
+   the app — the course's own colour said "this course" a second time rather
+   than "this is the one you are looking at". */
+.timeline-lane[data-selected="true"],
+.timeline-row[data-selected="true"] {
+  background-color: var(--mac-accent-soft);
+}
+
+.timeline-row[data-selected="true"] {
+  color: var(--mac-label);
+}
+
+/* Two rows trading places when a block moves past another topic's start. */
+.timeline-reorder {
+  transition: transform var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/**
+ * The off-screen markers fade both ways.
+ *
+ * Kept mounted and hidden rather than unmounted, because an element that has
+ * left the DOM cannot animate its own departure — the entrance was animated and
+ * the exit was a cut, which is exactly the asymmetry that reads as a bug.
+ */
+.timeline-marker {
+  transition: opacity var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.timeline-marker[data-visible="false"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ─── Timeline cursors ──────────────────────────────────────────────────────
+ *
+ * The mode lives in one data attribute on the scroller, so holding the right
+ * button re-cursors the whole chart without React reconciling it. View mode is
+ * a hand over the canvas and an arrow over anything you could otherwise mistake
+ * for a control; edit mode is a crosshair over empty lane — drag to place — and
+ * the two edit cursors on a bar itself.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+[data-timeline-mode="view"] {
+  cursor: grab;
+}
+
+[data-timeline-mode="edit"] {
+  cursor: crosshair;
+}
+
+[data-timeline-mode] .timeline-chrome {
+  cursor: default;
+}
+
+[data-timeline-mode="view"] .timeline-bar {
+  cursor: default;
+}
+
+[data-timeline-mode="edit"] .timeline-bar {
+  cursor: move;
+}
+
+/**
+ * Bar labels are always in the DOM, but the container decides whether there is
+ * enough room to show one. This lets a zoom change update the custom day width
+ * without re-rendering every bar just to recalculate a text threshold.
+ */
+.timeline-bar {
+  container-type: inline-size;
+}
+
+.timeline-bar-label {
+  display: none;
+}
+
+@container (min-width: 64px) {
+  .timeline-bar-label {
+    display: flex;
+  }
+}
+
+[data-timeline-mode="edit"] .timeline-bar-handle {
+  cursor: ew-resize;
+}
+
+/* The handles are edit affordances; in view mode they are neither shown nor
+   hit, so the bar under them keeps one cursor across its whole width. */
+[data-timeline-mode="view"] .timeline-bar-handle {
+  pointer-events: none;
+  opacity: 0;
+}
+
+[data-timeline-mode="edit"] .timeline-bar:hover .timeline-bar-handle {
+  opacity: 1;
+}
+
+/* Last, and matching on the same attribute the rules above do, so a grab in
+   progress outranks whatever the pointer happens to be over. */
+[data-timeline-panning="true"],
+[data-timeline-panning="true"] * {
+  cursor: grabbing;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-canvas,
+  .timeline-disclosure,
+  .timeline-zoom-layer,
+  .timeline-tint {
+    transition: none;
+  }
+  .timeline-marker {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .topic-completion-row[data-completion-animating="true"] {
     animation: none;

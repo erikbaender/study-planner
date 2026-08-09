@@ -81,6 +81,18 @@ export function useRepository(): PlannerRepository {
   return usePlannerContext().repository;
 }
 
+/**
+ * Mutating a plan does not require subscribing to the plan itself.
+ *
+ * Views with many repeated controls used to call `usePlannerErrors()` solely
+ * to get `run`, which also installed a repository snapshot subscription for
+ * every row. Keep the error-aware hook for surfaces that render the error, but
+ * let leaf controls obtain the stable runner without becoming subscribers.
+ */
+export function usePlannerRun(): (action: Promise<unknown>) => void {
+  return usePlannerContext().run;
+}
+
 const LOADING: RepositoryState = { status: "loading" };
 
 /**
