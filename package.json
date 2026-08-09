@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "usage": "python3 scripts/check-agent-usage.py",
     "test": "vitest run",
     "test:watch": "vitest",
     "convex:dev": "convex dev",
