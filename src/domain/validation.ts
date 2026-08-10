@@ -29,7 +29,7 @@ export function requireNonEmpty(value: string, field: string): string {
   return trimmed;
 }
 
-export function requireValidDate(value: string, field: string): string {
+function requireValidDate(value: string, field: string): string {
   if (!isValidIsoDate(value)) {
     throw new ValidationError(`${field} must be a valid date`, field);
   }

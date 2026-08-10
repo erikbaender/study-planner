@@ -381,11 +381,6 @@ span:has(> .topic-progress-thumb) {
   color: var(--mac-label);
 }
 
-/* Two rows trading places when a block moves past another topic's start. */
-.timeline-reorder {
-  transition: transform var(--topic-motion-duration) var(--topic-motion-curve);
-}
-
 /**
  * The off-screen markers fade both ways.
  *

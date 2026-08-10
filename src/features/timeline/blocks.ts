@@ -65,7 +65,7 @@ function weightsOf(blocks: readonly StudyBlock[]): number[] {
 }
 
 /** Chronological, with a stable tiebreak so equal starts do not reorder between renders. */
-export function inOrder(blocks: readonly StudyBlock[]): StudyBlock[] {
+function inOrder(blocks: readonly StudyBlock[]): StudyBlock[] {
   return [...blocks].sort(
     (left, right) =>
       left.startDate.localeCompare(right.startDate) || left.id.localeCompare(right.id),

@@ -30,7 +30,7 @@ export function toIsoDate(date: Date): IsoDate {
   return date.toISOString().slice(0, 10);
 }
 
-export function parseIsoDate(value: IsoDate): Date {
+function parseIsoDate(value: IsoDate): Date {
   return new Date(`${value}T00:00:00.000Z`);
 }
 

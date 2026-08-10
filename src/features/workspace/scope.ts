@@ -27,7 +27,7 @@ import {
 import type { Focus, Selection } from "./store";
 
 /** How near an exam has to be to count as "soon". Two weeks is the horizon at which cramming decisions get made. */
-export const EXAM_SOON_DAYS = 14;
+const EXAM_SOON_DAYS = 14;
 
 export function healthByCourse(
   plan: Plan | undefined,

@@ -20,7 +20,6 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { EMPTY_SNAPSHOT, type PlannerSnapshot } from "@/domain/types";
 import { createConvexRepository } from "./convex-repository";
 import { createLocalRepository } from "./local-repository";
 import type { PlannerRepository, RepositoryState } from "./repository";
@@ -121,12 +120,6 @@ export function usePlannerState(): RepositoryState {
   );
 
   return useSyncExternalStore(subscribe, getSnapshot, () => LOADING);
-}
-
-/** The snapshot, with loading and error states flattened to "nothing yet". */
-export function usePlannerSnapshot(): PlannerSnapshot {
-  const state = usePlannerState();
-  return state.status === "ready" ? state.snapshot : EMPTY_SNAPSHOT;
 }
 
 /**

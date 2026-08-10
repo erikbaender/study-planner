@@ -26,10 +26,7 @@ export type DragMode = "move" | "start" | "end";
 /** A bar in a drag: the block itself and the topic whose other blocks bound it. */
 export type BarTarget = { block: StudyBlock; topic: Topic };
 
-/** How far a gesture may travel, in days. Unbounded ends are infinite rather than absent. */
 export type DeltaRange = { min: number; max: number };
-
-export const UNBOUNDED: DeltaRange = { min: -Infinity, max: Infinity };
 
 export function applyDelta(mode: DragMode, span: Span, days: number): Span {
   if (mode === "move") {
