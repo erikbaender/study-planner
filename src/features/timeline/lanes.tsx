@@ -157,7 +157,7 @@ function AttentionIndicators({
     <span className="flex shrink-0 items-center gap-1">
       {behindDays !== null ? (
         <span title={`${behindDays} days behind pace`} className="flex size-4 items-center justify-center">
-          <AlertTriangle aria-hidden="true" className="size-3 text-warning" strokeWidth={3} />
+          <AlertTriangle aria-hidden="true" className="size-4 text-warning" strokeWidth={1.5} />
         </span>
       ) : null}
       {overdueBlocks > 0 ? (
@@ -165,7 +165,7 @@ function AttentionIndicators({
           title={`${overdueBlocks} overdue block${overdueBlocks === 1 ? "" : "s"}`}
           className="flex size-4 items-center justify-center"
         >
-          <AlertTriangle aria-hidden="true" className="size-3 text-negative" strokeWidth={3} />
+          <AlertTriangle aria-hidden="true" className="size-4 text-negative" strokeWidth={1.5} />
         </span>
       ) : null}
     </span>
@@ -571,7 +571,7 @@ function GutterCard({
                     title="Overdue block"
                     className="flex size-4 shrink-0 items-center justify-center"
                   >
-                    <AlertTriangle aria-hidden="true" className="size-3 text-negative" strokeWidth={3} />
+                    <AlertTriangle aria-hidden="true" className="size-4 text-negative" strokeWidth={1.5} />
                   </span>
                 ) : null}
               </button>

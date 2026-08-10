@@ -418,6 +418,38 @@ span:has(> .topic-progress-thumb) {
   background-color: color-mix(in srgb, var(--timeline-row-tint, var(--mac-label)) 16%, transparent);
 }
 
+/* The label is the foreground half of the row, so it gets the brighter fill
+   and owns the seam where it meets the chart. */
+.timeline-course-panel .timeline-row[data-hovered="true"] {
+  background-color: color-mix(in srgb, var(--timeline-row-tint, var(--mac-label)) 26%, transparent);
+}
+
+/* The panel owns the grey border for the whole course. Paint over just the
+   active row's slice so the seam belongs to the row highlight, too. */
+.timeline-course-panel .timeline-row {
+  position: relative;
+}
+
+.timeline-course-panel .timeline-row[data-hovered="true"]::after,
+.timeline-course-panel .timeline-row[data-selected="true"]::after {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+  content: "";
+  z-index: 1;
+}
+
+.timeline-course-panel .timeline-row[data-hovered="true"]::after {
+  background: color-mix(in srgb, var(--timeline-row-tint, var(--mac-label)) 78%, transparent);
+}
+
+.timeline-course-panel .timeline-row[data-selected="true"]::after {
+  background: var(--mac-accent);
+}
+
 /* Selection outranks hover: the row you are inspecting stays the blue one while
    the pointer travels over it. Blue, because selection is blue everywhere in
    the app — the course's own colour said "this course" a second time rather
@@ -436,7 +468,6 @@ span:has(> .topic-progress-thumb) {
    inset edge also colours only this row's slice of the panel outline. */
 .timeline-course-panel .timeline-row[data-selected="true"] {
   background-color: color-mix(in srgb, var(--mac-accent) 24%, transparent);
-  box-shadow: inset -1px 0 var(--mac-accent);
 }
 
 /* A moving or resizing bar has no vertical manipulation mode: remove the
@@ -444,6 +475,11 @@ span:has(> .topic-progress-thumb) {
 [data-timeline-dragging="true"] .timeline-lane[data-hovered="true"]:not([data-selected="true"]),
 [data-timeline-dragging="true"] .timeline-row[data-hovered="true"]:not([data-selected="true"]) {
   background-color: transparent;
+  box-shadow: none;
+}
+
+[data-timeline-dragging="true"] .timeline-course-panel .timeline-row[data-hovered="true"]:not([data-selected="true"])::after {
+  display: none;
 }
 
 /**
