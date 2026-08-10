@@ -51,7 +51,7 @@ export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
 }
 
 /** An opaque warning mark keeps the chart's brightness while borrowing red's hue. */
-function OverdueIcon() {
+function OverdueIcon({ className }: { className?: string } = {}) {
   return (
     <svg
       aria-hidden="true"
@@ -61,7 +61,7 @@ function OverdueIcon() {
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="size-7 text-negative"
+      className={clsx(className ?? "size-7", "text-negative")}
     >
       <path
         d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
@@ -82,9 +82,14 @@ function OverdueIcon() {
  * the scrollport with `position: sticky`, count what is out there, and scroll
  * the nearest one *just* into view on the side it was hiding past.
  */
-export function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }) {
+export function OffscreenMarkers({ topic, tint, today }: { topic: Topic; tint: string; today: IsoDate }) {
   const chart = useChart();
-  const markers = useOffscreenMarkerState(topic.blocks, chart.viewport);
+  const markers = useOffscreenMarkerState(
+    topic.blocks,
+    chart.viewport,
+    today,
+    (topicProgress(topic).ratio ?? 0) < 1,
+  );
   // Both sides stay mounted while the row has anything to point at, and the
   // last thing each pointed at is kept while it fades: an element removed from
   // the DOM cannot animate its own departure.
@@ -105,6 +110,7 @@ export function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }
           tint={tint}
           visible={markers.before !== null}
           count={shown.before.count}
+          overdue={shown.before.overdue}
           date={shown.before.block.endDate}
           topic={topic.name}
           onGo={() => chart.reveal(shown.before!.block, "left")}
@@ -116,6 +122,7 @@ export function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }
           tint={tint}
           visible={markers.after !== null}
           count={shown.after.count}
+          overdue={shown.after.overdue}
           date={shown.after.block.startDate}
           topic={topic.name}
           onGo={() => chart.reveal(shown.after!.block, "right")}
@@ -125,34 +132,43 @@ export function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }
   );
 }
 
-type MarkerSide = { count: number; block: StudyBlock } | null;
+type MarkerSide = { count: number; block: StudyBlock; overdue: boolean } | null;
 type OffscreenMarkerState = { before: MarkerSide; after: MarkerSide };
 
 const NO_OFFSCREEN_MARKERS: OffscreenMarkerState = { before: null, after: null };
 
 /** One pass finds both counts and the nearest block in either direction. */
-function markersFor(blocks: readonly StudyBlock[], viewport: Viewport): OffscreenMarkerState {
+function markersFor(
+  blocks: readonly StudyBlock[],
+  viewport: Viewport,
+  today: IsoDate,
+  topicOverdue: boolean,
+): OffscreenMarkerState {
   if (!viewport || blocks.length === 0) return NO_OFFSCREEN_MARKERS;
 
   let beforeCount = 0;
   let afterCount = 0;
   let nearestBefore: StudyBlock | null = null;
   let nearestAfter: StudyBlock | null = null;
+  let beforeOverdue = false;
+  let afterOverdue = false;
 
   for (const block of blocks) {
     if (block.endDate < viewport.from) {
       beforeCount += 1;
+      beforeOverdue ||= topicOverdue && block.endDate < today;
       if (!nearestBefore || block.endDate > nearestBefore.endDate) nearestBefore = block;
     } else if (block.startDate > viewport.to) {
       afterCount += 1;
+      afterOverdue ||= topicOverdue && block.endDate < today;
       if (!nearestAfter || block.startDate < nearestAfter.startDate) nearestAfter = block;
     }
   }
 
   if (!nearestBefore && !nearestAfter) return NO_OFFSCREEN_MARKERS;
   return {
-    before: nearestBefore ? { count: beforeCount, block: nearestBefore } : null,
-    after: nearestAfter ? { count: afterCount, block: nearestAfter } : null,
+    before: nearestBefore ? { count: beforeCount, block: nearestBefore, overdue: beforeOverdue } : null,
+    after: nearestAfter ? { count: afterCount, block: nearestAfter, overdue: afterOverdue } : null,
   };
 }
 
@@ -160,8 +176,10 @@ function sameMarkerState(left: OffscreenMarkerState, right: OffscreenMarkerState
   return (
     left.before?.count === right.before?.count &&
     left.before?.block === right.before?.block &&
+    left.before?.overdue === right.before?.overdue &&
     left.after?.count === right.after?.count &&
     left.after?.block === right.after?.block
+    && left.after?.overdue === right.after?.overdue
   );
 }
 
@@ -173,23 +191,32 @@ function sameMarkerState(left: OffscreenMarkerState, right: OffscreenMarkerState
 function useOffscreenMarkerState(
   blocks: readonly StudyBlock[],
   store: ViewportStore,
+  today: IsoDate,
+  topicOverdue: boolean,
 ): OffscreenMarkerState {
   const cacheRef = useRef<{
     blocks: readonly StudyBlock[];
     viewport: Viewport;
+    today: IsoDate;
+    topicOverdue: boolean;
     result: OffscreenMarkerState;
   } | null>(null);
 
   const getSnapshot = useCallback(() => {
     const viewport = store.getSnapshot();
     const cached = cacheRef.current;
-    if (cached?.blocks === blocks && cached.viewport === viewport) return cached.result;
+    if (
+      cached?.blocks === blocks &&
+      cached.viewport === viewport &&
+      cached.today === today &&
+      cached.topicOverdue === topicOverdue
+    ) return cached.result;
 
-    const selected = markersFor(blocks, viewport);
+    const selected = markersFor(blocks, viewport, today, topicOverdue);
     const result = cached && sameMarkerState(cached.result, selected) ? cached.result : selected;
-    cacheRef.current = { blocks, viewport, result };
+    cacheRef.current = { blocks, viewport, today, topicOverdue, result };
     return result;
-  }, [blocks, store]);
+  }, [blocks, store, today, topicOverdue]);
 
   return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
 }
@@ -201,6 +228,7 @@ function Marker({
   count,
   date,
   topic,
+  overdue,
   onGo,
 }: {
   side: "left" | "right";
@@ -210,6 +238,7 @@ function Marker({
   count: number;
   date: IsoDate;
   topic: string;
+  overdue: boolean;
   onGo: () => void;
 }) {
   const chart = useChart();
@@ -217,7 +246,20 @@ function Marker({
   const where = side === "left" ? "earlier" : "later";
 
   return (
-    <button
+    <span
+      data-visible={visible}
+      className={clsx(
+        "timeline-marker sticky z-30 mt-1 flex h-4 items-center gap-1",
+        side === "left" ? "float-left" : "float-right right-1",
+      )}
+      style={side === "left" ? { left: chart.gutter + 4 } : undefined}
+    >
+      {side === "left" && overdue ? (
+        <span className="pointer-events-none order-2 flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <OverdueIcon className="size-4" />
+        </span>
+      ) : null}
+      <button
       type="button"
       // A press here is neither a rubber band nor a bar gesture: the marker is
       // chrome sitting over the canvas, and the canvas underneath must not hear
@@ -225,7 +267,6 @@ function Marker({
       // the scrollport's capture phase before this ever runs.
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onGo}
-      data-visible={visible}
       aria-hidden={!visible}
       tabIndex={visible ? undefined : -1}
       title={`${count} ${where} block${count === 1 ? "" : "s"} for ${topic} — go to ${shortDate(date)}`}
@@ -237,26 +278,27 @@ function Marker({
       // In the colour of the work it points at: a row of grey chips down the
       // edge of the chart says only "something is out there", and in the
       // combined lane the useful half of that is *whose*.
-      style={{
-        ...(side === "left" ? { left: chart.gutter + 4 } : undefined),
-        background: `color-mix(in srgb, ${tint} 22%, var(--mac-material-inline))`,
-        color: tint,
-      }}
+      style={{ background: `color-mix(in srgb, ${tint} 22%, var(--mac-material-inline))`, color: tint }}
       // `mt-1` rather than a sticky `top`: a float sits at the top of the row,
       // and the offset of a sticky element is where it pins against the
       // *scrollport*, not where it sits in its row. The margin puts it on the
       // bars' own centre line, at the bars' own height.
       className={clsx(
-        "timeline-chrome timeline-marker timeline-inline sticky z-30 mt-1",
+        "timeline-chrome",
         "flex h-4 items-center gap-0.5 rounded-chip px-1 text-caption font-semibold tabular-nums",
         "hover:brightness-110",
-        side === "left" ? "float-left" : "float-right right-1",
       )}
     >
       {side === "left" ? <Chevron aria-hidden="true" className="size-3" /> : null}
       {count}
       {side === "right" ? <Chevron aria-hidden="true" className="size-3" /> : null}
-    </button>
+      </button>
+      {side === "right" && overdue ? (
+        <span className="pointer-events-none flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <OverdueIcon className="size-4" />
+        </span>
+      ) : null}
+    </span>
   );
 }
 

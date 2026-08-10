@@ -517,7 +517,7 @@ span:has(> .topic-progress-thumb) {
 }
 
 .timeline-scrollport .timeline-course-panel button,
-.timeline-scrollport .timeline-marker {
+.timeline-scrollport .timeline-marker > button {
   cursor: pointer !important;
 }
 

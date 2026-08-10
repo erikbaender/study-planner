@@ -656,7 +656,7 @@ function TopicLane({
     >
       {/* The row's name now lives in the group's single `GutterCard`, drawn
           once above every row rather than repeated per row here. */}
-      {topic.blocks.length > 0 ? <OffscreenMarkers topic={topic} tint={tint} /> : null}
+      {topic.blocks.length > 0 ? <OffscreenMarkers topic={topic} tint={tint} today={today} /> : null}
       {topic.blocks.map((block) => (
         <MemoBlockBar
           key={block.id}
