@@ -203,10 +203,12 @@ export function useChartPosition({
   const ticks = useMemo(() => ticksFor(range.start, range.end, zoom), [range.start, range.end, zoom]);
   const bands = useMemo(() => bandsFor(range.start, range.end, zoom), [range.start, range.end, zoom]);
 
-  // Today just clear of the label gutter, not a third of the way in: what is
-  // coming is what the chart is for, so the whole width goes to it.
+  // Today sits just beyond the label gutter with the existing breathing room
+  // plus one unit of the active zoom on its left. That small historical window
+  // is useful context, and makes the chart's meaningful start explicit: the
+  // canvas begins where the gutter ends, not at the covered left edge.
   const todayOffset = useCallback(
-    () => xOf(today, range.start, zoom) - gutter - REVEAL_PADDING_PX,
+    () => xOf(today, range.start, zoom) - gutter - REVEAL_PADDING_PX - PX_PER_DAY[zoom],
     [gutter, range.start, today, zoom],
   );
 
@@ -222,7 +224,7 @@ export function useChartPosition({
     // animation runs this once more when it lands.
     if (isScrollAnimating(element)) return;
     const currentScrollLeft = scrollLeft ?? element.scrollLeft;
-    const from = dateAt(currentScrollLeft, range.start, zoom);
+    const from = dateAt(currentScrollLeft + gutter, range.start, zoom);
     const to = dateAt(currentScrollLeft + element.clientWidth, range.start, zoom);
     viewport.setSnapshot({ from, to });
 
@@ -255,7 +257,7 @@ export function useChartPosition({
         setExtraAfter((days) => days + chunkDays);
       }
     }
-  }, [range.start, viewport, zoom]);
+  }, [gutter, range.start, viewport, zoom]);
 
   useLayoutEffect(() => {
     trackVisibleNowRef.current = trackVisibleNow;

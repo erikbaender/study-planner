@@ -80,7 +80,6 @@ import {
 import { topicsForQuery } from "@/features/workspace/scope";
 import {
   ExamMarkers,
-  Legend,
   NoTimelineCourses,
   Ruler,
   Rules,
@@ -351,7 +350,6 @@ function TimelineChart({
           Today
         </Button>
         <ZoomControl zoom={zoom} onChange={changeZoom} />
-        <Legend />
       </div>
 
       <ChartContext.Provider value={chart}>

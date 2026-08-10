@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useWorkspace, revealSelection } from "./store";
+import { toggleRevealSelection, useWorkspace, revealSelection } from "./store";
 
 const initial = useWorkspace.getState();
 
@@ -66,5 +66,13 @@ describe("the workspace store", () => {
     const state = useWorkspace.getState();
     expect(state.selection).toEqual({ kind: "course", id: "course_1" });
     expect(state.inspectorOpen).toBe(true);
+  });
+
+  it("clears the current entity when it is selected again", () => {
+    toggleRevealSelection({ kind: "course", id: "course_1" });
+    expect(useWorkspace.getState().selection).toEqual({ kind: "course", id: "course_1" });
+
+    toggleRevealSelection({ kind: "course", id: "course_1" });
+    expect(useWorkspace.getState().selection).toBeNull();
   });
 });

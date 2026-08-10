@@ -89,9 +89,29 @@ describe("TimelineView", () => {
     fireEvent.pointerUp(window, { button: 0, clientX: 100 });
 
     expect(onSelectTopic).toHaveBeenCalledWith(expect.anything(), topic);
+    expect(onSelectTopic).toHaveBeenCalledOnce();
     expect(target).toHaveAttribute("data-selection", "primary");
     // A press that never travelled is a selection, not an edit.
     expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+  });
+
+  it("deselects a bar when it is clicked again", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    chart([topic]);
+
+    const target = bar(/2026-05-04 to 2026-05-08/);
+    fireEvent.pointerDown(target, { button: 0, clientX: 100 });
+    fireEvent.pointerUp(window, { button: 0, clientX: 100 });
+    expect(target).toHaveAttribute("data-selection", "primary");
+
+    fireEvent.pointerDown(target, { button: 0, clientX: 100 });
+    fireEvent.pointerUp(window, { button: 0, clientX: 100 });
+    expect(target).not.toHaveAttribute("data-selection");
   });
 
   it("drags every selected bar by the same number of days", () => {

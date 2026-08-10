@@ -185,3 +185,13 @@ export function revealSelection(selection: Selection) {
   select(selection);
   setInspectorOpen(true);
 }
+
+/** Select an entity for inspection, or clear it when the same entity is clicked again. */
+export function toggleRevealSelection(selection: Exclude<Selection, null>) {
+  const current = useWorkspace.getState().selection;
+  if (current?.kind === selection.kind && current.id === selection.id) {
+    useWorkspace.getState().select(null);
+    return;
+  }
+  revealSelection(selection);
+}

@@ -211,6 +211,16 @@ span:has(> .topic-progress-thumb) {
   background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
 }
 
+/* Inspection selection is blue even for a completed course and while the
+   pointer is over it; the completion tint must not win over selection. */
+.course-completion-row[aria-current="true"] {
+  background-color: var(--mac-accent-soft);
+}
+
+.course-completion-row[aria-current="true"]:hover {
+  background-image: none;
+}
+
 .topic-completion-fill {
   background-color: var(--topic-completion-color);
   transform-origin: center;
@@ -419,6 +429,21 @@ span:has(> .topic-progress-thumb) {
 
 .timeline-row[data-selected="true"] {
   color: var(--mac-label);
+}
+
+/* The gutter sits above the chart, so its selected half gets a little more
+   weight than the translucent highlight carried by the lane underneath. The
+   inset edge also colours only this row's slice of the panel outline. */
+.timeline-course-panel .timeline-row[data-selected="true"] {
+  background-color: color-mix(in srgb, var(--mac-accent) 24%, transparent);
+  box-shadow: inset -1px 0 var(--mac-accent);
+}
+
+/* A moving or resizing bar has no vertical manipulation mode: remove the
+   course-colour hover state while keeping the blue selection state above it. */
+[data-timeline-dragging="true"] .timeline-lane[data-hovered="true"]:not([data-selected="true"]),
+[data-timeline-dragging="true"] .timeline-row[data-hovered="true"]:not([data-selected="true"]) {
+  background-color: transparent;
 }
 
 /**

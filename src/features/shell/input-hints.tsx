@@ -9,8 +9,8 @@
  * Kept out of the toolbar's own flex row and centred against the *window*
  * instead: the controls either side are of unequal width, and a hint that
  * drifted with them would not read as a fixed place to look. Its presentation
- * slot also has a stable width, so changing copy cannot shift the toolbar. It
- * is inert to the pointer so a press still lands on the real control beneath.
+ * slot sizes to the current copy without shifting the toolbar. It is inert to
+ * the pointer so a press still lands on the real control beneath.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -128,7 +128,7 @@ export function InputHintBar() {
       aria-hidden="true"
       className="pointer-events-none absolute inset-x-0 flex justify-center"
     >
-      <div className="flex w-[32rem] max-w-[46vw] justify-center overflow-hidden text-caption text-tertiary">
+      <div className="flex w-max max-w-[calc(100vw-2rem)] justify-center overflow-visible text-caption text-tertiary">
         <HintGroup
           hints={displayed}
           className="flex items-center gap-3 whitespace-nowrap input-hint-fade"

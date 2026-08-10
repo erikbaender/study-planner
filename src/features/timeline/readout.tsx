@@ -1,3 +1,6 @@
+import { clsx } from "clsx";
+import { createPortal } from "react-dom";
+import { forwardRef, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef } from "react";
 import { differenceInDays, type IsoDate } from "@/domain";
 import { shortDate } from "./geometry";
 
@@ -17,15 +20,30 @@ type Readout = { x: number; y: number; startDate: IsoDate; endDate: IsoDate };
  */
 let readoutElement: HTMLElement | null = null;
 
+export const TimelineInfoBox = forwardRef<HTMLSpanElement, ComponentPropsWithoutRef<"span">>(
+  function TimelineInfoBox({ className, ...props }, ref) {
+    return (
+      <span
+        ref={ref}
+        {...props}
+        className={clsx(
+          "timeline-info-box material-popover pointer-events-none fixed z-50 max-w-[calc(100vw-1rem)] rounded-chip px-1.5 py-0.5 text-caption tabular-nums whitespace-nowrap text-label shadow-popover",
+          className,
+        )}
+      />
+    );
+  },
+);
+
 export function DragReadout() {
   return (
-    <span
+    <TimelineInfoBox
       ref={(node) => {
         readoutElement = node;
       }}
       role="status"
       data-visible="false"
-      className="timeline-readout material-popover pointer-events-none fixed z-50 -translate-x-1/2 rounded-chip px-1.5 py-0.5 text-caption tabular-nums whitespace-nowrap text-label shadow-popover"
+      className="timeline-readout -translate-x-1/2"
     />
   );
 }
@@ -41,4 +59,65 @@ export function showReadout({ x, y, startDate, endDate }: Readout) {
 
 export function hideReadout() {
   if (readoutElement) readoutElement.dataset.visible = "false";
+}
+
+export function BlockHoverInfo({
+  topicName,
+  startDate,
+  endDate,
+  completedUnits,
+  totalUnits,
+  unit,
+  overdue,
+  anchor,
+  visible,
+}: {
+  topicName: string;
+  startDate: IsoDate;
+  endDate: IsoDate;
+  completedUnits: number;
+  totalUnits: number;
+  unit: string;
+  overdue: boolean;
+  anchor: DOMRect | null;
+  visible: boolean;
+}) {
+  const cardRef = useRef<HTMLSpanElement>(null);
+  const [position, setPosition] = useState({ left: 0, top: 0, ready: false });
+  const length = differenceInDays(startDate, endDate) + 1;
+
+  useLayoutEffect(() => {
+    if (!visible || !anchor || !cardRef.current) return;
+    const card = cardRef.current.getBoundingClientRect();
+    const left = Math.max(8, Math.min(anchor.left + anchor.width / 2 - card.width / 2, window.innerWidth - card.width - 8));
+    const above = anchor.top - card.height - 8;
+    const top = above >= 8 ? above : Math.min(window.innerHeight - card.height - 8, anchor.bottom + 8);
+    setPosition({ left, top: Math.max(8, top), ready: true });
+  }, [anchor, visible, topicName, startDate, endDate, completedUnits, totalUnits, unit, overdue]);
+
+  if (!visible || !anchor || typeof document === "undefined") return null;
+
+  return createPortal(
+    <TimelineInfoBox
+      ref={cardRef}
+      role="tooltip"
+      aria-hidden="true"
+      style={{
+        left: position.left,
+        top: position.top,
+        visibility: position.ready ? "visible" : "hidden",
+      }}
+    >
+      <span className="flex flex-col gap-0.5">
+        <span className="font-semibold">{topicName}</span>
+        <span>
+          {shortDate(startDate)} – {shortDate(endDate)} · {length} day{length === 1 ? "" : "s"}
+        </span>
+        <span>
+          {completedUnits} of {totalUnits} {unit} done{overdue ? " · overdue" : ""}
+        </span>
+      </span>
+    </TimelineInfoBox>,
+    document.body,
+  );
 }

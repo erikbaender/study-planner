@@ -305,7 +305,11 @@ export function startBarGesture(
               : [...current, blockId],
           );
         } else {
-          chart.select([blockId]);
+          // A new bar was already selected on press so a drag can begin with
+          // the right target. Only a bar that was selected before the tap is
+          // being toggled off; selecting it again would toggle the inspector
+          // selection back immediately.
+          if (before.includes(blockId)) chart.select(before.filter((id) => id !== blockId));
         }
         return;
       }

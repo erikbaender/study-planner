@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -32,6 +32,7 @@ import {
 } from "./hints";
 import type { Range } from "./layout";
 import { hintTarget } from "@/features/workspace/hints";
+import { BlockHoverInfo } from "./readout";
 /** The one delete item, so the bar's menu and the lane's cannot disagree. */
 export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
   return {
@@ -272,6 +273,9 @@ function BlockBar({
   );
   const keyboardMode = useKeyboardMode();
   const barHints = barSelection !== null ? barSelectedHints(keyboardMode) : BAR_HINTS;
+  const barHintTarget = hintTarget(barHints);
+  const [hovered, setHovered] = useState(false);
+  const [hoverAnchor, setHoverAnchor] = useState<DOMRect | null>(null);
 
   const shown = draft ?? block;
   const unit = UNIT_LABELS[topic.unit].plural;
@@ -312,30 +316,41 @@ function BlockBar({
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
-          chart.select([block.id]);
-          onSelect();
+          const current = chart.selection.getSnapshot();
+          if (current.includes(block.id)) chart.select(current.filter((id) => id !== block.id));
+          else {
+            chart.select([block.id]);
+            onSelect();
+          }
         }}
-        {...hintTarget(barHints)}
+        {...barHintTarget}
+        onPointerEnter={(event) => {
+          barHintTarget.onPointerEnter();
+          setHoverAnchor(event.currentTarget.getBoundingClientRect());
+          setHovered(true);
+        }}
+        onPointerLeave={() => {
+          barHintTarget.onPointerLeave();
+          setHovered(false);
+        }}
+        onFocus={(event) => {
+          barHintTarget.onFocus();
+          setHoverAnchor(event.currentTarget.getBoundingClientRect());
+          setHovered(true);
+        }}
+        onBlur={() => {
+          barHintTarget.onBlur();
+          setHovered(false);
+        }}
         // Everything a bar means, spoken. The old bars were `div`s and said
         // nothing at all.
         aria-label={`${topic.name}, ${shown.startDate} to ${shown.endDate}, ${length} day${length === 1 ? "" : "s"}, ${topic.completedUnits} of ${topic.totalUnits} ${unit} done${overdue ? ", overdue" : ""}`}
-        // The hover answer to "which days is this?", which previously only a
-        // screen reader was told.
-        title={`${topic.name}\n${shortDate(shown.startDate)} – ${shortDate(shown.endDate)} · ${length} day${length === 1 ? "" : "s"}\n${topic.completedUnits} of ${topic.totalUnits} ${unit} done${overdue ? " · overdue" : ""}`}
         aria-current={barSelection !== null || selected ? "true" : undefined}
         data-selection={barSelection ?? undefined}
         style={{
           left: xCss(shown.startDate, range.start),
           width: widthCss(shown.startDate, shown.endDate, 6),
-          // Overdue is carried by a dense opaque warning hatch rather than a
-          // second outline: the red pattern makes missed work unmistakable
-          // without making it look like an ordinary red study bar.
-          backgroundColor: overdue
-            ? "transparent"
-            : `color-mix(in srgb, ${tint} 22%, transparent)`,
-          backgroundImage: overdue
-            ? "repeating-linear-gradient(45deg, color-mix(in srgb, var(--mac-negative) 68%, black) 0 2px, transparent 2px 4px)"
-            : undefined,
+          backgroundColor: `color-mix(in srgb, ${tint} 22%, transparent)`,
           // One outline per bar, always. It used to be a ring *and*, on a
           // hand-placed block, a dashed border half a pixel outside it — two
           // edges on a shape four pixels tall, which read as a rendering
@@ -368,6 +383,19 @@ function BlockBar({
           className="topic-motion-width block h-full"
           style={{ width: `${fill * 100}%`, background: tint }}
         />
+        {overdue ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
+          >
+            <span
+              className="flex size-4 items-center justify-center bg-content"
+              style={{ clipPath: "polygon(50% 0, 100% 100%, 0 100%)" }}
+            >
+              <AlertTriangle className="size-2.5 text-negative" strokeWidth={2.5} />
+            </span>
+          </span>
+        ) : null}
         {/* The dates, in the bar, when there is room for them. A chart of
             anonymous rectangles makes you hover every one to read it back. */}
         <span
@@ -397,6 +425,17 @@ function BlockBar({
           style={{ background: "var(--mac-label-secondary)" }}
         />
       </button>
+      <BlockHoverInfo
+        topicName={topic.name}
+        startDate={shown.startDate}
+        endDate={shown.endDate}
+        completedUnits={topic.completedUnits}
+        totalUnits={topic.totalUnits}
+        unit={unit}
+        overdue={overdue}
+        anchor={hoverAnchor}
+        visible={hovered}
+      />
     </>
   );
 }
