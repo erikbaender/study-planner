@@ -24,7 +24,7 @@
 import { clsx } from "clsx";
 import { Trash2 } from "lucide-react";
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { usePlannerErrors, useRepository } from "@/data/use-repository";
+import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   coursePalette,
   courseColorValue,
@@ -215,7 +215,7 @@ function CourseInspector({
   onDelete: () => void;
 }) {
   const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const run = usePlannerRun();
   const progress = courseProgress(course);
 
   const patch = (changes: Partial<{ name: string; code?: string; color: string; notes: string }>) =>
@@ -369,7 +369,7 @@ function TopicInspector({
   onDelete: () => void;
 }) {
   const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const run = usePlannerRun();
   const progress = topicProgress(topic);
   const unitLabel = UNIT_LABELS[topic.unit].plural;
   const dependencyCandidates = course.topics.filter((candidate) => candidate.id !== topic.id);
@@ -636,7 +636,7 @@ function ExamInspector({
   onDelete: () => void;
 }) {
   const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const run = usePlannerRun();
 
   /**
    * The window's end is what makes an exam provisional, so it is the only

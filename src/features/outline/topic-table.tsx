@@ -20,7 +20,7 @@
 import { clsx } from "clsx";
 import { PanelRight, Plus, Trash2 } from "lucide-react";
 import { useState, type CSSProperties } from "react";
-import { usePlannerErrors, useRepository } from "@/data/use-repository";
+import { usePlannerRun, useRepository } from "@/data/use-repository";
 import { courseColorValue, UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
 import { ContextMenu, Select } from "@/ui";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
@@ -110,7 +110,7 @@ function TopicTableRow({
   onAddRow: () => void;
 }) {
   const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const run = usePlannerRun();
   const unit = UNIT_LABELS[topic.unit].plural;
 
   /**

@@ -17,7 +17,7 @@
 
 import { useRef, useState, type RefObject } from "react";
 import { Check } from "lucide-react";
-import { usePlannerErrors, useRepository } from "@/data/use-repository";
+import { usePlannerRun, useRepository } from "@/data/use-repository";
 import { UNIT_LABELS, topicProgress, type Topic } from "@/domain";
 import { ProgressBar, ProgressSlider } from "@/ui";
 
@@ -45,7 +45,7 @@ export function TopicProgressCell({
   readoutClassName?: string;
 }) {
   const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const run = usePlannerRun();
   const [preview, setPreview] = useState<number | null>(null);
   const [settled, setSettled] = useState(topic.completedUnits);
   const completionCheckboxRef = useRef<HTMLInputElement>(null);
