@@ -10,7 +10,6 @@ import {
   type IsoDate,
   type Topic,
 } from "@/domain";
-import { Badge } from "@/ui";
 import {
   dateAt,
   shortDate,
@@ -36,7 +35,7 @@ import {
   type RowMotion,
 } from "./row-transitions";
 import { hintExcludedScope } from "@/features/workspace/hints";
-import { overdueBlockCount } from "@/features/workspace/scope";
+import { overdueBlockCount, overdueBlockCountForTopic } from "@/features/workspace/scope";
 /* ─── Lanes ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -157,19 +156,16 @@ function AttentionIndicators({
   return (
     <span className="flex shrink-0 items-center gap-1">
       {behindDays !== null ? (
-        <span title={`${behindDays} days behind pace`}>
-          <Badge tone="warning">
-            <AlertTriangle aria-hidden="true" className="size-2.5" strokeWidth={3} />
-            <span aria-hidden="true">{behindDays}d</span>
-          </Badge>
+        <span title={`${behindDays} days behind pace`} className="flex size-4 items-center justify-center">
+          <AlertTriangle aria-hidden="true" className="size-3 text-warning" strokeWidth={3} />
         </span>
       ) : null}
       {overdueBlocks > 0 ? (
-        <span title={`${overdueBlocks} overdue block${overdueBlocks === 1 ? "" : "s"}`}>
-          <Badge tone="negative">
-            <AlertTriangle aria-hidden="true" className="size-2.5" strokeWidth={3} />
-            <span aria-hidden="true">{overdueBlocks}</span>
-          </Badge>
+        <span
+          title={`${overdueBlocks} overdue block${overdueBlocks === 1 ? "" : "s"}`}
+          className="flex size-4 items-center justify-center"
+        >
+          <AlertTriangle aria-hidden="true" className="size-3 text-negative" strokeWidth={3} />
         </span>
       ) : null}
     </span>
@@ -319,15 +315,7 @@ function AllTopicsLane({
           icon={<Layers aria-hidden="true" className="size-3 shrink-0 text-tertiary" />}
           name="All courses"
           bold
-          trailing={
-            <span className="flex shrink-0 items-center gap-1">
-              <AttentionIndicators
-                behindDays={behindDays >= 0 ? behindDays : null}
-                overdueBlocks={overdueBlocks}
-              />
-              <span className="text-caption tabular-nums text-tertiary">{entries.length}</span>
-            </span>
-          }
+          trailing={<AttentionIndicators behindDays={behindDays >= 0 ? behindDays : null} overdueBlocks={overdueBlocks} />}
           rowsHeight={disclosure.expanded ? rowsHeight : 0}
           rows={
             disclosure.mounted
@@ -335,6 +323,7 @@ function AllTopicsLane({
                   key,
                   name: topic.name,
                   dot: courseColorValue(course.color),
+                  overdue: overdueBlockCountForTopic(topic, today) > 0,
                   selected: topic.id === selectedId,
                   motion,
                   onSelect: () => onSelectTopic(course, topic),
@@ -442,6 +431,7 @@ function CourseLane({
                   key,
                   name: topic.name,
                   dot: courseColorValue(course.color),
+                  overdue: overdueBlockCountForTopic(topic, today) > 0,
                   selected: topic.id === selectedId,
                   motion,
                   onSelect: () => onSelectTopic(topic),
@@ -486,6 +476,7 @@ function GutterCard({
     key: string;
     name: string;
     dot?: string;
+    overdue?: boolean;
     selected?: boolean;
     /** Where this row is in an arrival or a departure; see "Rows arriving and leaving". */
     motion: RowMotion;
@@ -575,6 +566,14 @@ function GutterCard({
                   />
                 ) : null}
                 <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                {row.overdue ? (
+                  <span
+                    title="Overdue block"
+                    className="flex size-4 shrink-0 items-center justify-center"
+                  >
+                    <AlertTriangle aria-hidden="true" className="size-3 text-negative" strokeWidth={3} />
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
