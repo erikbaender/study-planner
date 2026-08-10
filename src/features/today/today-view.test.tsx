@@ -16,6 +16,7 @@ const run = vi.fn();
 
 vi.mock("@/data/use-repository", () => ({
   useRepository: () => repository,
+  usePlannerRun: () => run,
   usePlannerErrors: () => ({ run, error: null, clear: () => {} }),
 }));
 

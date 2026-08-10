@@ -109,7 +109,7 @@ function toCourse(course: PlanTree["courses"][number]): Course {
   };
 }
 
-export function toPlan(plan: PlanTree): Plan {
+function toPlan(plan: PlanTree): Plan {
   return {
     id: plan._id,
     name: plan.name,

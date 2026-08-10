@@ -146,14 +146,6 @@ export const listPlanTrees = query({
   },
 });
 
-export const getPlanTree = query({
-  args: { planId: v.id("plans") },
-  handler: async (ctx, args) => {
-    const userId = await requireUser(ctx);
-    return await loadPlanTree(ctx, await assertPlanOwner(ctx, args.planId, userId));
-  },
-});
-
 export const listStudyLog = query({
   args: { since: v.optional(v.string()) },
   handler: async (ctx, args) => {

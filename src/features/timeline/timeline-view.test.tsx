@@ -62,6 +62,18 @@ function bar(dates: RegExp) {
   return screen.getAllByRole("button", { name: dates })[0];
 }
 
+function stubAnimationFrames() {
+  let nextId = 0;
+  const request = vi.fn((callback: FrameRequestCallback) => {
+    void callback;
+    return ++nextId;
+  });
+  const cancel = vi.fn();
+  vi.stubGlobal("requestAnimationFrame", request);
+  vi.stubGlobal("cancelAnimationFrame", cancel);
+  return { request, cancel };
+}
+
 describe("TimelineView", () => {
   it("selects a bar with the left button, and points the inspector at its topic", () => {
     const topic = makeTopic({
@@ -123,6 +135,160 @@ describe("TimelineView", () => {
       "block_2",
       expect.objectContaining({ startDate: "2026-05-25", endDate: "2026-05-27" }),
     );
+  });
+
+  it("replaces the selection on the press, so a drag moves only the bar under the hand", () => {
+    const first = makeTopic({
+      id: "topic_1",
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    const second = makeTopic({
+      id: "topic_2",
+      name: "Krebs cycle",
+      blocks: [
+        { id: "block_2", topicId: "topic_2", startDate: "2026-05-18", endDate: "2026-05-20", source: "auto" },
+      ],
+    });
+    chart([first, second]);
+
+    const one = bar(/2026-05-04 to 2026-05-08/);
+    fireEvent.pointerDown(one, { button: 0, clientX: 100 });
+    fireEvent.pointerUp(window, { button: 0, clientX: 100 });
+    expect(one).toHaveAttribute("data-selection", "primary");
+
+    // Pressing an unselected bar without a modifier selects it alone, before
+    // anything moves, so the bar left behind must not travel with the drag.
+    const two = bar(/2026-05-18 to 2026-05-20/);
+    fireEvent.pointerDown(two, { button: 0, clientX: 300 });
+    expect(two).toHaveAttribute("data-selection", "primary");
+    expect(one).not.toHaveAttribute("data-selection");
+
+    fireEvent.pointerMove(window, { clientX: 398 });
+    fireEvent.pointerUp(window, { button: 0, clientX: 398 });
+
+    expect(repository.updateStudyBlock).toHaveBeenCalledTimes(1);
+    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
+      "block_2",
+      expect.objectContaining({ startDate: "2026-05-25", endDate: "2026-05-27" }),
+    );
+  });
+
+  it("cancels a bar drag without leaving a drag listener or changing the bar", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    chart([topic]);
+
+    const target = bar(/2026-05-04 to 2026-05-08/);
+    const scroller = document.querySelector<HTMLElement>(".timeline-scrollport")!;
+    fireEvent.pointerDown(target, { button: 0, pointerId: 41, clientX: 100 });
+    fireEvent.pointerMove(window, { pointerId: 41, clientX: 200 });
+    expect(scroller).toHaveAttribute("data-timeline-dragging", "true");
+
+    fireEvent.pointerCancel(window, { pointerId: 41 });
+    expect(scroller).not.toHaveAttribute("data-timeline-dragging");
+    expect(scroller).not.toHaveAttribute("data-timeline-resizing");
+    expect(target).not.toHaveAttribute("data-selection");
+
+    fireEvent.pointerMove(window, { pointerId: 41, clientX: 400 });
+    expect(target).toHaveAttribute("aria-label", expect.stringContaining("2026-05-04 to 2026-05-08"));
+    expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+  });
+
+  it("commits the release position when drag frames were coalesced", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    chart([topic]);
+    const target = bar(/2026-05-04 to 2026-05-08/);
+    const frames = stubAnimationFrames();
+
+    fireEvent.pointerDown(target, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(window, { clientX: 200 });
+    fireEvent.pointerMove(window, { clientX: 300 });
+
+    // The queued draft has not painted yet, so the bar still describes its
+    // committed span while the pointer is between frames.
+    expect(target).toHaveAttribute("aria-label", expect.stringContaining("2026-05-04 to 2026-05-08"));
+    expect(frames.request).toHaveBeenCalledOnce();
+
+    fireEvent.pointerUp(window, { button: 0, clientX: 398 });
+
+    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
+      "block_1",
+      expect.objectContaining({ startDate: "2026-05-25", endDate: "2026-05-29" }),
+    );
+  });
+
+  it("cancels a queued bar draft without publishing or writing", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    chart([topic]);
+    const target = bar(/2026-05-04 to 2026-05-08/);
+    const frames = stubAnimationFrames();
+
+    fireEvent.pointerDown(target, { button: 0, pointerId: 41, clientX: 100 });
+    fireEvent.pointerMove(window, { pointerId: 41, clientX: 398 });
+    fireEvent.pointerCancel(window, { pointerId: 41 });
+
+    expect(frames.cancel).toHaveBeenCalledOnce();
+    expect(target).toHaveAttribute("aria-label", expect.stringContaining("2026-05-04 to 2026-05-08"));
+    expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+  });
+
+  it("cancels a pan without leaving a panning listener", () => {
+    chart([makeTopic({ name: "Glycolysis" })]);
+    const scroller = document.querySelector<HTMLElement>(".timeline-scrollport")!;
+    scroller.scrollLeft = 100;
+
+    fireEvent.pointerDown(scroller, { button: 1, pointerId: 42, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { pointerId: 42, clientX: 120, clientY: 100 });
+    const moved = scroller.scrollLeft;
+    fireEvent.pointerCancel(window, { pointerId: 42 });
+    expect(scroller).not.toHaveAttribute("data-timeline-panning");
+
+    fireEvent.pointerMove(window, { pointerId: 42, clientX: 160, clientY: 100 });
+    expect(scroller.scrollLeft).toBe(moved);
+  });
+
+  it("disposes an active gesture when the chart unmounts", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    const { unmount } = render(
+      <TimelineView
+        courses={[makeCourse({ topics: [topic] })]}
+        health={new Map()}
+        today="2026-05-01"
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onGoToOutline={vi.fn()}
+      />,
+    );
+    const target = bar(/2026-05-04 to 2026-05-08/);
+    fireEvent.pointerDown(target, { button: 0, pointerId: 43, clientX: 100 });
+    fireEvent.pointerMove(window, { pointerId: 43, clientX: 200 });
+    unmount();
+
+    fireEvent.pointerMove(window, { pointerId: 43, clientX: 400 });
+    fireEvent.pointerUp(window, { pointerId: 43, button: 0, clientX: 400 });
+    expect(repository.updateStudyBlock).not.toHaveBeenCalled();
   });
 
   it("stops the whole selection where the first of its bars is blocked", () => {

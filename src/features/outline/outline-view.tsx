@@ -17,7 +17,7 @@
 
 import { useState } from "react";
 import { ChevronRight, ClipboardPaste, PanelRight, Plus, Trash2 } from "lucide-react";
-import { usePlannerErrors, useRepository } from "@/data/use-repository";
+import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
   courseColorValue,
@@ -166,7 +166,7 @@ function CourseSection({
   onDeleteCourse: () => void;
 }) {
   const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const run = usePlannerRun();
   const [pasting, setPasting] = useState(false);
   const progress = courseProgress(course);
   const topics = topicsForQuery(query, course);

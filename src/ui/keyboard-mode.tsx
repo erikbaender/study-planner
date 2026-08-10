@@ -14,7 +14,7 @@ import { SegmentedControl } from "./segmented-control";
 
 export type KeyboardMode = "mac" | "windows";
 
-export const KEYBOARD_MODE_STORAGE_KEY = "planner.keyboardMode";
+const KEYBOARD_MODE_STORAGE_KEY = "planner.keyboardMode";
 
 const DEFAULT_MODE: KeyboardMode = "mac";
 const listeners = new Set<() => void>();
@@ -23,6 +23,7 @@ let snapshot: KeyboardMode = DEFAULT_MODE;
 function isKeyboardMode(value: string | null): value is KeyboardMode {
   return value === "mac" || value === "windows";
 }
+
 
 function readMode(): KeyboardMode {
   try {
@@ -79,4 +80,3 @@ export function KeyboardModeControl({ size = "sm" }: { size?: "sm" | "md" }) {
     />
   );
 }
-

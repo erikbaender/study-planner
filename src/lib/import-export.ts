@@ -73,7 +73,7 @@ const logEntrySchema = z.object({
   note: z.string().optional(),
 });
 
-export const plannerExportSchema = z.object({
+const plannerExportSchema = z.object({
   version: z.literal(EXPORT_VERSION),
   exportedAt: z.string().optional(),
   plans: z.array(planSchema),

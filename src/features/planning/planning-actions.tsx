@@ -18,7 +18,7 @@
 
 import { useState } from "react";
 import { CalendarSync, Wand2 } from "lucide-react";
-import { usePlannerErrors, useRepository } from "@/data/use-repository";
+import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   describeShortfall,
   FALLBACK_CAPACITY_UNITS,
@@ -100,7 +100,7 @@ function PlanSheet({
   today: IsoDate;
 }) {
   const repository = useRepository();
-  const { run } = usePlannerErrors();
+  const run = usePlannerRun();
 
   const stored = snapshot.preferences.dailyCapacityUnits;
   const [capacity, setCapacity] = useState(stored ?? FALLBACK_CAPACITY_UNITS);

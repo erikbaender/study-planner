@@ -22,7 +22,7 @@ export type PlannerColor = {
   onColor: "#ffffff" | "#000000";
 };
 
-export const COURSE_COLOR_IDS = [
+const COURSE_COLOR_IDS = [
   "coral",
   "tangerine",
   "gold",
@@ -130,7 +130,7 @@ export function resolveCourseColorId(reference: string): CourseColorId {
     : (legacyColorIds[normalized] ?? DEFAULT_COLOR_ID);
 }
 
-export function getPaletteColor(reference: string): PlannerColor {
+function getPaletteColor(reference: string): PlannerColor {
   return paletteById.get(resolveCourseColorId(reference)) ?? paletteById.get(DEFAULT_COLOR_ID)!;
 }
 

@@ -134,7 +134,10 @@ export function animate(
 export function animateScrollLeft(element: HTMLElement, left: number, done?: () => void): void {
   const from = element.scrollLeft;
   const to = Math.max(0, left);
-  if (Math.abs(to - from) < 1) return;
+  if (Math.abs(to - from) < 1) {
+    done?.();
+    return;
+  }
   animate(element, (progress) => {
     element.scrollLeft = from + (to - from) * progress;
   }, done);

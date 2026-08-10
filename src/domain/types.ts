@@ -48,12 +48,10 @@ export type ExamStatus = (typeof EXAM_STATUSES)[number];
  * Load-bearing: reflow regenerates `auto` blocks and must never move or delete
  * a `manual` one.
  */
-export const BLOCK_SOURCES = ["auto", "manual"] as const;
-export type BlockSource = (typeof BLOCK_SOURCES)[number];
+export type BlockSource = "auto" | "manual";
 
-export const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;
 /** Day of week, 0 = Sunday, matching `Date.prototype.getDay`. */
-export type Weekday = (typeof WEEKDAYS)[number];
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export type StudyBlock = {
   id: EntityId;

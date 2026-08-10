@@ -35,7 +35,7 @@ export type ResolvedAppearance = "light" | "dark";
 
 export const APPEARANCE_STORAGE_KEY = "planner.appearance";
 export const ANIMATION_SPEED_STORAGE_KEY = "planner.animationSpeed";
-export const BASE_TOPIC_MOTION_MS = 240;
+const BASE_TOPIC_MOTION_MS = 240;
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 

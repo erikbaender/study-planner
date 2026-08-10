@@ -21,6 +21,7 @@ import {
 } from "@/domain";
 import { Button, Sheet, TextField } from "@/ui";
 import type { ResolvedSelection } from "@/features/workspace/scope";
+import { useResetWhen } from "./use-reset-when";
 
 export function EditPlanSheet({
   plan,
@@ -37,15 +38,12 @@ export function EditPlanSheet({
     name: plan?.name ?? "",
     notes: plan?.notes ?? "",
   }));
-  const [identity, setIdentity] = useState(`${plan?.id ?? ""}:${open}`);
-  const nextIdentity = `${plan?.id ?? ""}:${open}`;
-  if (identity !== nextIdentity) {
-    setIdentity(nextIdentity);
+  useResetWhen(`${plan?.id ?? ""}:${open}`, () =>
     setDraft({
       name: plan?.name ?? "",
       notes: plan?.notes ?? "",
-    });
-  }
+    }),
+  );
 
   const invalid = draft.name.trim() === "";
   const submit = () => {
@@ -117,11 +115,7 @@ export function SampleDataSheet({
   onLoad: (datasetId: SampleDatasetId) => void;
 }) {
   const [selectedId, setSelectedId] = useState<SampleDatasetId>(SAMPLE_DATASETS[0].id);
-  const [wasOpen, setWasOpen] = useState(open);
-  if (wasOpen !== open) {
-    setWasOpen(open);
-    setSelectedId(SAMPLE_DATASETS[0].id);
-  }
+  useResetWhen(open, () => setSelectedId(SAMPLE_DATASETS[0].id));
 
   return (
     <Sheet
@@ -186,13 +180,7 @@ export function NewPlanSheet({
   onCreate: (input: { name: string }) => void;
 }) {
   const [name, setName] = useState("");
-  // Cleared as the sheet opens, adjusted during render so the previous entry is
-  // never briefly visible in it.
-  const [wasOpen, setWasOpen] = useState(open);
-  if (wasOpen !== open) {
-    setWasOpen(open);
-    setName("");
-  }
+  useResetWhen(open, () => setName(""));
 
   const submit = () => {
     const trimmed = name.trim();
@@ -257,15 +245,13 @@ export function NewCourseSheet({
   const [code, setCode] = useState("");
   const [color, setColor] = useState(suggested);
 
-  const [wasOpen, setWasOpen] = useState(open);
-  if (wasOpen !== open) {
-    setWasOpen(open);
+  useResetWhen(open, () => {
     setName("");
     setCode("");
     // Reseeded per opening, so adding three courses in a row gives three
     // different colours rather than three of whatever was least used first.
     setColor(suggested);
-  }
+  });
 
   const submit = () => {
     const trimmed = name.trim();

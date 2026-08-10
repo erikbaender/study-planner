@@ -43,7 +43,7 @@ export const ZOOM_LABELS: Record<Zoom, string> = {
 export const PX_PER_DAY: Record<Zoom, number> = { day: 44, week: 14, month: 5, quarter: 1.8 };
 
 /** What a drag snaps to. Below a certain width a single day is smaller than the pointer. */
-export const SNAP_DAYS: Record<Zoom, number> = { day: 1, week: 1, month: 1, quarter: 7 };
+const SNAP_DAYS: Record<Zoom, number> = { day: 1, week: 1, month: 1, quarter: 7 };
 
 export function xOf(date: IsoDate, start: IsoDate, zoom: Zoom): number {
   return differenceInDays(start, date) * PX_PER_DAY[zoom];

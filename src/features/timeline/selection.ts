@@ -18,18 +18,22 @@
  * where the off-by-one lives.
  */
 
-import { addDays, differenceInDays, type EntityId, type StudyBlock, type Topic } from "@/domain";
+import {
+  addDays,
+  differenceInDays,
+  type Course,
+  type EntityId,
+  type StudyBlock,
+  type Topic,
+} from "@/domain";
 import { limitsAround, type Span } from "./blocks";
 
 export type DragMode = "move" | "start" | "end";
 
 /** A bar in a drag: the block itself and the topic whose other blocks bound it. */
-export type BarTarget = { block: StudyBlock; topic: Topic };
+export type BarTarget = { block: StudyBlock; topic: Topic; course: Course };
 
-/** How far a gesture may travel, in days. Unbounded ends are infinite rather than absent. */
 export type DeltaRange = { min: number; max: number };
-
-export const UNBOUNDED: DeltaRange = { min: -Infinity, max: Infinity };
 
 export function applyDelta(mode: DragMode, span: Span, days: number): Span {
   if (mode === "move") {
