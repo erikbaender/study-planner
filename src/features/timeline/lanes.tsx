@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { ChevronRight, Layers, Plus } from "lucide-react";
-import { memo, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   clampDate,
   courseColorValue,
@@ -18,6 +18,7 @@ import {
   xCss,
 } from "./geometry";
 import { fillsByBlock } from "./blocks";
+import { densityBar, DENSITY_BOX, type DensityBar, type DensitySeries } from "./density";
 import { useChart } from "./chart-context";
 import { deleteBlockItem, MemoBlockBar, OffscreenMarkers } from "./block-bar";
 import {
@@ -36,6 +37,150 @@ import {
 } from "./row-transitions";
 import { hintExcludedScope } from "@/features/workspace/hints";
 /* ─── Lanes ─────────────────────────────────────────────────────────────── */
+
+/**
+ * What a collapsed lane draws: not progress, but where the work sits, and whose.
+ *
+ * The bar covers the group's whole scheduled span. Across it, `densityBar`
+ * stacks one band per course — each band as thick as that course's share of the
+ * work at that point — and masks the whole stack with a density step, so a
+ * crowded fortnight is opaque and a quiet one drops to near the track. Nothing
+ * is blended: every colour in the bar is exactly some course's own colour, and
+ * a week that is three courses at once is three bands rather than a fourth hue
+ * belonging to nobody. Every edge lands on a date and is cut hard.
+ *
+ * The track underneath is what makes the quiet end of the ramp legible: without
+ * it a thin fortnight is indistinguishable from empty lane.
+ *
+ * Because the edges are hard, an edit that moves one of them would jump. The
+ * two drawings crossfade instead; see `useCrossfade`.
+ */
+function RollUpBar({
+  series,
+  span,
+  range,
+  label,
+}: {
+  series: readonly DensitySeries[];
+  span: { start: IsoDate; end: IsoDate };
+  range: Range;
+  /** What the group is, for the hover and for a screen reader. */
+  label: string;
+}) {
+  const density = useMemo(() => densityBar(series, span), [series, span]);
+  const blocks = series.reduce((total, entry) => total + entry.blocks.length, 0);
+  const description =
+    `${label}\n${blocks} block${blocks === 1 ? "" : "s"} · ${shortDate(span.start)} – ${shortDate(span.end)}` +
+    (density.peak
+      ? `\nBusiest around ${shortDate(density.peak.date)} · ${density.peak.blocks} at once`
+      : "");
+
+  // Compared by what the bar actually draws, not by the identity of the object
+  // that describes it: renaming a topic recomputes the density and changes
+  // nothing about the picture, and a bar that flickers on a rename is worse
+  // than one that never animated at all.
+  const painting = useMemo(
+    () => `${density.mask}|${density.bands.map((band) => band.color + band.d).join("|")}`,
+    [density],
+  );
+  const { previous, generation, settle } = useCrossfade(density, painting);
+
+  return (
+    <span
+      role="img"
+      aria-label={description.replaceAll("\n", ", ")}
+      title={description}
+      style={{
+        left: xCss(span.start, range.start),
+        width: widthCss(span.start, span.end),
+      }}
+      className="timeline-tint pointer-events-none absolute top-1.5 h-4 overflow-hidden rounded-chip bg-fill"
+    >
+      {/* The picture as it was before the edit, on its way out. Keyed with the
+          generation so a second edit mid-fade restarts from the frame that is
+          actually on screen rather than finishing the previous one's journey. */}
+      {previous ? (
+        <Stack key={`out-${generation}`} density={previous} onDone={settle} leaving />
+      ) : null}
+      {/* Not animated on the first generation: a bar that fades in every time
+          the chart mounts makes opening the timeline feel like a page load. */}
+      <Stack key={`in-${generation}`} density={density} arriving={generation > 0} />
+    </span>
+  );
+}
+
+/**
+ * One drawing of the bar.
+ *
+ * Stretched rather than scaled: the geometry is in date space, so the same
+ * paths serve every zoom and a zoom change is one width animation on the parent
+ * rather than every run recomputed per frame.
+ */
+function Stack({
+  density,
+  arriving = false,
+  leaving = false,
+  onDone,
+}: {
+  density: DensityBar;
+  arriving?: boolean;
+  leaving?: boolean;
+  onDone?: () => void;
+}) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox={`0 0 ${DENSITY_BOX} ${DENSITY_BOX}`}
+      preserveAspectRatio="none"
+      onAnimationEnd={leaving ? onDone : undefined}
+      className={clsx(
+        "block size-full",
+        leaving && "absolute inset-0 timeline-rollup-out",
+        arriving && "timeline-rollup-in",
+      )}
+      style={{ maskImage: density.mask, WebkitMaskImage: density.mask }}
+    >
+      {density.bands.map((band) => (
+        <path key={band.color} d={band.d} fill={band.color} />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * Hold on to the last drawing while the next one arrives.
+ *
+ * `signature` is what counts as a change; `value` is what gets kept. The state
+ * is adjusted during render rather than in an effect, so the outgoing copy is
+ * mounted in the same commit as the incoming one and there is never a frame
+ * showing only one of them.
+ */
+function useCrossfade<T>(value: T, signature: string) {
+  const [state, setState] = useState(() => ({
+    signature,
+    shown: value,
+    previous: null as T | null,
+    generation: 0,
+  }));
+
+  if (state.signature !== signature) {
+    // `shown` is the value from the last committed render, which is what is on
+    // screen right now — including when a second edit lands mid-fade, where the
+    // thing to fade out is the half-arrived drawing rather than the original.
+    setState((current) => ({
+      signature,
+      shown: value,
+      previous: current.shown,
+      generation: current.generation + 1,
+    }));
+  }
+
+  const settle = useCallback(() => {
+    setState((current) => (current.previous ? { ...current, previous: null } : current));
+  }, []);
+
+  return { previous: state.previous, generation: state.generation, settle };
+}
 
 /** A row in the combined lane is a topic *in a course*: the same topic id twice over. */
 const rowKeyOf = (entry: { course: Course; topic: Topic }) => `${entry.course.id}:${entry.topic.id}`;
@@ -72,6 +217,18 @@ function AllTopicsLane({
   const rows = useRowTransitions(entries, rowKeyOf);
   const rowsRef = useReorderAnimation(rows.map((row) => row.key));
   const span = useMemo(() => rollUpSpan(entries.map((entry) => entry.topic)), [entries]);
+  // One series per topic, each in its *course's* colour rather than its own:
+  // series sharing a colour become one band, so the stack here is one band per
+  // course. A topic's private colour is a distinction inside a course, and this
+  // lane is the one place the question is which course.
+  const series = useMemo(
+    () =>
+      entries.map(({ course, topic }) => ({
+        color: courseColorValue(course.color),
+        blocks: topic.blocks,
+      })),
+    [entries],
+  );
   if (rows.length === 0) return null;
   // Summed from the rows that are actually there, including the ones on their
   // way out: the group's height and each row's own height animate as one.
@@ -84,19 +241,10 @@ function AllTopicsLane({
           have to travel together. */}
       <div ref={rowsRef} className="relative">
         <div className="timeline-zoom-layer relative" style={{ height: LANE_HEIGHT }}>
+          {/* Kept, not crossfaded away: the roll-up is the lane's own summary,
+              and it reads as one whether or not the rows are open. */}
           {span ? (
-            // Crossfaded rather than swapped: the roll-up and the rows it rolls
-            // up are the same work at two scales, and one replacing the other
-            // in a frame reads as the chart having been rebuilt.
-            <span
-              style={{
-                left: xCss(span.start, range.start),
-                width: widthCss(span.start, span.end),
-              }}
-              // Kept, not crossfaded away: the roll-up is the lane's own
-              // summary, and it reads as one at both densities.
-              className="timeline-tint pointer-events-none absolute top-1.5 h-4 rounded-chip bg-fill-strong"
-            />
+            <RollUpBar series={series} span={span} range={range} label="All courses" />
           ) : null}
         </div>
 
@@ -168,6 +316,16 @@ function CourseLane({
   const disclosure = useDisclosure(open);
   const rows = useRowTransitions(topics, topicKeyOf);
   const span = useMemo(() => rollUpSpan(topics), [topics]);
+  // One series per topic so a topic with its own colour still tints its share,
+  // as it does in the rows below.
+  const series = useMemo(
+    () =>
+      topics.map((topic) => ({
+        color: courseColorValue(topic.color || course.color),
+        blocks: topic.blocks,
+      })),
+    [topics, course.color],
+  );
   // A course with nothing in it opens onto one line of prose rather than rows,
   // and that line still has to have a height to grow to.
   const rowsHeight =
@@ -179,27 +337,10 @@ function CourseLane({
     <section className="border-b border-separator/60">
       <div className="relative">
         <div className="timeline-zoom-layer relative" style={{ height: LANE_HEIGHT }}>
+          {/* The roll-up: one bar covering everything the course has scheduled,
+              shaded by how thickly its blocks fall across that span. */}
           {span ? (
-            // The roll-up: one bar covering everything the course has scheduled,
-            // filled by the course's overall progress, fading out as the rows it
-            // stands in for take its place.
-            <span
-              style={{
-                left: xCss(span.start, range.start),
-                width: widthCss(span.start, span.end),
-                background: `color-mix(in srgb, ${courseColorValue(course.color)} 25%, transparent)`,
-              }}
-              className="timeline-tint pointer-events-none absolute top-1.5 h-4 rounded-chip"
-            >
-              <span
-                className="topic-motion-width block h-full rounded-chip"
-                style={{
-                  width: `${(health?.progress.ratio ?? 0) * 100}%`,
-                  background: courseColorValue(course.color),
-                  opacity: 0.8,
-                }}
-              />
-            </span>
+            <RollUpBar series={series} span={span} range={range} label={course.name} />
           ) : null}
         </div>
 

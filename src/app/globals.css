@@ -256,6 +256,46 @@ span:has(> .topic-progress-thumb) {
   transition: height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
 }
 
+/*
+ * A roll-up bar changing its mind.
+ *
+ * The bar is cut hard on purpose, which means an edit that moves a block moves
+ * a step — and a step that jumps between two frames reads as a glitch rather
+ * than as the chart having been told something. So the new bar is drawn over
+ * the old one and the two crossfade: the outgoing copy is still the picture
+ * before the edit, and it leaves over exactly the time the new one arrives.
+ *
+ * One duration and one curve, the app's own, in both directions — see
+ * `--topic-motion-duration`.
+ */
+@keyframes timeline-rollup-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes timeline-rollup-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.timeline-rollup-in {
+  animation: timeline-rollup-in var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.timeline-rollup-out {
+  animation: timeline-rollup-out var(--topic-motion-duration) var(--topic-motion-curve);
+  /* It is on its way out and must not be read, hovered, or hit-tested. */
+  opacity: 0;
+}
+
 /* Fade chart content independently from the course/topic gutter over it. */
 .timeline-zoom-layer {
   transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
