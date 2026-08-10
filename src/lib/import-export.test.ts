@@ -39,11 +39,9 @@ const fixture = () =>
                 id: "topic_a",
                 courseId: "course_a",
                 name: "Glycolysis",
-                section: "Metabolism",
                 unit: "pages",
                 totalUnits: 120,
                 completedUnits: 30,
-                status: "active",
                 order: 0,
                 blocks: [
                   {
@@ -60,7 +58,6 @@ const fixture = () =>
                 id: "topic_b",
                 courseId: "course_a",
                 name: "Citric acid cycle",
-                section: "Metabolism",
                 unit: "pages",
                 totalUnits: 80,
                 order: 1,
@@ -144,6 +141,42 @@ describe("parsePlannerJson", () => {
       plans: [{ name: "Semester", courses: [{ name: "" }] }],
     });
     expect(() => parsePlannerJson(contents)).toThrow(/plans\.0\.courses\.0\.name/);
+  });
+
+  it("ignores a topic's old section, priority and status rather than rejecting the file", () => {
+    // Pre-MVP exports may still carry these; a slimmer model should read them
+    // around rather than break on a file nothing has changed since.
+    const contents = JSON.stringify({
+      version: EXPORT_VERSION,
+      plans: [
+        {
+          name: "Semester",
+          courses: [
+            {
+              name: "Biochemistry",
+              topics: [
+                {
+                  name: "Glycolysis",
+                  section: "Metabolism",
+                  priority: "high",
+                  status: "active",
+                  unit: "pages",
+                  totalUnits: 120,
+                  completedUnits: 30,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const parsed = parsePlannerJson(contents);
+    const topic = parsed.plans[0].courses[0].topics[0];
+    expect(topic).toMatchObject({ name: "Glycolysis", totalUnits: 120, completedUnits: 30 });
+    expect(topic).not.toHaveProperty("section");
+    expect(topic).not.toHaveProperty("priority");
+    expect(topic).not.toHaveProperty("status");
   });
 });
 

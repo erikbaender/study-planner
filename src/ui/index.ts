@@ -35,6 +35,18 @@ export {
 } from "./overlays";
 export type { MenuItem } from "./overlays";
 
+export {
+  animate,
+  animateScrollLeft,
+  isScrollAnimating,
+  motionCurveValue,
+  motionDuration,
+  prefersReducedMotion,
+  stopScrollAnimation,
+} from "./motion";
+export { useDisclosure, useReorderAnimation, useRowTransitions } from "./row-motion";
+export type { RowMotion } from "./row-motion";
+
 export { DragIcon, MouseButtonIcon } from "./input-icons";
 export type { PointerButton } from "./input-icons";
 

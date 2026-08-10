@@ -3,57 +3,57 @@
 /**
  * Today — the landing view.
  *
- * It answers the question the app is opened with: *what should I do now?* Three
+ * It answers the question the app is opened with: *what should I do now?* Two
  * cards, in the order the question actually decomposes:
  *
- * 1. **What is coming** — the next exams, with how many days and whether the
+ * 1. **Today's plan** — every block scheduled across today, each with the
+ *    same draggable progress control as the outline, so logging today's work
+ *    happens here rather than somewhere else. The `+` in its header is this
+ *    view's own way of adding a block — pick a topic and it lands on today,
+ *    the one date this view is ever about — and *Reflow* still sits beside it,
+ *    because scheduling has not left the app.
+ * 2. **Coming up** — the next exams, with how many days and whether the
  *    course will be ready.
- * 2. **What is slipping** — the courses that will not finish in time, with the
- *    size of the gap.
- * 3. **What to pick up** — the topics already in progress, each with the same
- *    draggable bar as the outline, so logging today's work happens here rather
- *    than somewhere else.
  *
- * Phase 6 adds the scheduler's blocks for the day above all three, and the
- * *Reflow* recovery action to card 2. Everything here is computed from work
- * already recorded, which is why it can exist before the scheduler does.
+ * Pace, streak and the slipping-courses roundup used to live here too, but a
+ * landing page answering "what now" is not the place for a dashboard of
+ * everything that could go wrong — the course inspector reports pace and
+ * velocity for exactly that reason.
  */
 
-import { CalendarCheck } from "lucide-react";
-import type {
-  Course,
-  CourseHealth,
-  StudyLogEntry,
-  Topic,
-} from "@/domain";
-import type { PlannerSnapshot, StudyBlock } from "@/domain";
-import { countStudyDays, isStudyDay, studyStreak, velocity, VELOCITY_WINDOW_DAYS } from "@/domain";
+import { clsx } from "clsx";
+import { CalendarCheck, Plus, Trash2 } from "lucide-react";
+import { useMemo, useState, type CSSProperties } from "react";
+import { usePlannerRun, useRepository } from "@/data/use-repository";
+import type { Course, CourseHealth, PlannerSnapshot, StudyBlock, StudyLogEntry, Topic } from "@/domain";
+import { countStudyDays, isStudyDay } from "@/domain";
 import { courseColorValue } from "@/domain";
-import { Badge, Button, Card, CountdownBadge, EmptyState } from "@/ui";
-import { TopicRow } from "@/features/topics/topic-row";
+import {
+  Badge,
+  Button,
+  Card,
+  CountdownBadge,
+  EmptyState,
+  IconButton,
+  Popover,
+  TextField,
+  useReorderAnimation,
+  useRowTransitions,
+  type RowMotion,
+} from "@/ui";
+import { TopicProgressCell } from "@/features/topics/progress-cell";
 import { PlanningActions } from "@/features/planning/planning-actions";
 import { hintScope, useViewHints, type InputHint } from "@/features/workspace/hints";
-import { topicsForQuery } from "@/features/workspace/scope";
+import { matchesQuery, topicsForQuery } from "@/features/workspace/scope";
 
 /** What the pointer does here, for the toolbar's hint bar. */
 const TODAY_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Select topic" },
+  { button: "left", label: "Open block" },
   { button: "left", label: "Set progress", drag: true },
-  { button: "right", label: "Actions" },
 ];
 
-/** How many topics the "continue" card offers. A list you scroll is a backlog, not a suggestion. */
-const CONTINUE_LIMIT = 8;
-
-/**
- * And at most this many from any one course. Without it the course with the
- * nearest exam fills every slot, which is a plan for the week rather than a
- * shortlist for today, and hides that nine other courses exist.
- */
-const CONTINUE_PER_COURSE = 2;
-
-/** How many slipping courses the card names before it starts counting them instead. */
-const BEHIND_LIMIT = 5;
+/** Bound by the trash button, the tallest thing a row carries. */
+const TODAY_ROW_HEIGHT = 30;
 
 export function TodayView({
   courses,
@@ -62,9 +62,8 @@ export function TodayView({
   snapshot,
   today,
   query = "",
-  selectedTopicId,
-  onSelectTopic,
-  onDeleteTopic,
+  selectedBlockId,
+  onSelectBlock,
   onGoToOutline,
 }: {
   courses: readonly Course[];
@@ -73,12 +72,14 @@ export function TodayView({
   snapshot: PlannerSnapshot;
   today: string;
   query?: string;
-  selectedTopicId: string | null;
-  onSelectTopic: (course: Course, topic: Topic) => void;
-  onDeleteTopic: (course: Course, topic: Topic) => void;
+  selectedBlockId: string | null;
+  onSelectBlock: (block: StudyBlock) => void;
   onGoToOutline: () => void;
 }) {
   useViewHints(TODAY_HINTS);
+  const repository = useRepository();
+  const run = usePlannerRun();
+
   const exams = courses
     .flatMap((course) => {
       const courseHealth = health.get(course.id);
@@ -89,33 +90,9 @@ export function TodayView({
     .sort((left, right) => left.days - right.days)
     .slice(0, 3);
 
-  const behind = courses.filter((course) => {
-    const pace = health.get(course.id)?.pace;
-    return pace ? !pace.onTrack : false;
-  });
-
-  // Capped: a ten-row list of everything that is slipping is a wall, and the
-  // two courses at the bottom of it are the ones you were never going to reach
-  // today anyway. Sorted by how near the exam is, so the cut falls in the right
-  // place.
-  const behindShown = behind
-    .slice()
-    .sort(
-      (left, right) =>
-        (health.get(left.id)?.daysUntilExam ?? Infinity) -
-        (health.get(right.id)?.daysUntilExam ?? Infinity),
-    )
-    .slice(0, BEHIND_LIMIT);
-
   const plannedToday = todaysWork(courses, today, snapshot, query);
-
-  // Measured over the whole plan rather than the focus: a pace figure that
-  // changed when you clicked a sidebar row would be describing the filter
-  // rather than the person.
-  const pace = velocity(snapshot.studyLog, today, snapshot.preferences, VELOCITY_WINDOW_DAYS);
-  const streak = studyStreak(snapshot.studyLog, today, snapshot.preferences);
-
-  const continueTopics = pickUpNext(courses, health, CONTINUE_LIMIT, query);
+  const rows = useRowTransitions(plannedToday, (row) => row.block.id, TODAY_ROW_HEIGHT);
+  const rowsRef = useReorderAnimation(rows.map((row) => row.key), TODAY_ROW_HEIGHT);
 
   const loggedToday = studyLog
     .filter((entry) => entry.date === today)
@@ -149,25 +126,6 @@ export function TodayView({
               // like a verdict rather than a starting point.
               "Nothing logged yet today"}
         </p>
-        <dl className="ml-auto flex items-baseline gap-5">
-          <div className="flex items-baseline gap-1.5">
-            <dt className="text-callout text-tertiary">Pace</dt>
-            <dd className="text-body tabular-nums">
-              {pace > 0
-                ? `${pace.toFixed(1)} / day`
-                : // No work in the window is not a pace of zero, it is no
-                  // measurement. A "0.0 / day" here would be a verdict drawn
-                  // from an empty week.
-                  "not measured yet"}
-            </dd>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <dt className="text-callout text-tertiary">Streak</dt>
-            <dd className="text-body tabular-nums">
-              {streak > 0 ? `${streak} day${streak === 1 ? "" : "s"}` : "—"}
-            </dd>
-          </div>
-        </dl>
       </header>
 
       <Card className="flex flex-col gap-3">
@@ -176,34 +134,37 @@ export function TodayView({
           {plannedToday.length > 0 ? (
             <span className="text-callout tabular-nums text-secondary">
               {plannedToday.reduce((sum, row) => sum + row.units, 0)} units across{" "}
-              {plannedToday.length} topic{plannedToday.length === 1 ? "" : "s"}
+              {plannedToday.length} block{plannedToday.length === 1 ? "" : "s"}
             </span>
           ) : null}
-          <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-2">
+            <AddToTodayMenu courses={courses} today={today} />
             <PlanningActions size="sm" courses={courses} snapshot={snapshot} today={today} />
           </span>
         </div>
         {plannedToday.length === 0 ? (
           <p className="text-body text-secondary">
             {isStudyDay(today, snapshot.preferences)
-              ? "Nothing is scheduled for today. Reflow builds a plan from what is left and how long there is to do it."
+              ? "Nothing is scheduled for today. Add something with the + above, or let Reflow build a plan from what is left."
               : // A day off is not an empty day. Saying "nothing scheduled"
                 // would read as a failure to plan rather than as a rest day.
                 "Today is not one of your study days."}
           </p>
         ) : (
-          <ul className="flex flex-col">
-            {plannedToday.map(({ course, topic, units }) => (
-              <TopicRow
-                key={topic.id}
-                topic={topic}
+          <ul ref={rowsRef} className="flex flex-col">
+            {rows.map(({ key, item, motion }) => (
+              <TodayBlockRow
+                key={key}
+                rowKey={key}
+                course={item.course}
+                topic={item.topic}
+                block={item.block}
+                units={item.units}
                 today={today}
-                courseId={course.id}
-                courseColor={courseColorValue(course.color)}
-                prefix={`${course.name} · ${units} today`}
-                selected={topic.id === selectedTopicId}
-                onSelect={() => onSelectTopic(course, topic)}
-                onDelete={() => onDeleteTopic(course, topic)}
+                selected={item.block.id === selectedBlockId}
+                motion={motion}
+                onSelect={() => onSelectBlock(item.block)}
+                onDelete={() => run(repository.deleteStudyBlock(item.block.id))}
               />
             ))}
           </ul>
@@ -244,76 +205,177 @@ export function TodayView({
           </ul>
         )}
       </Card>
-
-      {behind.length > 0 ? (
-        <Card className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-                <h3 className="text-title3 font-semibold">Behind</h3>
-            <span className="ml-auto">
-              <PlanningActions size="sm" courses={behind} snapshot={snapshot} today={today} />
-            </span>
-          </div>
-          <ul className="flex flex-col gap-1.5">
-            {behindShown.map((course) => {
-              const pace = health.get(course.id)!.pace!;
-              return (
-                <li key={course.id} className="flex items-center gap-3 text-body">
-                  <span
-                    aria-hidden="true"
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ background: courseColorValue(course.color) }}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{course.name}</span>
-                  <span className="shrink-0 text-callout tabular-nums text-secondary">
-                    {pace.remainingUnits} units left
-                  </span>
-                  <Badge tone="warning">
-                    {Number.isFinite(pace.requiredPace)
-                      ? `${Math.ceil(pace.requiredPace)} / day needed`
-                      : "No days left"}
-                  </Badge>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="text-footnote text-tertiary">
-            {behind.length > behindShown.length
-              ? `${behind.length - behindShown.length} more behind. Needed pace counts only the days you have marked as study days.`
-              : "Needed pace counts only the days you have marked as study days."}
-          </p>
-        </Card>
-      ) : null}
-
-      <Card className="flex flex-col gap-3">
-        <h3 className="text-title3 font-semibold">Pick up where you left off</h3>
-        {continueTopics.length === 0 ? (
-          <p className="text-body text-secondary">
-            Nothing is part-finished. Start anything from the outline and it will appear here.
-          </p>
-        ) : (
-          <ul className="flex flex-col">
-            {continueTopics.map(({ course, topic }) => (
-              <TopicRow
-                key={topic.id}
-                topic={topic}
-                today={today}
-                courseId={course.id}
-                courseColor={courseColorValue(course.color)}
-                prefix={course.name}
-                selected={topic.id === selectedTopicId}
-                onSelect={() => onSelectTopic(course, topic)}
-                onDelete={() => onDeleteTopic(course, topic)}
-              />
-            ))}
-          </ul>
-        )}
-      </Card>
     </div>
   );
 }
 
 /**
- * What the scheduler has put in today.
+ * One block in "Today's plan".
+ *
+ * Not built on `TopicRow`: that row selects and deletes a *topic*, and this
+ * one selects and deletes a *block* — the same slider, a different subject
+ * and a different trash target, so sharing the component would mean
+ * threading two incompatible sets of handlers through one prop list.
+ */
+function TodayBlockRow({
+  rowKey,
+  course,
+  topic,
+  block,
+  units,
+  today,
+  selected,
+  motion,
+  onSelect,
+  onDelete,
+}: {
+  rowKey: string;
+  course: Course;
+  topic: Topic;
+  block: StudyBlock;
+  units: number;
+  today: string;
+  selected: boolean;
+  /** Where this row is in an arrival or a departure; see `@/ui/row-motion`. */
+  motion: RowMotion;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const tint = courseColorValue(course.color);
+  return (
+    <li
+      data-row-key={rowKey}
+      data-course-id={course.id}
+      className={clsx(
+        "topic-completion-row row-motion group flex items-center gap-3 rounded-control px-2 py-1",
+        selected ? "bg-accent-soft" : "hover:bg-fill",
+      )}
+      style={
+        {
+          height: motion.height,
+          opacity: motion.visible ? 1 : 0,
+          "--topic-completion-color": tint,
+        } as CSSProperties
+      }
+    >
+      <span
+        aria-hidden="true"
+        className="size-2.5 shrink-0 rounded-full"
+        style={{ background: tint }}
+      />
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={selected ? "true" : undefined}
+        className="min-w-0 flex-1 truncate rounded-chip text-left text-body"
+      >
+        <span className="text-tertiary">
+          {course.name} · {units} today ·{" "}
+        </span>
+        {topic.name}
+      </button>
+
+      <TopicProgressCell
+        topic={topic}
+        today={today}
+        tint={tint}
+        sliderClassName="w-48 shrink-0"
+        readoutClassName="w-32 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary"
+      />
+
+      <IconButton
+        size="sm"
+        label={`Remove ${topic.name} from today`}
+        icon={<Trash2 />}
+        onClick={onDelete}
+      />
+    </li>
+  );
+}
+
+/**
+ * The `+` beside "Today's plan": this view's own way of adding a block. Every
+ * other add path in the app names a topic and a date range; here the range is
+ * always today, so the picker only ever has to name the topic.
+ */
+function AddToTodayMenu({ courses, today }: { courses: readonly Course[]; today: string }) {
+  const repository = useRepository();
+  const run = usePlannerRun();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const options = useMemo(() => addableTopics(courses, today, search), [courses, today, search]);
+
+  const close = () => {
+    setOpen(false);
+    setSearch("");
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => (next ? setOpen(true) : close())}
+      align="end"
+      className="w-72"
+      trigger={
+        <span>
+          <IconButton size="sm" label="Add to today" icon={<Plus />} />
+        </span>
+      }
+    >
+      <div className="flex flex-col gap-2">
+        <TextField
+          label="Search topics"
+          hideLabel
+          placeholder="Search topics…"
+          autoFocus
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        {options.length === 0 ? (
+          <p className="px-1 py-2 text-callout text-tertiary">
+            Nothing left to add — every topic in focus is already on today.
+          </p>
+        ) : (
+          <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+            {options.map(({ course, topic }) => (
+              <li key={topic.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    run(
+                      repository.createStudyBlock({
+                        topicId: topic.id,
+                        startDate: today,
+                        endDate: today,
+                        source: "manual",
+                      }),
+                    );
+                    close();
+                  }}
+                  className="flex w-full min-w-0 items-center gap-1.5 rounded-control px-2 py-1 text-left text-body hover:bg-fill"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ background: courseColorValue(course.color) }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="text-tertiary">{course.name} · </span>
+                    {topic.name}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Popover>
+  );
+}
+
+/**
+ * What the scheduler has put in today, one row per block.
  *
  * A block spans several days and carries the units it means to cover across all
  * of them, so today's share is that total divided by the block's *study* days —
@@ -325,14 +387,14 @@ function todaysWork(
   today: string,
   snapshot: PlannerSnapshot,
   query: string,
-): Array<{ course: Course; topic: Topic; units: number }> {
-  const rows: Array<{ course: Course; topic: Topic; units: number }> = [];
+): Array<{ course: Course; topic: Topic; block: StudyBlock; units: number }> {
+  const rows: Array<{ course: Course; topic: Topic; block: StudyBlock; units: number }> = [];
 
   for (const course of courses) {
     for (const topic of topicsForQuery(query, course)) {
       for (const block of topic.blocks) {
         if (block.startDate > today || block.endDate < today) continue;
-        rows.push({ course, topic, units: unitsToday(block, snapshot) });
+        rows.push({ course, topic, block, units: unitsToday(block, snapshot) });
       }
     }
   }
@@ -347,58 +409,23 @@ function unitsToday(block: StudyBlock, snapshot: PlannerSnapshot): number {
   return Math.max(1, Math.round(planned / Math.max(days, 1)));
 }
 
-/**
- * What to offer next.
- *
- * Started-but-unfinished topics first, because finishing something in flight
- * beats opening something new; within that, the courses with the nearest exam
- * come first. Untouched topics are only offered once there is nothing in
- * flight — this is a "carry on" list, not a scheduler, and the scheduler in
- * phase 6 is what will make the ordering answerable properly.
- */
-function pickUpNext(
-  courses: readonly Course[],
-  health: Map<string, CourseHealth>,
-  limit: number,
-  query: string,
-): Array<{ course: Course; topic: Topic }> {
-  const urgency = (course: Course) => health.get(course.id)?.daysUntilExam ?? Infinity;
-
-  const rows = courses.flatMap((course) =>
-    topicsForQuery(query, course)
-      .filter((topic) => topic.status !== "done" && topic.totalUnits > 0)
-      .map((topic) => ({ course, topic })),
-  );
-
-  const started = rows.filter(
-    ({ topic }) => topic.completedUnits > 0 && topic.completedUnits < topic.totalUnits,
-  );
-  const untouched = rows.filter(({ topic }) => topic.completedUnits === 0);
-
-  const byUrgency = (
-    left: { course: Course; topic: Topic },
-    right: { course: Course; topic: Topic },
-  ) => urgency(left.course) - urgency(right.course) || left.topic.order - right.topic.order;
-
-  return capPerCourse([...started.sort(byUrgency), ...untouched.sort(byUrgency)], limit);
+/** Whether a topic already has a block covering today. */
+function isScheduledToday(topic: Topic, today: string): boolean {
+  return topic.blocks.some((block) => block.startDate <= today && block.endDate >= today);
 }
 
-function capPerCourse(
-  rows: Array<{ course: Course; topic: Topic }>,
-  limit: number,
+/** Every topic in focus that is not already on today's plan, narrowed by the picker's own search field. */
+function addableTopics(
+  courses: readonly Course[],
+  today: string,
+  search: string,
 ): Array<{ course: Course; topic: Topic }> {
-  const taken = new Map<string, number>();
-  const kept: Array<{ course: Course; topic: Topic }> = [];
-
-  for (const row of rows) {
-    if (kept.length === limit) break;
-    const used = taken.get(row.course.id) ?? 0;
-    if (used === CONTINUE_PER_COURSE) continue;
-    taken.set(row.course.id, used + 1);
-    kept.push(row);
-  }
-
-  return kept;
+  return courses.flatMap((course) =>
+    course.topics
+      .filter((topic) => !isScheduledToday(topic, today))
+      .filter((topic) => matchesQuery(search, topic.name, course.name))
+      .map((topic) => ({ course, topic })),
+  );
 }
 
 /** "Saturday, 1 August" — the date as a person says it, not as a machine stores it. */

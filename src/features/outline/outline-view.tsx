@@ -15,7 +15,7 @@
  * a form when it is meant to look like material.
  */
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronRight, ClipboardPaste, PanelRight, Plus, Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
@@ -29,6 +29,7 @@ import {
   type CourseHealth,
   type PlannerSnapshot,
   type Exam,
+  type StudyBlock,
   type Topic,
   type Unit,
 } from "@/domain";
@@ -45,6 +46,8 @@ import {
   Sheet,
   TextArea,
   TextField,
+  motionDuration,
+  useDisclosure,
 } from "@/ui";
 import { TopicTable } from "./topic-table";
 import { AutoPlanButton } from "@/features/planning/planning-actions";
@@ -68,6 +71,7 @@ export function OutlineView({
   onSelectCourse,
   onSelectTopic,
   onSelectExam,
+  onSelectBlock,
   onDeleteTopic,
   onDeleteCourse,
   onNewCourse,
@@ -81,6 +85,7 @@ export function OutlineView({
   onSelectCourse: (course: Course) => void;
   onSelectTopic: (course: Course, topic: Topic) => void;
   onSelectExam: (course: Course, exam: Exam) => void;
+  onSelectBlock: (block: StudyBlock) => void;
   onDeleteTopic: (course: Course, topic: Topic) => void;
   onDeleteCourse: (course: Course) => void;
   onNewCourse: () => void;
@@ -128,6 +133,7 @@ export function OutlineView({
           onSelectCourse={() => onSelectCourse(course)}
           onSelectTopic={(topic) => onSelectTopic(course, topic)}
           onSelectExam={(exam) => onSelectExam(course, exam)}
+          onSelectBlock={onSelectBlock}
           onDeleteTopic={(topic) => onDeleteTopic(course, topic)}
           onDeleteCourse={() => onDeleteCourse(course)}
         />
@@ -148,6 +154,7 @@ function CourseSection({
   onSelectCourse,
   onSelectTopic,
   onSelectExam,
+  onSelectBlock,
   onDeleteTopic,
   onDeleteCourse,
 }: {
@@ -162,6 +169,7 @@ function CourseSection({
   onSelectCourse: () => void;
   onSelectTopic: (topic: Topic) => void;
   onSelectExam: (exam: Exam) => void;
+  onSelectBlock: (block: StudyBlock) => void;
   onDeleteTopic: (topic: Topic) => void;
   onDeleteCourse: () => void;
 }) {
@@ -170,15 +178,42 @@ function CourseSection({
   const [pasting, setPasting] = useState(false);
   const progress = courseProgress(course);
   const topics = topicsForQuery(query, course);
+  const disclosure = useDisclosure(open);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // "auto" is what a course that starts open renders at, so the first paint
+  // of the default-expanded course never runs the height animation at all.
+  const [contentHeight, setContentHeight] = useState<number | "auto">(open ? "auto" : 0);
 
-  const addRow = (section: string | undefined) =>
+  useLayoutEffect(() => {
+    const node = contentRef.current;
+    if (!node) return;
+    if (disclosure.expanded) {
+      // A height can only be transitioned to a number, so this measures the
+      // content once to give the browser a target, then — once the transition
+      // has had time to reach it — lets the height go back to "auto". Without
+      // that settle step a course whose topic count changes while it is open
+      // (add a row, paste an outline) would stay clipped to the height it had
+      // when it was opened.
+      setContentHeight(node.scrollHeight);
+      const timer = window.setTimeout(() => setContentHeight("auto"), motionDuration(node) / 2);
+      return () => window.clearTimeout(timer);
+    }
+    if (disclosure.mounted) {
+      // Closing: "auto" cannot be transitioned from, so pin to the measured
+      // height for one frame before collapsing it to zero.
+      setContentHeight(node.scrollHeight);
+      const frame = requestAnimationFrame(() => setContentHeight(0));
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [disclosure.expanded, disclosure.mounted]);
+
+  const addRow = () =>
     run(
       repository.createTopic(course.id, {
         // Named for what it is rather than left blank: an untitled row in a
         // table of forty is indistinguishable from a rendering bug, and the
         // name field is focused for typing over anyway.
         name: "New topic",
-        section,
         unit: course.topics.at(-1)?.unit ?? "slides",
         color: course.color,
       }),
@@ -187,8 +222,8 @@ function CourseSection({
   return (
     <ContextMenu
       items={[
-        { label: "Show in inspector", icon: <PanelRight />, onSelect: onSelectCourse },
-        { label: "Add topic", icon: <Plus />, onSelect: () => addRow(undefined) },
+        { label: "Inspect course", icon: <PanelRight />, onSelect: onSelectCourse },
+        { label: "Add topic", icon: <Plus />, onSelect: addRow },
         { type: "separator" },
         { label: "Delete course", icon: <Trash2 />, danger: true, onSelect: onDeleteCourse },
       ]}
@@ -237,65 +272,72 @@ function CourseSection({
 
       </header>
 
-      {open ? (
-        <>
-          <ExamRow
-            course={course}
-            today={today}
-            selectedId={selectedId}
-            onSelect={onSelectExam}
-            onDelete={(exam) => run(repository.deleteExam(exam.id))}
-            onCreate={(input) => run(repository.createExam(course.id, input))}
-          />
-
-          {topics.length > 0 ? (
-            <TopicTable
+      <div className="disclosure" style={{ height: contentHeight }}>
+        {disclosure.mounted ? (
+          <div ref={contentRef} className="flex flex-col gap-3">
+            <ExamRow
               course={course}
-              topics={topics}
               today={today}
               selectedId={selectedId}
-              onSelect={onSelectTopic}
-              onDelete={onDeleteTopic}
-              onAddRow={addRow}
+              onSelect={onSelectExam}
+              onDelete={(exam) => run(repository.deleteExam(exam.id))}
+              onCreate={(input) => run(repository.createExam(course.id, input))}
             />
-          ) : course.topics.length > 0 ? (
-            <p className="px-2 py-4 text-body text-secondary">
-              No topic matches “{query.trim()}”.
-            </p>
-          ) : (
-            <p className="px-2 py-4 text-body text-secondary">
-              No topics yet. Paste your lecture list — it is far quicker than adding them one at a
-              time.
-            </p>
-          )}
 
-          <div className="flex items-center gap-2 border-t border-separator pt-3">
-            <Button leadingIcon={<Plus />} onClick={() => addRow(course.topics.at(-1)?.section)}>
-              Add topic
-            </Button>
-            <Button
-              variant="accent"
-              leadingIcon={<ClipboardPaste />}
-              onClick={() => setPasting(true)}
-            >
-              Paste outline
-            </Button>
-            <span className="ml-auto">
-              <AutoPlanButton course={course} snapshot={snapshot} today={today} />
-            </span>
+            {topics.length > 0 ? (
+              <TopicTable
+                course={course}
+                topics={topics}
+                today={today}
+                selectedId={selectedId}
+                onSelect={onSelectTopic}
+                onSelectBlock={onSelectBlock}
+                onDelete={onDeleteTopic}
+                onAddRow={addRow}
+              />
+            ) : course.topics.length > 0 ? (
+              <p className="px-2 py-4 text-body text-secondary">
+                No topic matches “{query.trim()}”.
+              </p>
+            ) : (
+              <p className="px-2 py-4 text-body text-secondary">
+                No topics yet. Paste your lecture list — it is far quicker than adding them one at a
+                time.
+              </p>
+            )}
+
+            <div className="flex items-center gap-2 border-t border-separator pt-3">
+              <Button leadingIcon={<Plus />} onClick={addRow}>
+                Add topic
+              </Button>
+              <Button
+                variant="accent"
+                leadingIcon={<ClipboardPaste />}
+                onClick={() => setPasting(true)}
+              >
+                Paste outline
+              </Button>
+              <span className="ml-auto">
+                <AutoPlanButton course={course} snapshot={snapshot} today={today} />
+              </span>
+            </div>
           </div>
+        ) : null}
+      </div>
 
-          <BulkEntrySheet
-            open={pasting}
-            onOpenChange={setPasting}
-            course={course}
-            onSubmit={(newTopics) => {
-              run(repository.createTopics(course.id, newTopics, course.color));
-              setPasting(false);
-            }}
-          />
-        </>
-      ) : null}
+      {/* Not inside the measured content: a Radix dialog portals to the body
+          regardless of where it sits in the tree, and reading its markup as
+          part of the course's own height would count a sheet that has never
+          been open. */}
+      <BulkEntrySheet
+        open={pasting}
+        onOpenChange={setPasting}
+        course={course}
+        onSubmit={(newTopics) => {
+          run(repository.createTopics(course.id, newTopics, course.color));
+          setPasting(false);
+        }}
+      />
       </Card>
     </ContextMenu>
   );
@@ -470,9 +512,7 @@ function BulkEntrySheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   course: Course;
-  onSubmit: (
-    topics: Array<{ name: string; section?: string; unit: Unit; totalUnits: number }>,
-  ) => void;
+  onSubmit: (topics: Array<{ name: string; unit: Unit; totalUnits: number }>) => void;
 }) {
   const [text, setText] = useState("");
   const [unit, setUnit] = useState<Unit>(course.topics.at(-1)?.unit ?? "slides");
@@ -490,7 +530,7 @@ function BulkEntrySheet({
       onOpenChange={onOpenChange}
       width="lg"
       title={`Paste an outline into ${course.name}`}
-      description="One topic per line. Indent under a heading to group them, and add “— 42 slides” to record size."
+      description="One topic per line. Add “— 42 slides” to record size."
       footer={
         <>
           {course.topics.length > 0 ? (
@@ -506,7 +546,6 @@ function BulkEntrySheet({
               onSubmit(
                 parsed.topics.map((topic) => ({
                   name: topic.name,
-                  section: topic.section,
                   unit: topic.unit,
                   totalUnits: topic.totalUnits,
                 })),
@@ -524,7 +563,7 @@ function BulkEntrySheet({
           hideLabel
           rows={10}
           autoFocus
-          placeholder={"Block 1\n  Glycolysis — 42 slides\n  Citric acid cycle — 38\n\nBlock 2\n  Lipid metabolism — 61"}
+          placeholder={"Cell biology — 120 slides\nMembrane transport — 85\nGlycolysis — 140 pages"}
           value={text}
           onChange={(event) => setText(event.target.value)}
           className="font-mono"
@@ -556,13 +595,10 @@ function BulkEntrySheet({
             <ul className="flex max-h-56 flex-col overflow-y-auto rounded-control bg-content-alt p-2">
               {parsed.topics.map((topic, index) => (
                 <li
-                  key={`${topic.section ?? ""}-${topic.name}-${index}`}
+                  key={`${topic.name}-${index}`}
                   className="flex items-baseline gap-2 px-1 py-0.5 text-body"
                 >
-                  <span className="min-w-0 flex-1 truncate">
-                    {topic.section ? <span className="text-tertiary">{topic.section} · </span> : null}
-                    {topic.name}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate">{topic.name}</span>
                   <span className="shrink-0 text-callout tabular-nums text-secondary">
                     {topic.totalUnits > 0
                       ? `${topic.totalUnits} ${UNIT_LABELS[topic.unit].plural}`

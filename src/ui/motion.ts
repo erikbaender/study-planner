@@ -1,13 +1,17 @@
 /**
- * The timeline's motion, in JavaScript.
+ * The app's motion, in JavaScript.
  *
- * Scrolling is the one thing on this chart that cannot be animated in CSS — a
- * scroll offset is not a style — and `behavior: "smooth"` is the browser's
- * curve over the browser's duration, neither of which is the app's. Everything
- * here reads `--topic-motion-duration` and `--topic-motion-curve` off the
- * element it is animating, so a jump to today, a jump to an off-screen block
- * and the day-width transition a zoom change runs in CSS are all one motion at
- * one speed — including when the animation-speed preference changes it.
+ * Some things cannot be animated in CSS — a scroll offset is not a style — and
+ * `behavior: "smooth"` is the browser's curve over the browser's duration,
+ * neither of which is the app's. Everything here reads
+ * `--topic-motion-duration` and `--topic-motion-curve` off the element it is
+ * animating, so a jump to today, a jump to an off-screen block and the
+ * day-width transition a zoom change runs in CSS are all one motion at one
+ * speed — including when the animation-speed preference changes it.
+ *
+ * This began as the timeline's own module. It sits in `src/ui` because the rest
+ * of the app is now built to the same motion, and a second approximation of
+ * these curves elsewhere is precisely what the coordinated-motion rule forbids.
  */
 
 /** Matches the fallbacks in `globals.css`, for SSR and for jsdom. */

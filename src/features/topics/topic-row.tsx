@@ -44,7 +44,7 @@ export function TopicRow({
   return (
     <ContextMenu
       items={[
-        { label: "Show in inspector", icon: <PanelRight />, onSelect },
+        { label: "Inspect topic", icon: <PanelRight />, onSelect },
         { type: "separator" },
         { label: `Delete ${topic.name}`, icon: <Trash2 />, danger: true, onSelect: onDelete },
       ]}

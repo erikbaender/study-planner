@@ -14,7 +14,7 @@ import {
   isStudyDay,
   type StudyCalendar,
 } from "./dates";
-import type { Course, Exam, IsoDate, StudyLogEntry, Topic } from "./types";
+import type { Course, Exam, IsoDate, StudyLogEntry, Topic, TopicStatus } from "./types";
 
 /** Trailing window for velocity. Long enough to smooth a bad day, short enough to react within a week. */
 export const VELOCITY_WINDOW_DAYS = 7;
@@ -50,6 +50,20 @@ export function courseProgress(course: Course): Progress {
 
 export function topicProgress(topic: Topic): Progress {
   return progressOf([topic]);
+}
+
+/**
+ * Derived rather than stored, so progress and status can never disagree.
+ *
+ * One thing it cannot express: a size-untracked topic (`totalUnits === 0`)
+ * has no total to measure completion against, so it can never read `"done"`
+ * — logging work against it only ever moves it to `"active"`, however much
+ * has actually happened.
+ */
+export function topicStatus(topic: Topic): TopicStatus {
+  if (topic.totalUnits > 0 && topic.completedUnits >= topic.totalUnits) return "done";
+  if (topic.completedUnits > 0) return "active";
+  return "planned";
 }
 
 /**

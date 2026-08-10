@@ -4,9 +4,12 @@
  * The unified toolbar.
  *
  * Left of the spacer is *where you are* — the sidebar toggle and the view
- * switcher. Right of it is *what you can do* — create, inspect,
- * appearance, account. macOS toolbars are grouped this way and the grouping is
- * what makes them scannable at a glance rather than a strip of icons.
+ * switcher. Right of it is *what you can do* — create, appearance, account.
+ * macOS toolbars are grouped this way and the grouping is what makes them
+ * scannable at a glance rather than a strip of icons.
+ *
+ * There is no inspector button. The inspector follows the selection now, so a
+ * button here could only ever contradict it.
  *
  * The view switcher is a segmented control rather than tabs, per §7.4. It also
  * drives the three panels, so it carries `aria-controls` pointing at the one
@@ -25,7 +28,6 @@ import {
   FlaskConical,
   MoreHorizontal,
   PanelLeft,
-  PanelRight,
   Plus,
   Settings2,
   Upload,
@@ -53,8 +55,6 @@ export function AppToolbar(props: {
     contentId: string;
     sidebarOpen: boolean;
     onToggleSidebar: () => void;
-    inspectorOpen: boolean;
-    onToggleInspector: () => void;
     onOpenPalette: () => void;
     onNewPlan: () => void;
     onNewCourse: () => void;
@@ -113,15 +113,6 @@ export function AppToolbar(props: {
             <IconButton size="sm" label="New" icon={<Plus />} />
           </span>
         }
-      />
-
-      <IconButton
-        size="sm"
-        label="Inspector"
-        aria-pressed={props.inspectorOpen}
-        variant={props.inspectorOpen ? "push" : "plain"}
-        icon={<PanelRight />}
-        onClick={props.onToggleInspector}
       />
 
       <Separator orientation="vertical" className="mx-1 h-4" />

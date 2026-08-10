@@ -538,12 +538,9 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
               id: topicId,
               courseId,
               name: input.name,
-              section: input.section,
               unit: input.unit ?? "slides",
               totalUnits,
               completedUnits: 0,
-              status: "planned",
-              priority: input.priority ?? "normal",
               dependencyIds: [],
               color: resolveCourseColorId(input.color),
               notes: input.notes ?? "",
@@ -571,12 +568,9 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
                 id: topic.id,
                 courseId,
                 name: topic.name,
-                section: topic.section,
                 unit: topic.unit,
                 totalUnits: topic.totalUnits,
                 completedUnits: 0,
-                status: "planned",
-                priority: "normal",
                 dependencyIds: [],
                 color: resolveCourseColorId(color),
                 notes: "",
@@ -788,12 +782,6 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
           plans: mapTopic(snapshot, input.topicId, (current) => ({
             ...current,
             completedUnits,
-            status:
-              current.totalUnits > 0 && completedUnits >= current.totalUnits
-                ? "done"
-                : completedUnits > 0
-                  ? "active"
-                  : "planned",
           })),
           studyLog: [...snapshot.studyLog, entry].sort((left, right) =>
             left.date < right.date ? -1 : left.date > right.date ? 1 : 0,

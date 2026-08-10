@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { differenceInDays } from "./dates";
+import { topicStatus } from "./metrics";
 import { isCourseColorId } from "./palette";
 import { generateSeedData } from "./seed";
 import type { Topic } from "./types";
@@ -77,7 +78,7 @@ describe("generateSeedData", () => {
       expect(topic.totalUnits).toBeGreaterThan(0);
       expect(topic.completedUnits).toBeGreaterThanOrEqual(0);
       expect(topic.completedUnits).toBeLessThanOrEqual(topic.totalUnits);
-      expect(topic.status).toBe(
+      expect(topicStatus(topic)).toBe(
         topic.completedUnits >= topic.totalUnits
           ? "done"
           : topic.completedUnits > 0

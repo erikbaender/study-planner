@@ -166,6 +166,23 @@
   to { opacity: 0; transform: translateX(100%); }
 }
 
+/*
+ * One panel replacing another.
+ *
+ * Selecting a topic from a course's list swaps every field in the panel at
+ * once. Cut, that reads as a flicker in the corner of the eye; over the shared
+ * duration it reads as the panel having been told something. The short rise is
+ * the same four pixels a macOS popover arrives on.
+ */
+@keyframes inspector-panel-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.inspector-panel {
+  animation: inspector-panel-in var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
 .side-panel-shell[data-panel-side="left"][data-panel-state="open"] {
   animation: side-panel-left-in var(--topic-motion-duration) var(--topic-motion-curve);
 }
@@ -258,6 +275,7 @@ span:has(> .topic-progress-thumb) {
  * *own* scrollport. Under `hidden` they stuck to a box that never scrolls,
  * which put every one of them off the side of the canvas.
  */
+.disclosure,
 .timeline-disclosure {
   overflow: clip;
   /* Half the shared duration. Opening a course is a disclosure, not a
@@ -527,6 +545,11 @@ span:has(> .topic-progress-thumb) {
  * `overflow: clip`, so a row halfway through its collapse clips its own bars
  * rather than letting them spill into the row below.
  */
+/* The chart's own name for it, kept so its rules read locally, and the generic
+   one every other list in the app uses. Deliberately one declaration: a row
+   arriving in the sidebar and a lane arriving in the chart are the same event
+   seen at two densities, and they may not drift apart. */
+.row-motion,
 .timeline-row-motion {
   overflow: clip;
   transition:
@@ -646,6 +669,8 @@ span:has(> .topic-progress-thumb) {
   .timeline-canvas,
   .timeline-disclosure,
   .timeline-zoom-layer,
+  .row-motion,
+  .disclosure,
   .timeline-row-motion,
   .timeline-tint,
   .input-hint-fade {

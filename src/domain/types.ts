@@ -24,11 +24,9 @@ export const UNIT_LABELS: Record<Unit, { singular: string; plural: string }> = {
   items: { singular: "item", plural: "items" },
 };
 
+/** Derived from progress by `topicStatus`, never stored — see `src/domain/metrics.ts`. */
 export const TOPIC_STATUSES = ["planned", "active", "done"] as const;
 export type TopicStatus = (typeof TOPIC_STATUSES)[number];
-
-export const PRIORITIES = ["low", "normal", "high"] as const;
-export type Priority = (typeof PRIORITIES)[number];
 
 export const EXAM_KINDS = ["exam", "deadline", "presentation", "other"] as const;
 export type ExamKind = (typeof EXAM_KINDS)[number];
@@ -67,14 +65,10 @@ export type Topic = {
   id: EntityId;
   courseId: EntityId;
   name: string;
-  /** Optional display grouping ("Block 1", "Lectures 1–6"). Not a hierarchy level. */
-  section?: string;
   unit: Unit;
   /** `0` means the topic's size is untracked; it is then excluded from pace maths. */
   totalUnits: number;
   completedUnits: number;
-  status: TopicStatus;
-  priority: Priority;
   dependencyIds: EntityId[];
   color: string;
   notes: string;

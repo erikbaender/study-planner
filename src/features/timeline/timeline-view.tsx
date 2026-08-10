@@ -45,6 +45,7 @@ import {
   type Course,
   type CourseHealth,
   type IsoDate,
+  type StudyBlock,
   type Topic,
 } from "@/domain";
 import { Button, ContextMenuAt, useKeyboardMode, type MenuItem } from "@/ui";
@@ -97,6 +98,14 @@ type TimelineProps = {
   query?: string;
   selectedId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
+  /**
+   * A bar is a block, and the inspector says so.
+   *
+   * Clicking a bar used to inspect its *topic*, which is the one thing on the
+   * chart a bar is not: the panel then described a name, a size and a progress
+   * figure while the thing under the pointer was two dates.
+   */
+  onSelectBlock?: (block: StudyBlock) => void;
   /** Selection is a mode you can leave: see `selectTopic` below. */
   onClearSelection?: () => void;
   onGoToOutline: () => void;
@@ -153,6 +162,7 @@ function TimelineChart({
   query = "",
   selectedId,
   onSelectTopic,
+  onSelectBlock,
   onClearSelection,
   onGoToOutline,
 }: TimelineProps) {
@@ -221,10 +231,12 @@ function TimelineChart({
   // row consuming it — change for an unrelated shell render.
   const onClearSelectionRef = useRef(onClearSelection);
   const onSelectTopicRef = useRef(onSelectTopic);
+  const onSelectBlockRef = useRef(onSelectBlock);
   useLayoutEffect(() => {
     onClearSelectionRef.current = onClearSelection;
     onSelectTopicRef.current = onSelectTopic;
-  }, [onClearSelection, onSelectTopic]);
+    onSelectBlockRef.current = onSelectBlock;
+  }, [onClearSelection, onSelectTopic, onSelectBlock]);
 
   /**
    * Every block on the chart, by id.
@@ -251,10 +263,11 @@ function TimelineChart({
   /**
    * Selecting bars, and the one the inspector follows.
    *
-   * The inspector describes a topic, and a selection of bars can span several —
-   * so it follows the *primary* bar, the one added last. Clearing the selection
-   * clears the inspector with it, because an empty chart selection describing a
-   * topic is the panel talking about something nothing on screen points at.
+   * A selection of bars can span several topics, so the panel follows the
+   * *primary* bar — the one added last — and describes that block. Clearing the
+   * selection clears the inspector with it, because a panel describing
+   * something nothing on screen points at is the modal-per-click problem with
+   * extra steps.
    */
   const clearSelection = useCallback(() => {
     selection.set([]);
@@ -269,7 +282,7 @@ function TimelineChart({
         onClearSelectionRef.current?.();
         return;
       }
-      onSelectTopicRef.current(primary.course, primary.topic);
+      onSelectBlockRef.current?.(primary.block);
     },
     [selection],
   );

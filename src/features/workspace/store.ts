@@ -55,11 +55,22 @@ function announceCourseFilterChange() {
  */
 export type Focus = { kind: "all" } | { kind: "attention" } | { kind: "soon" };
 
-/** What the inspector is describing. Independent of focus: you can inspect a topic in one course while focused on all of them. */
+/**
+ * What the inspector is describing. Independent of focus: you can inspect a
+ * topic in one course while focused on all of them.
+ *
+ * The five kinds are the whole product model — semester, course, topic, block,
+ * and the exam a course is planned backwards from. A study block is a selection
+ * in its own right rather than a proxy for its topic: it has its own dates, its
+ * own size and its own provenance, and the panel that used to describe the
+ * parent topic instead could say nothing about any of them.
+ */
 export type Selection =
+  | { kind: "plan"; id: EntityId }
   | { kind: "course"; id: EntityId }
   | { kind: "topic"; id: EntityId }
   | { kind: "exam"; id: EntityId }
+  | { kind: "block"; id: EntityId }
   | null;
 
 export type WorkspaceState = {
@@ -74,7 +85,6 @@ export type WorkspaceState = {
    */
   hiddenCourseIds: EntityId[];
   selection: Selection;
-  inspectorOpen: boolean;
   paletteOpen: boolean;
   /** Which create sheet is up, if any. */
   creating: "plan" | "course" | null;
@@ -94,8 +104,6 @@ export type WorkspaceState = {
   hideAllCourses: (courseIds: EntityId[]) => void;
   showAllCourses: () => void;
   select: (selection: Selection) => void;
-  setInspectorOpen: (open: boolean) => void;
-  toggleInspector: () => void;
   setPaletteOpen: (open: boolean) => void;
   setCreating: (creating: "plan" | "course" | null) => void;
   setPendingDelete: (selection: Selection) => void;
@@ -109,10 +117,11 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   view: "today",
   focus: { kind: "all" },
   hiddenCourseIds: [],
+  // Nothing selected, so no inspector. The panel has no switch of its own any
+  // more: it is present exactly when there is something for it to describe, and
+  // absent otherwise. A toggle that could hide the panel while something was
+  // selected, or open an empty one, was two states the app had to explain.
   selection: null,
-  // Closed by default. An inspector that opens itself on load takes a third of
-  // the window away from someone who has not asked a question yet.
-  inspectorOpen: false,
   paletteOpen: false,
   creating: null,
   pendingDelete: null,
@@ -163,8 +172,6 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
       return { hiddenCourseIds: [] };
     }),
   select: (selection) => set({ selection }),
-  setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),
-  toggleInspector: () => set((state) => ({ inspectorOpen: !state.inspectorOpen })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setCreating: (creating) => set({ creating }),
   setPendingDelete: (pendingDelete) => set({ pendingDelete }),
@@ -177,21 +184,12 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
 }));
 
 /**
- * Selecting something is nearly always also a request to see it, so the two are
- * one action rather than two calls every caller has to remember to pair.
+ * Selecting an entity, or clearing it when the same one is clicked again.
+ *
+ * Selection *is* the inspector now, so this is the only way the panel opens and
+ * a second click on the same row is the only way it closes.
  */
-export function revealSelection(selection: Selection) {
-  const { select, setInspectorOpen } = useWorkspace.getState();
-  select(selection);
-  setInspectorOpen(true);
-}
-
-/** Select an entity for inspection, or clear it when the same entity is clicked again. */
-export function toggleRevealSelection(selection: Exclude<Selection, null>) {
-  const current = useWorkspace.getState().selection;
-  if (current?.kind === selection.kind && current.id === selection.id) {
-    useWorkspace.getState().select(null);
-    return;
-  }
-  revealSelection(selection);
+export function toggleSelection(selection: Exclude<Selection, null>) {
+  const { selection: current, select } = useWorkspace.getState();
+  select(current?.kind === selection.kind && current.id === selection.id ? null : selection);
 }

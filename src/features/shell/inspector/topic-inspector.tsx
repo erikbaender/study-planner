@@ -4,21 +4,20 @@ import { Trash2 } from "lucide-react";
 import { useRef, useState, type CSSProperties } from "react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
+  compareDates,
   courseColorValue,
   topicProgress,
+  topicStatus,
   UNITS,
   UNIT_LABELS,
-  TOPIC_STATUSES,
-  PRIORITIES,
   type Course,
   type Topic,
-  type TopicStatus,
-  type Priority,
   type Unit,
 } from "@/domain";
-import { Button, Checkbox, ProgressBar, ProgressSlider, SelectField, Separator, TextField } from "@/ui";
+import { Badge, Button, ProgressBar, ProgressSlider, SelectField, Separator, TextField } from "@/ui";
 import { CompletionCheckbox, triggerCompletionAnimation } from "@/features/topics/progress-cell";
-import { DraftText, Header, Row, Section } from "./shared";
+import type { Selection } from "@/features/workspace/store";
+import { DraftText, Header, ReferenceList, Row, Section } from "./shared";
 
 /* ─── Topic ─────────────────────────────────────────────────────────────── */
 
@@ -26,18 +25,20 @@ export function TopicInspector({
   course,
   topic,
   today,
+  onSelect,
   onDelete,
 }: {
   course: Course;
   topic: Topic;
   today: string;
-  onDelete: () => void;
+  onSelect: (selection: Selection) => void;
+  onDelete: (selection: NonNullable<Selection>) => void;
 }) {
   const repository = useRepository();
   const run = usePlannerRun();
   const progress = topicProgress(topic);
   const unitLabel = UNIT_LABELS[topic.unit].plural;
-  const dependencyCandidates = course.topics.filter((candidate) => candidate.id !== topic.id);
+  const status = topicStatus(topic);
   const [preview, setPreview] = useState<number | null>(null);
   const completionCheckboxRef = useRef<HTMLInputElement>(null);
   const shown = preview ?? topic.completedUnits;
@@ -51,11 +52,8 @@ export function TopicInspector({
   const patch = (
     changes: Partial<{
       name: string;
-      section?: string;
       unit: Unit;
       totalUnits: number;
-      status: TopicStatus;
-      priority: Priority;
       notes: string;
       color: string;
     }>,
@@ -63,39 +61,47 @@ export function TopicInspector({
     run(
       repository.updateTopic(topic.id, {
         name: topic.name,
-        section: topic.section,
         unit: topic.unit,
         totalUnits: topic.totalUnits,
         completedUnits: topic.completedUnits,
-        status: topic.status,
-        priority: topic.priority,
         notes: topic.notes,
         color: topic.color,
         ...changes,
       }),
     );
 
+  /**
+   * A new block is one day, today, and manual.
+   *
+   * The smallest thing that can then be dragged wider — the same choice the
+   * chart's lane menu makes, so a block added here and a block added there are
+   * the same object rather than two conventions.
+   */
+  const addBlock = () =>
+    run(
+      repository.createStudyBlock({
+        topicId: topic.id,
+        startDate: today,
+        endDate: today,
+        source: "manual",
+      }),
+    );
+
+  const blocks = [...topic.blocks].sort((left, right) =>
+    compareDates(left.startDate, right.startDate),
+  );
+
   return (
     <>
       <Header kind="Topic">
         <h2 className="truncate text-title3 font-semibold">{topic.name}</h2>
-        <p className="truncate text-callout text-secondary">
-          {course.name}
-          {topic.section ? ` · ${topic.section}` : ""}
-        </p>
+        <p className="truncate text-callout text-secondary">{course.name}</p>
       </Header>
 
       <Separator />
 
       <Section>
-        <DraftText label="Name" value={topic.name} onCommit={(name) => patch({ name })} />
-        <DraftText
-          label="Section"
-          value={topic.section ?? ""}
-          placeholder="e.g. Block 1"
-          hint="Groups topics under a heading in the outline"
-          onCommit={(section) => patch({ section: section || undefined })}
-        />
+        <DraftText label="Name" value={topic.name} onCommit={(name) => name && patch({ name })} />
       </Section>
 
       <Separator />
@@ -178,6 +184,14 @@ export function TopicInspector({
             <span className="block text-right text-callout tabular-nums text-secondary">
               {shown} / {topic.totalUnits} {unitLabel}
             </span>
+            <Row label="Status">
+              {/* Read off the progress rather than set beside it. Two controls
+                  for one fact is how a topic ends up marked "planned" with
+                  three quarters of it done. */}
+              <Badge tone={status === "done" ? "positive" : "neutral"}>
+                {status === "done" ? "Done" : status === "active" ? "In progress" : "Not started"}
+              </Badge>
+            </Row>
           </>
         ) : (
           <>
@@ -211,60 +225,25 @@ export function TopicInspector({
 
       <Separator />
 
-      <Section title="Planning">
-        <SelectField
-          label="Status"
-          value={topic.status}
-          onValueChange={(value) => patch({ status: value as TopicStatus })}
-          options={TOPIC_STATUSES.map((status) => ({
-            value: status,
-            label: status[0].toUpperCase() + status.slice(1),
-          }))}
-        />
-        <SelectField
-          label="Priority"
-          value={topic.priority}
-          onValueChange={(value) => patch({ priority: value as Priority })}
-          options={PRIORITIES.map((priority) => ({
-            value: priority,
-            label: priority[0].toUpperCase() + priority.slice(1),
-          }))}
-        />
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1 text-callout font-medium text-secondary">Depends on</legend>
-          {dependencyCandidates.length === 0 ? (
-            <span className="text-body text-secondary">No other topics in this course</span>
-          ) : (
-            <div className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded-control bg-fill p-2">
-              {dependencyCandidates.map((candidate) => {
-                const checked = topic.dependencyIds.includes(candidate.id);
-                return (
-                  <Checkbox
-                    key={candidate.id}
-                    label={candidate.name}
-                    checked={checked}
-                    onCheckedChange={() =>
-                      run(
-                        repository.setTopicDependencies(
-                          topic.id,
-                          checked
-                            ? topic.dependencyIds.filter((id) => id !== candidate.id)
-                            : [...topic.dependencyIds, candidate.id],
-                        ),
-                      )
-                    }
-                  />
-                );
-              })}
-            </div>
-          )}
-        </fieldset>
-        <Row label="Blocks">
-          {topic.blocks.length === 0
-            ? "Not scheduled"
-            : `${topic.blocks.length} block${topic.blocks.length === 1 ? "" : "s"}`}
-        </Row>
-      </Section>
+      <ReferenceList
+        title="Blocks"
+        items={blocks.map((block) => ({
+          id: block.id,
+          label: block.startDate === block.endDate
+            ? block.startDate
+            : `${block.startDate} – ${block.endDate}`,
+          detail: block.plannedUnits ? `${block.plannedUnits} ${unitLabel}` : undefined,
+        }))}
+        empty="Not scheduled. Add a block, or plan the course from its exam date."
+        addLabel={`Add a block to ${topic.name}`}
+        onAdd={addBlock}
+        onSelect={(id) => onSelect({ kind: "block", id })}
+        // No confirmation, unlike a topic or a course: a block is two dates,
+        // it is one click to make another, and the timeline has always deleted
+        // them straight from its menu.
+        onDelete={(id) => run(repository.deleteStudyBlock(id))}
+        deleteLabel={(item) => `Delete the block on ${item.label}`}
+      />
 
       <Separator />
 
@@ -281,7 +260,12 @@ export function TopicInspector({
       <Separator />
 
       <Section>
-        <Button variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onDelete}>
+        <Button
+          variant="plain"
+          leadingIcon={<Trash2 />}
+          className="text-negative"
+          onClick={() => onDelete({ kind: "topic", id: topic.id })}
+        >
           Delete topic
         </Button>
       </Section>

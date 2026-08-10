@@ -8,6 +8,7 @@ import {
 } from "./local-repository";
 import type { PlannerRepository, RepositoryState } from "./repository";
 import { generateSeedData } from "@/domain/seed";
+import { topicStatus } from "@/domain/metrics";
 import { DEFAULT_PREFERENCES, type PlannerSnapshot } from "@/domain/types";
 
 const TODAY = "2026-07-29";
@@ -242,8 +243,8 @@ describe("topics", () => {
     const ids = await repository.createTopics(
       courseId,
       [
-        { name: "Glycolysis", section: "Metabolism", unit: "slides", totalUnits: 42 },
-        { name: "Krebs cycle", section: "Metabolism", unit: "slides", totalUnits: 38 },
+        { name: "Glycolysis", unit: "slides", totalUnits: 42 },
+        { name: "Krebs cycle", unit: "slides", totalUnits: 38 },
       ],
       "coral",
     );
@@ -286,8 +287,6 @@ describe("topics", () => {
         unit: "slides",
         totalUnits: 100,
         completedUnits: 120,
-        status: "active",
-        priority: "normal",
         notes: "",
         color: "#f00",
       }),
@@ -483,7 +482,9 @@ describe("logStudy", () => {
     const topicId = await withTopic(repository, 100);
     await repository.logStudy({ topicId, date: TODAY, units: 30, minutes: 45 });
 
-    expect(await topicOf(repository)).toMatchObject({ completedUnits: 30, status: "active" });
+    const topic = await topicOf(repository);
+    expect(topic).toMatchObject({ completedUnits: 30 });
+    expect(topicStatus(topic)).toBe("active");
     expect((await read(repository)).studyLog[0]).toMatchObject({
       topicId,
       date: TODAY,
@@ -496,7 +497,9 @@ describe("logStudy", () => {
     const { repository } = setup();
     const topicId = await withTopic(repository, 100);
     await repository.logStudy({ topicId, date: TODAY, units: 100 });
-    expect(await topicOf(repository)).toMatchObject({ completedUnits: 100, status: "done" });
+    const topic = await topicOf(repository);
+    expect(topic).toMatchObject({ completedUnits: 100 });
+    expect(topicStatus(topic)).toBe("done");
   });
 
   it("clamps an overshoot to the topic's size but records what was logged", async () => {
@@ -513,7 +516,9 @@ describe("logStudy", () => {
     const { repository } = setup();
     const topicId = await withTopic(repository, 0);
     await repository.logStudy({ topicId, date: TODAY, units: 130 });
-    expect(await topicOf(repository)).toMatchObject({ completedUnits: 130, status: "active" });
+    const topic = await topicOf(repository);
+    expect(topic).toMatchObject({ completedUnits: 130 });
+    expect(topicStatus(topic)).toBe("active");
   });
 
   it("accepts a correction back to zero", async () => {
@@ -522,7 +527,9 @@ describe("logStudy", () => {
     await repository.logStudy({ topicId, date: TODAY, units: 30 });
     await repository.logStudy({ topicId, date: TODAY, units: -50 });
 
-    expect(await topicOf(repository)).toMatchObject({ completedUnits: 0, status: "planned" });
+    const topic = await topicOf(repository);
+    expect(topic).toMatchObject({ completedUnits: 0 });
+    expect(topicStatus(topic)).toBe("planned");
   });
 
   it("keeps the log in date order", async () => {

@@ -66,14 +66,10 @@ export default defineSchema({
   topics: defineTable({
     courseId: v.id("courses"),
     name: v.string(),
-    /** Optional display grouping, not a hierarchy level. */
-    section: v.optional(v.string()),
     unit,
     /** `0` means the size is untracked; such topics are excluded from pace maths. */
     totalUnits: v.number(),
     completedUnits: v.number(),
-    status: v.union(v.literal("planned"), v.literal("active"), v.literal("done")),
-    priority: v.union(v.literal("low"), v.literal("normal"), v.literal("high")),
     dependencyIds: v.array(v.id("topics")),
     /** Stable course-palette id. Kept as a string while legacy hex rows are read-migrated. */
     color: v.string(),

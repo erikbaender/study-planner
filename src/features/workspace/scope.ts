@@ -24,6 +24,7 @@ import {
   type IsoDate,
   type Plan,
   type PlannerSnapshot,
+  type StudyBlock,
   type Topic,
 } from "@/domain";
 import type { Focus, Selection } from "./store";
@@ -134,30 +135,40 @@ export function coursesInFocus(
 /**
  * The selection, resolved against the current snapshot.
  *
- * Every variant carries its `course`, because nothing in this app is
- * meaningful without knowing which course it belongs to — the inspector needs
- * it for the breadcrumb, and topic edits need its colour.
+ * Every variant carries its whole ancestry, because nothing in this app is
+ * meaningful without it — the inspector's breadcrumb walks back up it, topic
+ * edits need the course's colour, and a block on its own is four dates and no
+ * subject.
  */
 export type ResolvedSelection =
-  | { kind: "course"; course: Course }
-  | { kind: "topic"; course: Course; topic: Topic }
-  | { kind: "exam"; course: Course; exam: Exam }
+  | { kind: "plan"; plan: Plan }
+  | { kind: "course"; plan: Plan; course: Course }
+  | { kind: "topic"; plan: Plan; course: Course; topic: Topic }
+  | { kind: "exam"; plan: Plan; course: Course; exam: Exam }
+  | { kind: "block"; plan: Plan; course: Course; topic: Topic; block: StudyBlock }
   | null;
 
 export function resolveSelection(plan: Plan | undefined, selection: Selection): ResolvedSelection {
   if (!plan || !selection) return null;
+  if (selection.kind === "plan") return plan.id === selection.id ? { kind: "plan", plan } : null;
 
   for (const course of plan.courses) {
     if (selection.kind === "course" && course.id === selection.id) {
-      return { kind: "course", course };
+      return { kind: "course", plan, course };
     }
     if (selection.kind === "topic") {
       const topic = course.topics.find((candidate) => candidate.id === selection.id);
-      if (topic) return { kind: "topic", course, topic };
+      if (topic) return { kind: "topic", plan, course, topic };
     }
     if (selection.kind === "exam") {
       const exam = course.exams.find((candidate) => candidate.id === selection.id);
-      if (exam) return { kind: "exam", course, exam };
+      if (exam) return { kind: "exam", plan, course, exam };
+    }
+    if (selection.kind === "block") {
+      for (const topic of course.topics) {
+        const block = topic.blocks.find((candidate) => candidate.id === selection.id);
+        if (block) return { kind: "block", plan, course, topic, block };
+      }
     }
   }
 
@@ -194,12 +205,12 @@ export function matchesQuery(query: string, ...fields: Array<string | undefined>
 export function courseMatchesQuery(query: string, course: Course): boolean {
   return (
     matchesQuery(query, course.name, course.code) ||
-    course.topics.some((topic) => matchesQuery(query, topic.name, topic.section))
+    course.topics.some((topic) => matchesQuery(query, topic.name))
   );
 }
 
 /** Keep all topics for a course-name match; otherwise narrow to matching topics. */
 export function topicsForQuery(query: string, course: Course): Topic[] {
   if (matchesQuery(query, course.name, course.code)) return [...course.topics];
-  return course.topics.filter((topic) => matchesQuery(query, topic.name, topic.section));
+  return course.topics.filter((topic) => matchesQuery(query, topic.name));
 }

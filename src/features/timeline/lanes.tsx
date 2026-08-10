@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { AlertTriangle, ChevronRight, Layers, Plus } from "lucide-react";
+import { AlertTriangle, ChevronRight, Layers, Plus, Trash2 } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   clampDate,
@@ -18,12 +18,13 @@ import {
 } from "./geometry";
 import { fillsByBlock } from "./blocks";
 import { densityBar, DENSITY_BOX, type DensityBar, type DensitySeries } from "./density";
-import { useChart } from "./chart-context";
+import { useChart, type Chart } from "./chart-context";
 import { deleteBlockItem, MemoBlockBar, OffscreenMarkers } from "./block-bar";
 import {
   GROUP_GAP,
   LANE_HEIGHT,
   EMPTY_COURSE_HEIGHT,
+  ROW_HEIGHT,
   ROW_TINT_PROPERTY,
   type Range,
 } from "./layout";
@@ -33,9 +34,72 @@ import {
   useReorderAnimation,
   useRowTransitions,
   type RowMotion,
-} from "./row-transitions";
+} from "@/ui/row-motion";
 import { hintExcludedScope } from "@/features/workspace/hints";
 import { overdueBlockCount, overdueBlockCountForTopic } from "@/features/workspace/scope";
+import { useWorkspace } from "@/features/workspace/store";
+import type { MenuItem } from "@/ui";
+
+/* ─── Making and unmaking the rows themselves ───────────────────────────────
+ *
+ * The chart could always place work; it could never place the thing the work
+ * is *for*. A course with no topics said "add material in the outline" and left
+ * you to go and find it, which is the one instruction a view should never have
+ * to give about its own contents.
+ *
+ * So the gutter's names carry the same right button the canvas does. The
+ * course's own name offers a topic; a topic's name offers a block on today and
+ * the topic's removal. Deleting a topic goes through the app's confirmation —
+ * unlike a block, it takes its progress and its whole schedule with it, and
+ * there is no undo.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+function createTopicIn(chart: Chart, course: Course) {
+  if (!chart.repository) return;
+  chart.run(
+    chart.repository
+      .createTopic(course.id, {
+        // Named rather than blank: an untitled row among forty is
+        // indistinguishable from a rendering bug, and the inspector opens on it
+        // with the name field ready to be typed over.
+        name: "New topic",
+        unit: course.topics.at(-1)?.unit ?? "slides",
+        color: course.color,
+      })
+      .then((id) => useWorkspace.getState().select({ kind: "topic", id })),
+  );
+}
+
+function addTopicItem(chart: Chart, course: Course): MenuItem {
+  return { label: "New topic", icon: <Plus />, onSelect: () => createTopicIn(chart, course) };
+}
+
+function topicMenuItems(chart: Chart, topic: Topic, today: IsoDate): readonly MenuItem[] {
+  return [
+    {
+      label: `New block on ${shortDate(today)}`,
+      icon: <Plus />,
+      onSelect: () => {
+        if (!chart.repository) return;
+        chart.run(
+          chart.repository.createStudyBlock({
+            topicId: topic.id,
+            startDate: today,
+            endDate: today,
+            source: "manual",
+          }),
+        );
+      },
+    },
+    { type: "separator" },
+    {
+      label: `Delete ${topic.name}`,
+      icon: <Trash2 />,
+      danger: true,
+      onSelect: () => useWorkspace.getState().setPendingDelete({ kind: "topic", id: topic.id }),
+    },
+  ];
+}
 /* ─── Lanes ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -239,10 +303,11 @@ function AllTopicsLane({
   selectedId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
 }) {
+  const chart = useChart();
   const [open, setOpen] = useState(true);
   const disclosure = useDisclosure(open);
-  const rows = useRowTransitions(entries, rowKeyOf);
-  const rowsRef = useReorderAnimation(rows.map((row) => row.key));
+  const rows = useRowTransitions(entries, rowKeyOf, ROW_HEIGHT);
+  const rowsRef = useReorderAnimation(rows.map((row) => row.key), ROW_HEIGHT);
   const span = useMemo(() => rollUpSpan(entries.map((entry) => entry.topic)), [entries]);
   // One series per topic, each in its *course's* colour rather than its own:
   // series sharing a colour become one band, so the stack here is one band per
@@ -327,6 +392,11 @@ function AllTopicsLane({
                   selected: topic.id === selectedId,
                   motion,
                   onSelect: () => onSelectTopic(course, topic),
+                  onMenu: (event: React.MouseEvent) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    chart.openMenu(event, topicMenuItems(chart, topic, today));
+                  },
                 }))
               : []
           }
@@ -353,10 +423,21 @@ function CourseLane({
   selectedId: string | null;
   onSelectTopic: (topic: Topic) => void;
 }) {
+  const chart = useChart();
   const [open, setOpen] = useState(false);
   const disclosure = useDisclosure(open);
-  const rows = useRowTransitions(topics, topicKeyOf);
+  const rows = useRowTransitions(topics, topicKeyOf, ROW_HEIGHT);
   const span = useMemo(() => rollUpSpan(topics), [topics]);
+  const openCourseMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    chart.openMenu(event, [addTopicItem(chart, course)]);
+  };
+  const openTopicMenu = (topic: Topic) => (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    chart.openMenu(event, topicMenuItems(chart, topic, today));
+  };
   // One series per topic so a topic with its own colour still tints its share,
   // as it does in the rows below.
   const series = useMemo(
@@ -392,9 +473,21 @@ function CourseLane({
           style={{ height: disclosure.expanded ? rowsHeight : 0 }}
         >
           {!disclosure.mounted ? null : rows.length === 0 ? (
-            <p className="sticky left-0 max-w-md px-8 pb-2 text-callout text-tertiary">
-              This course has no topics yet. Add material in the outline before placing study blocks.
-            </p>
+            <div className="sticky left-0 flex max-w-md flex-col items-start gap-1 px-8 pb-2">
+              <p className="text-callout text-tertiary">
+                This course has no topics yet.
+              </p>
+              {/* The instruction used to be "add material in the outline", which
+                  sent you somewhere else to fix what you were already looking
+                  at. */}
+              <button
+                type="button"
+                onClick={() => createTopicIn(chart, course)}
+                className="rounded-chip px-1.5 py-0.5 text-callout text-accent hover:bg-fill"
+              >
+                Add a topic
+              </button>
+            </div>
           ) : (
             rows.map(({ key, item: topic, motion }) => (
               <MemoTopicLane
@@ -424,6 +517,7 @@ function CourseLane({
           }
           name={course.name}
           trailing={<AttentionIndicators behindDays={behindDays} overdueBlocks={overdueBlocks} />}
+          onMenu={openCourseMenu}
           rowsHeight={disclosure.expanded && rows.length > 0 ? rowsHeight : 0}
           rows={
             disclosure.mounted
@@ -435,6 +529,7 @@ function CourseLane({
                   selected: topic.id === selectedId,
                   motion,
                   onSelect: () => onSelectTopic(topic),
+                  onMenu: openTopicMenu(topic),
                 }))
               : []
           }
@@ -462,6 +557,7 @@ function GutterCard({
   name,
   bold = false,
   trailing,
+  onMenu,
   rows,
   rowsHeight,
 }: {
@@ -472,6 +568,8 @@ function GutterCard({
   /** "All courses" reads as a heading over the courses beneath it, not as one of them. */
   bold?: boolean;
   trailing?: React.ReactNode;
+  /** The right button on the card's own name; see "Making and unmaking the rows themselves". */
+  onMenu?: (event: React.MouseEvent) => void;
   rows: readonly {
     key: string;
     name: string;
@@ -481,6 +579,7 @@ function GutterCard({
     /** Where this row is in an arrival or a departure; see "Rows arriving and leaving". */
     motion: RowMotion;
     onSelect?: () => void;
+    onMenu?: (event: React.MouseEvent) => void;
   }[];
   /** Driven by the lane's disclosure, so the card grows in step with the rows beside it. */
   rowsHeight: number;
@@ -500,6 +599,7 @@ function GutterCard({
         <button
           type="button"
           onClick={onToggle}
+          onContextMenu={onMenu}
           aria-expanded={open}
           style={{ height: LANE_HEIGHT }}
           // No `timeline-tint` here: its hover is a highlight like any other in
@@ -537,6 +637,7 @@ function GutterCard({
                 onPointerEnter={() => lightRow(row.key, true)}
                 onPointerLeave={() => lightRow(row.key, false)}
                 onClick={row.onSelect}
+                onContextMenu={row.onMenu}
                 // Selection is blue everywhere in the app; a row selected in
                 // its course's own colour said "this course" a second time
                 // rather than "this is the one you are looking at".

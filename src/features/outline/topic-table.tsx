@@ -15,19 +15,42 @@
  *
  * Rows are a CSS grid with the column widths declared once, so the header and
  * every row stay in the same columns without a `<table>`'s layout quirks.
+ *
+ * A topic's study blocks live one disclosure down from its row rather than
+ * only in the timeline or the inspector: the outline is where a whole
+ * semester's material is entered, and a block is a fact about that material —
+ * moving it to a chart just to see when it falls would send you somewhere
+ * else to check the thing you were already looking at.
  */
 
 import { clsx } from "clsx";
-import { PanelRight, Plus, Trash2 } from "lucide-react";
-import { useState, type CSSProperties } from "react";
+import { ChevronRight, PanelRight, Plus, Trash2 } from "lucide-react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
-import { courseColorValue, UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
-import { ContextMenu, Select } from "@/ui";
+import {
+  compareDates,
+  courseColorValue,
+  UNITS,
+  UNIT_LABELS,
+  type Course,
+  type StudyBlock,
+  type Topic,
+  type Unit,
+} from "@/domain";
+import { ContextMenu, IconButton, Select, useDisclosure, useReorderAnimation, useRowTransitions, type RowMotion } from "@/ui";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
 
-/** Name · total · unit · readout · progress · done. */
+/** The topic row's own height. Grid rows need a fixed height for `useRowTransitions` to animate them. */
+export const TOPIC_ROW_HEIGHT = 28;
+/** A block sub-row's height — shorter, since it carries less than a topic row does. */
+export const BLOCK_ROW_HEIGHT = 24;
+
+/** Blocks (disclosure) · name · total · unit · readout · progress · done. */
 const COLUMNS =
-  "grid grid-cols-[minmax(6rem,1fr)_3.5rem_5.5rem_7rem_11rem_1.25rem] items-center gap-3";
+  "grid grid-cols-[2.75rem_minmax(6rem,1fr)_3.5rem_5.5rem_7rem_11rem_1.25rem] items-center gap-3";
+
+const topicKeyOf = (topic: Topic) => topic.id;
+const blockKeyOf = (block: StudyBlock) => block.id;
 
 export function TopicTable({
   course,
@@ -35,18 +58,26 @@ export function TopicTable({
   today,
   selectedId,
   onSelect,
+  onSelectBlock,
   onDelete,
   onAddRow,
 }: {
   course: Course;
-  /** Already filtered by the search field; the section headers follow whatever survives. */
+  /** Already filtered by the search field. */
   topics: readonly Topic[];
   today: string;
   selectedId: string | null;
   onSelect: (topic: Topic) => void;
+  onSelectBlock: (block: StudyBlock) => void;
   onDelete: (topic: Topic) => void;
-  onAddRow: (afterSection: string | undefined) => void;
+  onAddRow: () => void;
 }) {
+  const rows = useRowTransitions(topics, topicKeyOf, TOPIC_ROW_HEIGHT);
+  const rowsRef = useReorderAnimation(
+    rows.map((row) => row.key),
+    TOPIC_ROW_HEIGHT,
+  );
+
   return (
     <div className="flex flex-col">
       <div
@@ -55,6 +86,7 @@ export function TopicTable({
           "px-2 pb-1 text-caption font-semibold tracking-wide text-tertiary uppercase",
         )}
       >
+        <span />
         <span>Topic</span>
         <span>Total</span>
         <span>Unit</span>
@@ -63,29 +95,21 @@ export function TopicTable({
         <span />
       </div>
 
-      <ul className="flex flex-col">
-        {groupBySection(topics).map(([section, rows]) => (
-          <li key={section ?? "__none"}>
-            {section ? (
-              <h3 className="px-2 pt-2 pb-0.5 text-callout font-semibold text-secondary">
-                {section}
-              </h3>
-            ) : null}
-            <ul className="flex flex-col">
-              {rows.map((topic) => (
-                <TopicTableRow
-                  key={topic.id}
-                  course={course}
-                  topic={topic}
-                  today={today}
-                  selected={topic.id === selectedId}
-                  onSelect={() => onSelect(topic)}
-                  onDelete={() => onDelete(topic)}
-                  onAddRow={() => onAddRow(topic.section)}
-                />
-              ))}
-            </ul>
-          </li>
+      <ul ref={rowsRef} className="flex flex-col">
+        {rows.map(({ key, item: topic, motion }) => (
+          <TopicTableRow
+            key={key}
+            rowKey={key}
+            course={course}
+            topic={topic}
+            today={today}
+            selected={topic.id === selectedId}
+            motion={motion}
+            onSelect={() => onSelect(topic)}
+            onSelectBlock={onSelectBlock}
+            onDelete={() => onDelete(topic)}
+            onAddRow={onAddRow}
+          />
         ))}
       </ul>
     </div>
@@ -93,25 +117,41 @@ export function TopicTable({
 }
 
 function TopicTableRow({
+  rowKey,
   course,
   topic,
   today,
   selected,
+  motion,
   onSelect,
+  onSelectBlock,
   onDelete,
   onAddRow,
 }: {
+  rowKey: string;
   course: Course;
   topic: Topic;
   today: string;
   selected: boolean;
+  /** Where this row is in an arrival or a departure; see `useRowTransitions`. */
+  motion: RowMotion;
   onSelect: () => void;
+  onSelectBlock: (block: StudyBlock) => void;
   onDelete: () => void;
   onAddRow: () => void;
 }) {
   const repository = useRepository();
   const run = usePlannerRun();
   const unit = UNIT_LABELS[topic.unit].plural;
+  const [blocksOpen, setBlocksOpen] = useState(false);
+  const disclosure = useDisclosure(blocksOpen);
+  const sortedBlocks = useMemo(
+    () => [...topic.blocks].sort((left, right) => compareDates(left.startDate, right.startDate)),
+    [topic.blocks],
+  );
+  const blockRows = useRowTransitions(sortedBlocks, blockKeyOf, BLOCK_ROW_HEIGHT);
+  const blocksHeight =
+    blockRows.reduce((total, row) => total + row.motion.height, 0) + BLOCK_ROW_HEIGHT;
 
   /**
    * `updateTopic` takes a whole topic, so every edit resends the lot.
@@ -123,15 +163,24 @@ function TopicTableRow({
     run(
       repository.updateTopic(topic.id, {
         name: topic.name,
-        section: topic.section,
         unit: topic.unit,
         totalUnits: topic.totalUnits,
         completedUnits: topic.completedUnits,
-        status: topic.status,
-        priority: topic.priority,
         notes: topic.notes,
         color: topic.color,
         ...changes,
+      }),
+    );
+
+  // One day, today, manual: the smallest thing that can then be dragged wider,
+  // and the same choice the timeline's lane menu and the topic inspector make.
+  const addBlock = () =>
+    run(
+      repository.createStudyBlock({
+        topicId: topic.id,
+        startDate: today,
+        endDate: today,
+        source: "manual",
       }),
     );
 
@@ -140,64 +189,154 @@ function TopicTableRow({
       items={[
         { label: "Show in inspector", icon: <PanelRight />, onSelect },
         { label: "New topic below", icon: <Plus />, onSelect: onAddRow },
+        { label: "Add block", icon: <Plus />, onSelect: addBlock },
         { type: "separator" },
         { label: `Delete ${topic.name}`, icon: <Trash2 />, danger: true, onSelect: onDelete },
       ]}
     >
-      <li
-        data-course-id={course.id}
-        // Deliberately *not* selecting on focus. It used to, and dragging the
-        // progress bar therefore opened the inspector mid-drag, which narrowed
-        // the content column, which moved the bar out from under the pointer.
-        // Selection is an explicit act: the name, the ⋯ menu, or right-click.
-        className={clsx(
-          COLUMNS,
-          "topic-completion-row group rounded-control px-2 py-0.5",
-          selected ? "bg-accent-soft" : "hover:bg-fill",
-        )}
-        style={{ "--topic-completion-color": courseColorValue(course.color) } as CSSProperties}
-      >
-        <Cell
-          label={`Name of ${topic.name}`}
-          value={topic.name}
-          onCommit={(name) => name && patch({ name })}
-        />
+      <li data-row-key={rowKey} className="flex flex-col">
+        <div className="row-motion" style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}>
+          <div
+            data-course-id={course.id}
+            aria-current={selected ? "true" : undefined}
+            className={clsx(
+              COLUMNS,
+              "topic-completion-row group h-full rounded-control px-2",
+              selected ? "bg-accent-soft" : "hover:bg-fill",
+            )}
+            style={{ "--topic-completion-color": courseColorValue(course.color) } as CSSProperties}
+          >
+            <button
+              type="button"
+              onClick={() => setBlocksOpen((current) => !current)}
+              aria-expanded={blocksOpen}
+              aria-label={`${topic.blocks.length} block${topic.blocks.length === 1 ? "" : "s"} for ${topic.name}`}
+              className="flex items-center gap-0.5 rounded-chip py-0.5 text-caption text-tertiary hover:bg-fill-strong"
+            >
+              <ChevronRight
+                aria-hidden="true"
+                className={clsx(
+                  "size-3.5 shrink-0 transition-transform duration-150 ease-mac",
+                  blocksOpen && "rotate-90",
+                )}
+              />
+              <span className="tabular-nums">{topic.blocks.length}</span>
+            </button>
 
-        <span className="flex items-baseline gap-1">
-          <Cell
-            label={`Total ${unit} in ${topic.name}`}
-            value={String(topic.totalUnits)}
-            numeric
-            onCommit={(next) => {
-              const total = Number(next);
-              if (Number.isFinite(total) && total >= 0 && total !== topic.totalUnits) {
-                patch({ totalUnits: total });
-              }
-            }}
-          />
-        </span>
+            <Cell
+              label={`Name of ${topic.name}`}
+              value={topic.name}
+              onCommit={(name) => name && patch({ name })}
+            />
 
-        <Select
-          aria-label={`Unit for ${topic.name}`}
-          value={topic.unit}
-          onValueChange={(unit) => patch({ unit: unit as Unit })}
-          className={clsx(
-            "-mx-1 h-6 w-full rounded-chip bg-transparent px-1",
-            "text-callout text-secondary",
-            "hover:bg-fill-strong focus:bg-content focus:text-label",
-          )}
-          options={UNITS.map((candidate) => ({ value: candidate, label: UNIT_LABELS[candidate].plural }))}
-        />
+            <span className="flex items-baseline gap-1">
+              <Cell
+                label={`Total ${unit} in ${topic.name}`}
+                value={String(topic.totalUnits)}
+                numeric
+                onCommit={(next) => {
+                  const total = Number(next);
+                  if (Number.isFinite(total) && total >= 0 && total !== topic.totalUnits) {
+                    patch({ totalUnits: total });
+                  }
+                }}
+              />
+            </span>
 
-        <TopicProgressCell
-          topic={topic}
-          today={today}
-          tint={courseColorValue(course.color)}
-          sliderClassName="w-full min-w-0"
-          readoutClassName="text-right text-callout tabular-nums whitespace-nowrap text-secondary"
-        />
+            <Select
+              aria-label={`Unit for ${topic.name}`}
+              value={topic.unit}
+              onValueChange={(unit) => patch({ unit: unit as Unit })}
+              className={clsx(
+                "-mx-1 h-6 w-full rounded-chip bg-transparent px-1",
+                "text-callout text-secondary",
+                "hover:bg-fill-strong focus:bg-content focus:text-label",
+              )}
+              options={UNITS.map((candidate) => ({ value: candidate, label: UNIT_LABELS[candidate].plural }))}
+            />
+
+            <TopicProgressCell
+              topic={topic}
+              today={today}
+              tint={courseColorValue(course.color)}
+              sliderClassName="w-full min-w-0"
+              readoutClassName="text-right text-callout tabular-nums whitespace-nowrap text-secondary"
+            />
+          </div>
+        </div>
+
+        <div className="disclosure" style={{ height: disclosure.expanded ? blocksHeight : 0 }}>
+          {disclosure.mounted ? (
+            <ul className="flex flex-col">
+              {blockRows.map(({ key, item: block, motion }) => (
+                <BlockSubRow
+                  key={key}
+                  block={block}
+                  unit={unit}
+                  motion={motion}
+                  onSelect={() => onSelectBlock(block)}
+                  onDelete={() => run(repository.deleteStudyBlock(block.id))}
+                />
+              ))}
+              <li style={{ height: BLOCK_ROW_HEIGHT }}>
+                <button
+                  type="button"
+                  onClick={addBlock}
+                  className="flex h-full w-full items-center gap-1.5 rounded-chip pl-8 text-left text-callout text-tertiary hover:bg-fill hover:text-secondary"
+                >
+                  <Plus aria-hidden="true" className="size-3.5 shrink-0" />
+                  Add block
+                </button>
+              </li>
+            </ul>
+          ) : null}
+        </div>
       </li>
     </ContextMenu>
+  );
+}
+
+function BlockSubRow({
+  block,
+  unit,
+  motion,
+  onSelect,
+  onDelete,
+}: {
+  block: StudyBlock;
+  unit: string;
+  /** Where this row is in an arrival or a departure; see `useRowTransitions`. */
+  motion: RowMotion;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const span = block.startDate === block.endDate ? block.startDate : `${block.startDate} – ${block.endDate}`;
+
+  return (
+    <li
+      className="row-motion group flex items-center gap-2 pr-2"
+      style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-chip py-0.5 pl-8 text-left text-callout text-secondary hover:bg-fill hover:text-label"
+      >
+        <span className="tabular-nums">{span}</span>
+        {block.plannedUnits ? (
+          <span className="tabular-nums text-tertiary">
+            {block.plannedUnits} {unit}
+          </span>
+        ) : null}
+      </button>
+      <IconButton
+        size="sm"
+        label={`Delete the block on ${span}`}
+        icon={<Trash2 />}
+        onClick={onDelete}
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+      />
+    </li>
   );
 }
 
@@ -255,15 +394,4 @@ function Cell({
       )}
     />
   );
-}
-
-/** Groups consecutive rows by section, preserving the order the topics arrive in. */
-function groupBySection(topics: readonly Topic[]): Array<[string | undefined, Topic[]]> {
-  const groups: Array<[string | undefined, Topic[]]> = [];
-  for (const topic of topics) {
-    const last = groups.at(-1);
-    if (last && last[0] === topic.section) last[1].push(topic);
-    else groups.push([topic.section, [topic]]);
-  }
-  return groups;
 }

@@ -24,8 +24,6 @@ export function topic(overrides: Partial<Topic> = {}): Topic {
     unit: "slides",
     totalUnits: 0,
     completedUnits: 0,
-    status: "planned",
-    priority: "normal",
     dependencyIds: [],
     color: "violet",
     notes: "",

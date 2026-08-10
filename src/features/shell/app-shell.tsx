@@ -6,10 +6,14 @@
  * ```
  * ┌───────────────┬──────────────────────────────┬──────────────┐
  * │  sidebar      │  content                     │  inspector   │
- * │  focus +      │  Today / Timeline / Outline  │  contextual  │
- * │  course list  │                              │  (⌘I)        │
+ * │  focus +      │  Today / Timeline / Outline  │  whatever is │
+ * │  course list  │                              │  selected    │
  * └───────────────┴──────────────────────────────┴──────────────┘
  * ```
+ *
+ * The right column has no control of its own. It is open when something is
+ * selected and closed when nothing is, which is one state instead of the two
+ * that a toggle and a selection could disagree about.
  *
  * This file's whole job is wiring: it reads the repository, derives what the
  * three columns need, and hands the pieces down. Everything with an opinion in
@@ -34,6 +38,7 @@ import {
   type Course,
   type Exam,
   type SampleDatasetId,
+  type StudyBlock,
   type Topic,
 } from "@/domain";
 import {
@@ -47,7 +52,7 @@ import { AppSidebar } from "./app-sidebar";
 import { AppToolbar } from "./app-toolbar";
 import { CommandPalette } from "./command-palette";
 import { Inspector } from "./inspector";
-import { ConfirmDeleteSheet, ConfirmPlanDeleteSheet, EditPlanSheet, NewCourseSheet, NewPlanSheet, SampleDataSheet } from "./sheets";
+import { ConfirmDeleteSheet, NewCourseSheet, NewPlanSheet, SampleDataSheet } from "./sheets";
 import { OutlineView } from "@/features/outline/outline-view";
 import { TimelineView } from "@/features/timeline/timeline-view";
 import { TodayView } from "@/features/today/today-view";
@@ -59,7 +64,7 @@ import {
   resolveSelection,
   type ResolvedSelection,
 } from "@/features/workspace/scope";
-import { toggleRevealSelection, revealSelection, useWorkspace } from "@/features/workspace/store";
+import { toggleSelection, useWorkspace } from "@/features/workspace/store";
 
 /** Read once per mount: the planner is day-granular, so a re-render mid-day is not worth it. */
 function useToday() {
@@ -87,8 +92,6 @@ export function AppShell() {
     () => typeof window === "undefined" || window.innerWidth >= 1024,
   );
   const [sampleDataOpen, setSampleDataOpen] = useState(false);
-  const [editPlanOpen, setEditPlanOpen] = useState(false);
-  const [deletePlanOpen, setDeletePlanOpen] = useState(false);
 
   const workspace = useWorkspace();
 
@@ -112,10 +115,11 @@ export function AppShell() {
     () => resolveSelection(plan, workspace.selection),
     [plan, workspace.selection],
   );
-  // A stale id can remain in the ephemeral store after its course or topic is
-  // filtered out or deleted. The inspector describes resolved data, so its
-  // visible state follows that data rather than leaving an empty panel open.
-  const inspectorOpen = workspace.inspectorOpen && selection !== null;
+  // The panel has no switch: it is present exactly when something resolves to
+  // put in it. A stale id left in the ephemeral store after its course or topic
+  // was deleted therefore closes the panel rather than leaving an empty one
+  // open, which is the same rule stated once instead of twice.
+  const inspectorOpen = selection !== null;
   const pendingDelete = useMemo(
     () => resolveSelection(plan, workspace.pendingDelete),
     [plan, workspace.pendingDelete],
@@ -166,8 +170,12 @@ export function AppShell() {
   };
 
   const deleteResolved = (target: NonNullable<ResolvedSelection>) => {
-    if (target.kind === "course") run(repository.deleteCourse(target.course.id));
+    if (target.kind === "plan") {
+      const nextPlan = snapshot.plans.find((candidate) => candidate.id !== target.plan.id);
+      run(repository.deletePlan(target.plan.id).then(() => workspace.setPlan(nextPlan?.id ?? null)));
+    } else if (target.kind === "course") run(repository.deleteCourse(target.course.id));
     else if (target.kind === "topic") run(repository.deleteTopic(target.topic.id));
+    else if (target.kind === "block") run(repository.deleteStudyBlock(target.block.id));
     else run(repository.deleteExam(target.exam.id));
     // The thing the inspector was describing is gone; leaving the id behind
     // would have `resolveSelection` return null anyway, but clearing it here
@@ -179,11 +187,12 @@ export function AppShell() {
   // opens its section in the outline; clicking it again clears that selection.
   // It does not hide the other courses — narrowing to one is what the Focus
   // rows are for.
-  const selectCourse = (course: Course) => toggleRevealSelection({ kind: "course", id: course.id });
+  const selectCourse = (course: Course) => toggleSelection({ kind: "course", id: course.id });
   const selectTopic = (_course: Course, topic: Topic) =>
-    toggleRevealSelection({ kind: "topic", id: topic.id });
+    toggleSelection({ kind: "topic", id: topic.id });
   const selectExam = (_course: Course, exam: Exam) =>
-    toggleRevealSelection({ kind: "exam", id: exam.id });
+    toggleSelection({ kind: "exam", id: exam.id });
+  const selectBlock = (block: StudyBlock) => toggleSelection({ kind: "block", id: block.id });
 
   /* ─── Command palette ─────────────────────────────────────────────────── */
 
@@ -198,8 +207,7 @@ export function AppShell() {
           focusAttention: () => workspace.setFocus({ kind: "attention" }),
           focusSoon: () => workspace.setFocus({ kind: "soon" }),
           revealCourse: selectCourse,
-          revealTopic: (topic) => revealSelection({ kind: "topic", id: topic.id }),
-          toggleInspector: workspace.toggleInspector,
+          revealTopic: (topic) => workspace.select({ kind: "topic", id: topic.id }),
           newSemester: () => workspace.setCreating("plan"),
           newCourse: () => workspace.setCreating("course"),
           loadSampleData: () => setSampleDataOpen(true),
@@ -223,8 +231,6 @@ export function AppShell() {
         contentId={contentId}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
-        inspectorOpen={inspectorOpen}
-        onToggleInspector={workspace.toggleInspector}
         onOpenPalette={() => workspace.setPaletteOpen(true)}
         onNewPlan={() => workspace.setCreating("plan")}
         onNewCourse={() => workspace.setCreating("course")}
@@ -275,8 +281,8 @@ export function AppShell() {
             selectedCourseId={workspace.selection?.kind === "course" ? workspace.selection.id : null}
             onSelectPlan={workspace.setPlan}
             onNewPlan={() => workspace.setCreating("plan")}
-            onEditPlan={() => setEditPlanOpen(true)}
-            onDeletePlan={() => setDeletePlanOpen(true)}
+            onInspectPlan={() => plan && toggleSelection({ kind: "plan", id: plan.id })}
+            planSelected={workspace.selection?.kind === "plan"}
             onSetFocus={workspace.setFocus}
             onSetQuery={workspace.setQuery}
             onSelectCourse={selectCourse}
@@ -329,7 +335,7 @@ export function AppShell() {
               query={workspace.query}
               selectedId={workspace.selection?.id ?? null}
               onSelectTopic={selectTopic}
-
+              onSelectBlock={selectBlock}
               onClearSelection={() => workspace.select(null)}
               onGoToOutline={() => workspace.setView("outline")}
             />
@@ -368,15 +374,8 @@ export function AppShell() {
             selection={selection}
             health={health}
             today={today}
-            onDelete={(target) =>
-              workspace.setPendingDelete(
-                target.kind === "course"
-                  ? { kind: "course", id: target.course.id }
-                  : target.kind === "topic"
-                    ? { kind: "topic", id: target.topic.id }
-                    : { kind: "exam", id: target.exam.id },
-              )
-            }
+            onSelect={workspace.select}
+            onDelete={workspace.setPendingDelete}
           />
         </div>
       </div>
@@ -400,24 +399,7 @@ export function AppShell() {
         onCreate={(input) => run(repository.createPlan(input).then(workspace.setPlan))}
       />
 
-      <EditPlanSheet
-        plan={plan}
-        open={editPlanOpen}
-        onOpenChange={setEditPlanOpen}
-        onSave={(input) => { if (plan) run(repository.updatePlan(plan.id, input)); }}
-      />
 
-      <ConfirmPlanDeleteSheet
-        plan={plan}
-        open={deletePlanOpen}
-        onOpenChange={setDeletePlanOpen}
-        onConfirm={() => {
-          if (!plan) return;
-          const nextPlan = snapshot.plans.find((candidate) => candidate.id !== plan.id);
-          run(repository.deletePlan(plan.id).then(() => workspace.setPlan(nextPlan?.id ?? null)));
-          workspace.select(null);
-        }}
-      />
 
       <NewCourseSheet
         open={workspace.creating === "course"}
@@ -428,7 +410,7 @@ export function AppShell() {
           run(
             repository
               .createCourse(plan.id, input)
-              .then((courseId) => revealSelection({ kind: "course", id: courseId })),
+              .then((courseId) => workspace.select({ kind: "course", id: courseId })),
           );
         }}
       />

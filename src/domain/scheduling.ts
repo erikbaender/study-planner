@@ -12,12 +12,12 @@
  * silently returning an impossible plan would be worse than either: this
  * persona's whole problem is not knowing she is behind until it is too late.
  *
- * The algorithm is forward-filling under a backwards-derived priority, not a
- * true backwards pass. Topics are ordered by the deadline they answer to, then
- * by priority, then by their dependencies; days are then filled from today
- * forward at capacity. For a single deadline the two are equivalent, and this
- * one degrades sensibly when several courses compete for the same days — which
- * is the case that actually occurs here, with ten courses and ten exams.
+ * The algorithm is forward-filling under a backwards-derived order, not a true
+ * backwards pass. Topics are ordered by the deadline they answer to, then by
+ * their dependencies; days are then filled from today forward at capacity.
+ * For a single deadline the two are equivalent, and this one degrades
+ * sensibly when several courses compete for the same days — which is the
+ * case that actually occurs here, with ten courses and ten exams.
  */
 
 import { addDays, isStudyDay, type StudyCalendar } from "./dates";
@@ -66,8 +66,6 @@ function remainingToSchedule(topic: Topic): number {
     .reduce((sum, block) => sum + (block.plannedUnits ?? 0), 0);
   return Math.max(0, outstanding - manual);
 }
-
-const PRIORITY_RANK = { high: 0, normal: 1, low: 2 } as const;
 
 /**
  * Plans the courses given, from `today` forward.
@@ -163,7 +161,7 @@ export function schedule(options: {
  *
  * Nearest deadline first, because a day given to a course whose exam is in two
  * months is a day taken from one whose exam is next week. Within a course,
- * dependencies come before priority — a high-priority topic that cannot be
+ * topological order of dependencies decides the rest — a topic that cannot be
  * started yet is not more urgent, it is blocked.
  */
 function orderTopics(
@@ -185,8 +183,7 @@ function orderTopics(
       topic,
       courseId: course.id,
       deadline,
-      // Kept so priority can reorder within a course without breaking the
-      // topological guarantee: a topic never overtakes one it depends on.
+      // Topological index: a topic never overtakes one it depends on.
       depth: index,
     }));
   });
@@ -194,7 +191,6 @@ function orderTopics(
   return entries.sort(
     (left, right) =>
       (left.deadline < right.deadline ? -1 : left.deadline > right.deadline ? 1 : 0) ||
-      PRIORITY_RANK[left.topic.priority] - PRIORITY_RANK[right.topic.priority] ||
       left.depth - right.depth,
   );
 }

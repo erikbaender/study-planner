@@ -5,25 +5,20 @@
  * each is not going to click "New topic" four hundred times. Paste an outline,
  * get topics.
  *
- * Format — unindented lines are sections, indented lines are topics:
+ * Format — one topic per line:
  *
- *     Block 1
- *       Cell biology — 120 slides
- *       Membrane transport — 85
- *     Block 2
- *       Glycolysis — 140 pages
+ *     Cell biology — 120 slides
+ *     Membrane transport — 85
+ *     Glycolysis — 140 pages
  *
  * Sizes are optional. A bare number inherits the unit from the previous topic,
- * so a run of same-unit lines needs the word only once. A file with no
- * indentation at all is read as a flat topic list, since that is what someone
- * pasting a lecture index will most often have.
+ * so a run of same-unit lines needs the word only once.
  */
 
 import { UNITS, type Unit } from "./types";
 
 export type ParsedTopic = {
   name: string;
-  section?: string;
   totalUnits: number;
   unit: Unit;
   /** 1-based, for pointing at the offending line in an error. */
@@ -83,31 +78,15 @@ export function parseOutline(
   const issues: OutlineParseIssue[] = [];
 
   const rawLines = input.replace(/\r\n?/g, "\n").split("\n");
-  // Tabs count as indentation of one level; expanding them keeps the
-  // "is this line indented" test uniform across tab and space users.
-  const lines = rawLines.map((line) => line.replace(/\t/g, "  "));
-  const hasAnyIndentation = lines.some((line) => line.trim().length > 0 && /^\s+/.test(line));
-
-  let currentSection: string | undefined;
   let inheritedUnit: Unit = options.defaultUnit ?? "slides";
 
-  lines.forEach((line, index) => {
+  rawLines.forEach((line, index) => {
     const lineNumber = index + 1;
     const text = line.trim();
     if (!text) return;
     // Allow list markers so a pasted bulleted outline works unedited.
     const withoutBullet = text.replace(/^[-*•]\s+/, "");
     if (!withoutBullet) return;
-
-    const isIndented = /^\s+/.test(line);
-
-    // Without indentation anywhere, treat every line as a topic — a flat
-    // lecture index is the most common paste, and reading it as 40 empty
-    // sections would be useless.
-    if (hasAnyIndentation && !isIndented) {
-      currentSection = stripSizeSuffix(withoutBullet);
-      return;
-    }
 
     const match = withoutBullet.match(SIZE_PATTERN);
     const name = stripSizeSuffix(withoutBullet);
@@ -143,7 +122,7 @@ export function parseOutline(
       }
     }
 
-    topics.push({ name, section: currentSection, totalUnits, unit, line: lineNumber });
+    topics.push({ name, totalUnits, unit, line: lineNumber });
   });
 
   return { topics, issues };
@@ -155,20 +134,12 @@ function stripSizeSuffix(text: string): string {
 
 /** Round-trips through `parseOutline`; used to seed the bulk editor from existing topics. */
 export function formatOutline(
-  topics: readonly { name: string; section?: string; totalUnits: number; unit: Unit }[],
+  topics: readonly { name: string; totalUnits: number; unit: Unit }[],
 ): string {
-  const lines: string[] = [];
-  let currentSection: string | undefined;
-  const sectioned = topics.some((topic) => topic.section);
-
-  for (const topic of topics) {
-    if (sectioned && topic.section !== currentSection) {
-      currentSection = topic.section;
-      if (currentSection) lines.push(currentSection);
-    }
-    const size = topic.totalUnits > 0 ? ` — ${topic.totalUnits} ${topic.unit}` : "";
-    lines.push(`${sectioned ? "  " : ""}${topic.name}${size}`);
-  }
-
-  return lines.join("\n");
+  return topics
+    .map((topic) => {
+      const size = topic.totalUnits > 0 ? ` — ${topic.totalUnits} ${topic.unit}` : "";
+      return `${topic.name}${size}`;
+    })
+    .join("\n");
 }

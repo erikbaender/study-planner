@@ -14,7 +14,7 @@
 
 import { z } from "zod";
 import { DEFAULT_COLOR_ID, resolveCourseColorId } from "@/domain/palette";
-import { EXAM_KINDS, EXAM_STATUSES, PRIORITIES, TOPIC_STATUSES, UNITS } from "@/domain/types";
+import { EXAM_KINDS, EXAM_STATUSES, UNITS } from "@/domain/types";
 import type { Plan, PlannerSnapshot } from "@/domain/types";
 
 export const EXPORT_VERSION = 2;
@@ -26,14 +26,14 @@ const blockSchema = z.object({
   source: z.enum(["auto", "manual"]).default("manual"),
 });
 
+// `section`, `priority` and `status` are read (and dropped) by `z.object`'s
+// default behaviour of stripping unrecognized keys, so an older export that
+// still carries them imports cleanly instead of failing validation.
 const topicSchema = z.object({
   name: z.string().min(1),
-  section: z.string().optional(),
   unit: z.enum(UNITS).default("slides"),
   totalUnits: z.number().nonnegative().default(0),
   completedUnits: z.number().nonnegative().default(0),
-  status: z.enum(TOPIC_STATUSES).default("planned"),
-  priority: z.enum(PRIORITIES).default("normal"),
   color: z.string().default(DEFAULT_COLOR_ID).transform(resolveCourseColorId),
   notes: z.string().default(""),
   dependencies: z.array(z.string()).default([]),
@@ -121,12 +121,9 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
           })),
           topics: course.topics.map((topic) => ({
             name: topic.name,
-            section: topic.section,
             unit: topic.unit,
             totalUnits: topic.totalUnits,
             completedUnits: topic.completedUnits,
-            status: topic.status,
-            priority: topic.priority,
             color: resolveCourseColorId(topic.color),
             notes: topic.notes,
             dependencies: topic.dependencyIds
@@ -246,12 +243,9 @@ export function toPlans(
               id: topicId,
               courseId,
               name: topicInput.name,
-              section: topicInput.section,
               unit: topicInput.unit,
               totalUnits: topicInput.totalUnits,
               completedUnits: topicInput.completedUnits,
-              status: topicInput.status,
-              priority: topicInput.priority,
               dependencyIds: topicInput.dependencies
                 .map((name) => topicIdsByName.get(name))
                 .filter((id): id is string => id !== undefined && id !== topicId),

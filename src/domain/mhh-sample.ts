@@ -19,6 +19,7 @@ import type {
   Preferences,
   StudyLogEntry,
   Topic,
+  TopicStatus,
   Unit,
 } from "./types";
 
@@ -255,17 +256,9 @@ export function generateMhhShowcaseData(today: IsoDate): SeedData {
         id: topicId,
         courseId,
         name,
-        section: showcaseSection(topicIndex),
         unit,
         totalUnits,
         completedUnits,
-        status,
-        priority:
-          status === "active" || topicIndex % 5 === 0
-            ? "high"
-            : topicIndex % 6 === 0
-              ? "low"
-              : "normal",
         dependencyIds:
           topicIndex > 0 && topicIndex % 4 === 0
             ? [`topic_sample_mhh_showcase_${blueprint.topics[topicIndex - 1][0]}`]
@@ -360,15 +353,11 @@ function showcaseSize(unit: Unit, issueNumber: number): number {
   }
 }
 
-function showcaseSection(topicIndex: number): string {
-  return `Phase ${Math.floor(topicIndex / 5) + 1}`;
-}
-
 function showcaseBlocks(options: {
   topicId: string;
   topicIndex: number;
   completionPoint: number;
-  status: Topic["status"];
+  status: TopicStatus;
   totalUnits: number;
   completedUnits: number;
   today: IsoDate;
@@ -475,8 +464,6 @@ function buildTopic(
     unit: "items",
     totalUnits: 1,
     completedUnits: completed ? 1 : 0,
-    status: completed ? "done" : "planned",
-    priority: "normal",
     dependencyIds: [],
     color,
     notes: `Source: https://github.com/erikbaender/mhh/issues/${issueNumber}`,

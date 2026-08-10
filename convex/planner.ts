@@ -29,8 +29,6 @@ const unitValidator = v.union(
   v.literal("hours"),
   v.literal("items"),
 );
-const statusValidator = v.union(v.literal("planned"), v.literal("active"), v.literal("done"));
-const priorityValidator = v.union(v.literal("low"), v.literal("normal"), v.literal("high"));
 const examKindValidator = v.union(
   v.literal("exam"),
   v.literal("deadline"),
@@ -450,10 +448,8 @@ export const createTopic = mutation({
   args: {
     courseId: v.id("courses"),
     name: v.string(),
-    section: v.optional(v.string()),
     unit: v.optional(unitValidator),
     totalUnits: v.optional(v.number()),
-    priority: v.optional(priorityValidator),
     notes: v.optional(v.string()),
     color: courseColorValidator,
   },
@@ -467,12 +463,9 @@ export const createTopic = mutation({
     return await ctx.db.insert("topics", {
       courseId: args.courseId,
       name: args.name,
-      section: args.section,
       unit: args.unit ?? "slides",
       totalUnits,
       completedUnits: 0,
-      status: "planned",
-      priority: args.priority ?? "normal",
       dependencyIds: [],
       color: args.color,
       notes: args.notes ?? "",
@@ -490,7 +483,6 @@ export const createTopics = mutation({
     topics: v.array(
       v.object({
         name: v.string(),
-        section: v.optional(v.string()),
         unit: unitValidator,
         totalUnits: v.number(),
       }),
@@ -510,12 +502,9 @@ export const createTopics = mutation({
         await ctx.db.insert("topics", {
           courseId: args.courseId,
           name: topic.name,
-          section: topic.section,
           unit: topic.unit,
           totalUnits: topic.totalUnits,
           completedUnits: 0,
-          status: "planned",
-          priority: "normal",
           dependencyIds: [],
           color: args.color,
           notes: "",
@@ -534,12 +523,9 @@ export const updateTopic = mutation({
   args: {
     topicId: v.id("topics"),
     name: v.string(),
-    section: v.optional(v.string()),
     unit: unitValidator,
     totalUnits: v.number(),
     completedUnits: v.number(),
-    status: statusValidator,
-    priority: priorityValidator,
     notes: v.string(),
     color: courseColorValidator,
   },
@@ -549,12 +535,9 @@ export const updateTopic = mutation({
     assertProgress(args.completedUnits, args.totalUnits);
     await ctx.db.patch(args.topicId, {
       name: args.name,
-      section: args.section,
       unit: args.unit,
       totalUnits: args.totalUnits,
       completedUnits: args.completedUnits,
-      status: args.status,
-      priority: args.priority,
       notes: args.notes,
       color: args.color,
       updatedAt: Date.now(),
@@ -728,12 +711,6 @@ export const logStudy = mutation({
     const now = Date.now();
     await ctx.db.patch(args.topicId, {
       completedUnits,
-      status:
-        topic.totalUnits > 0 && completedUnits >= topic.totalUnits
-          ? "done"
-          : completedUnits > 0
-            ? "active"
-            : "planned",
       updatedAt: now,
     });
 
@@ -782,12 +759,9 @@ const importBlock = v.object({
 });
 const importTopic = v.object({
   name: v.string(),
-  section: v.optional(v.string()),
   unit: unitValidator,
   totalUnits: v.number(),
   completedUnits: v.number(),
-  status: statusValidator,
-  priority: priorityValidator,
   color: courseColorValidator,
   notes: v.string(),
   /** Dependencies travel as names — ids are not stable across deployments. */
@@ -934,12 +908,9 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
         const topicId = await ctx.db.insert("topics", {
           courseId,
           name: topicInput.name,
-          section: topicInput.section,
           unit: topicInput.unit,
           totalUnits: topicInput.totalUnits,
           completedUnits: topicInput.completedUnits,
-          status: topicInput.status,
-          priority: topicInput.priority,
           dependencyIds: [],
           color: topicInput.color,
           notes: topicInput.notes,

@@ -14,6 +14,7 @@
  */
 
 import { addDays, weekdayOf } from "./dates";
+import { topicStatus } from "./metrics";
 import { coursePalette } from "./palette";
 import type {
   Course,
@@ -225,7 +226,10 @@ export function generateSeedData(options: SeedOptions): SeedData {
     const topics: Topic[] = [];
     let order = 0;
 
-    for (const section of blueprint.sections) {
+    // `sections.length` still shapes the pacing below — dependency chains reset
+    // and completion tapers per group — even though the grouping itself is no
+    // longer stored on the topic.
+    for (let sectionIndex = 0; sectionIndex < blueprint.sections.length; sectionIndex += 1) {
       let previousTopicId: string | undefined;
 
       for (let index = 0; index < blueprint.topicsPerSection; index += 1) {
@@ -246,12 +250,9 @@ export function generateSeedData(options: SeedOptions): SeedData {
           id: topicId,
           courseId,
           name,
-          section,
           unit: blueprint.unit,
           totalUnits,
           completedUnits,
-          status: completedUnits >= totalUnits ? "done" : completedUnits > 0 ? "active" : "planned",
-          priority: random() < 0.15 ? "high" : random() < 0.2 ? "low" : "normal",
           // A short chain every few topics, so dependency handling is exercised
           // without producing an unreadable graph.
           dependencyIds: previousTopicId && index % 4 === 3 ? [previousTopicId] : [],
@@ -269,7 +270,7 @@ export function generateSeedData(options: SeedOptions): SeedData {
     // A handful of hand-placed blocks per course, so reflow has `manual` blocks
     // to preserve from the very first run.
     for (const topic of topics) {
-      if (topic.status === "planned" && random() < 0.12) {
+      if (topicStatus(topic) === "planned" && random() < 0.12) {
         const start = addDays(today, Math.floor(random() * Math.max(blueprint.examOffset - 2, 1)));
         topic.blocks.push({
           id: `block_${topic.id}`,

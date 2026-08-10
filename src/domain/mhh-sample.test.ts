@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessCourse, studyStreak } from "./metrics";
+import { assessCourse, studyStreak, topicStatus } from "./metrics";
 import { generateMhhSampleData, generateMhhShowcaseData } from "./mhh-sample";
 import { generateSampleDataset, SAMPLE_DATASETS } from "./sample-datasets";
 import { isCourseColorId } from "./palette";
@@ -35,13 +35,15 @@ describe("generateMhhSampleData", () => {
     const wiederholung = biochemie.topics.find((topic) => topic.name === "Wiederholung")!;
 
     expect(biochemie.exams[0].startDate).toBe("2026-07-16");
-    expect(einfuehrung).toMatchObject({ status: "done", completedUnits: 1 });
+    expect(einfuehrung).toMatchObject({ completedUnits: 1 });
+    expect(topicStatus(einfuehrung)).toBe("done");
     expect(einfuehrung.blocks[0]).toMatchObject({
       startDate: "2026-03-16",
       endDate: "2026-03-22",
       source: "manual",
     });
-    expect(wiederholung).toMatchObject({ status: "planned", completedUnits: 0 });
+    expect(wiederholung).toMatchObject({ completedUnits: 0 });
+    expect(topicStatus(wiederholung)).toBe("planned");
   });
 
   it("gives every captured entity a unique id", () => {
@@ -80,18 +82,15 @@ describe("generateMhhShowcaseData", () => {
     expect(new Set(topics.map((topic) => topic.unit))).toEqual(
       new Set(["slides", "pages", "cards", "videos", "hours"]),
     );
-    expect(new Set(topics.map((topic) => topic.status))).toEqual(
+    expect(new Set(topics.map((topic) => topicStatus(topic)))).toEqual(
       new Set(["done", "active", "planned"]),
-    );
-    expect(new Set(topics.map((topic) => topic.priority))).toEqual(
-      new Set(["high", "normal", "low"]),
     );
     expect(topics.every((topic) => topic.totalUnits > 1)).toBe(true);
     expect(topics.some((topic) => topic.dependencyIds.length > 0)).toBe(true);
     expect(new Set(blocks.map((block) => block.source))).toEqual(new Set(["manual", "auto"]));
-    expect(topics.some((topic) => topic.blocks.length === 0 && topic.status === "planned")).toBe(
-      true,
-    );
+    expect(
+      topics.some((topic) => topic.blocks.length === 0 && topicStatus(topic) === "planned"),
+    ).toBe(true);
   });
 
   it("creates a believable current scenario with most courses on track", () => {

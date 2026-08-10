@@ -16,92 +16,11 @@ import {
   leastUsedColor,
   SAMPLE_DATASETS,
   type Course,
-  type Plan,
   type SampleDatasetId,
 } from "@/domain";
 import { Button, Sheet, TextField } from "@/ui";
 import type { ResolvedSelection } from "@/features/workspace/scope";
 import { useResetWhen } from "./use-reset-when";
-
-export function EditPlanSheet({
-  plan,
-  open,
-  onOpenChange,
-  onSave,
-}: {
-  plan: Plan | undefined;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSave: (input: { name: string; notes?: string }) => void;
-}) {
-  const [draft, setDraft] = useState(() => ({
-    name: plan?.name ?? "",
-    notes: plan?.notes ?? "",
-  }));
-  useResetWhen(`${plan?.id ?? ""}:${open}`, () =>
-    setDraft({
-      name: plan?.name ?? "",
-      notes: plan?.notes ?? "",
-    }),
-  );
-
-  const invalid = draft.name.trim() === "";
-  const submit = () => {
-    if (invalid) return;
-    onSave({
-      name: draft.name.trim(),
-      notes: draft.notes.trim() || undefined,
-    });
-    onOpenChange(false);
-  };
-
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={onOpenChange}
-      title="Edit semester"
-      description="Change the semester name or notes."
-      footer={
-        <>
-          <Button onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="accent" disabled={invalid} onClick={submit}>Save</Button>
-        </>
-      }
-    >
-      <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); submit(); }}>
-        <TextField label="Name" autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-        <TextField label="Notes" value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} />
-        <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only">Save</button>
-      </form>
-    </Sheet>
-  );
-}
-
-export function ConfirmPlanDeleteSheet({
-  plan,
-  open,
-  onOpenChange,
-  onConfirm,
-}: {
-  plan: Plan | undefined;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-}) {
-  const count = plan?.courses.length ?? 0;
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={onOpenChange}
-      width="sm"
-      title={plan ? `Delete “${plan.name}”?` : "Delete semester?"}
-      description={count === 0 ? "This semester has no courses." : `Its ${count} course${count === 1 ? "" : "s"} and all their study data go with it.`}
-      footer={<><Button onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="danger" onClick={() => { onConfirm(); onOpenChange(false); }}>Delete</Button></>}
-    >
-      <p className="text-body text-secondary">This cannot be undone.</p>
-    </Sheet>
-  );
-}
 
 export function SampleDataSheet({
   open,
@@ -385,7 +304,25 @@ function describe(target: NonNullable<ResolvedSelection> | null): {
   if (target.kind === "topic") {
     return {
       title: `Delete “${target.topic.name}”?`,
-      description: `In ${target.course.name}. Progress logged against it is removed too.`,
+      description: `In ${target.course.name}. Progress logged against it and every block scheduled for it go with it.`,
+    };
+  }
+
+  if (target.kind === "block") {
+    return {
+      title: "Delete this block?",
+      description: `${target.block.startDate} in ${target.topic.name}. The topic and its progress stay.`,
+    };
+  }
+
+  if (target.kind === "plan") {
+    const count = target.plan.courses.length;
+    return {
+      title: `Delete “${target.plan.name}”?`,
+      description:
+        count === 0
+          ? "The semester has no courses."
+          : `All ${count} course${count === 1 ? "" : "s"} in it, and everything under them, go with it.`,
     };
   }
 

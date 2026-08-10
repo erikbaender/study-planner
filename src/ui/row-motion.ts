@@ -1,6 +1,21 @@
+"use client";
+
+/**
+ * Lists that open, close, arrive, leave and change places.
+ *
+ * Written for the timeline's lanes and now shared, because every list in the
+ * app is filtered by the same search field and disclosed by the same kind of
+ * triangle. One implementation is what keeps a course opening in the outline
+ * and a course opening in the chart the same gesture at the same speed, rather
+ * than two people's idea of what 240ms feels like.
+ *
+ * Row height is a parameter rather than a constant: the chart's rows and the
+ * inspector's reference rows are different sizes, and everything here is
+ * arithmetic on that one number.
+ */
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motionCurveValue, motionDuration, prefersReducedMotion } from "./motion";
-import { ROW_HEIGHT } from "./layout";
 /**
  * Open and closed, with the frames in between.
  *
@@ -72,17 +87,26 @@ type RowPhase = "enter" | "grow" | "shown" | "fade" | "shrink";
 /** What a row looks like right now: how much room it takes, and whether it is drawn. */
 export type RowMotion = { height: number; visible: boolean };
 
-// One object per state rather than one per render: a row is memoized on its
-// props, and a fresh `{height, visible}` every time would either re-render every
-// lane on every render or — comparing by identity — never re-render the one that
-// actually moved.
+// One object per state *per height* rather than one per render: a row is
+// memoized on its props, and a fresh `{height, visible}` every time would either
+// re-render every lane on every render or — comparing by identity — never
+// re-render the one that actually moved.
 const ROW_COLLAPSED: RowMotion = { height: 0, visible: false };
-const ROW_SILENT: RowMotion = { height: ROW_HEIGHT, visible: false };
-const ROW_SHOWN: RowMotion = { height: ROW_HEIGHT, visible: true };
+const states = new Map<number, { silent: RowMotion; shown: RowMotion }>();
 
-function motionOf(phase: RowPhase): RowMotion {
+function statesFor(rowHeight: number) {
+  let entry = states.get(rowHeight);
+  if (!entry) {
+    entry = { silent: { height: rowHeight, visible: false }, shown: { height: rowHeight, visible: true } };
+    states.set(rowHeight, entry);
+  }
+  return entry;
+}
+
+function motionOf(phase: RowPhase, rowHeight: number): RowMotion {
   if (phase === "enter" || phase === "shrink") return ROW_COLLAPSED;
-  return phase === "shown" ? ROW_SHOWN : ROW_SILENT;
+  const { silent, shown } = statesFor(rowHeight);
+  return phase === "shown" ? shown : silent;
 }
 
 type RenderedRow<T> = { key: string; item: T; phase: RowPhase };
@@ -141,6 +165,7 @@ function refreshRows<T>(
 export function useRowTransitions<T>(
   items: readonly T[],
   keyOf: (item: T) => string,
+  rowHeight: number,
 ): readonly { key: string; item: T; motion: RowMotion }[] {
   const [rendered, setRendered] = useState<readonly RenderedRow<T>[]>(() =>
     items.map((item) => ({ key: keyOf(item), item, phase: "shown" as RowPhase })),
@@ -207,8 +232,8 @@ export function useRowTransitions<T>(
   }, [phases]);
 
   return useMemo(
-    () => rendered.map(({ key, item, phase }) => ({ key, item, motion: motionOf(phase) })),
-    [rendered],
+    () => rendered.map(({ key, item, phase }) => ({ key, item, motion: motionOf(phase, rowHeight) })),
+    [rendered, rowHeight],
   );
 }
 
@@ -221,16 +246,19 @@ export function useRowTransitions<T>(
  * frame, and the only way to know which two had moved was to have been watching
  * the right part of the screen.
  *
- * This is FLIP, with the "first" read for free. Every row in this lane is
- * exactly `ROW_HEIGHT` tall, so a row's old position is its old *index* — no
+ * This is FLIP, with the "first" read for free. Every row in the list is
+ * exactly `rowHeight` tall, so a row's old position is its old *index* — no
  * measuring, no forced layout, and nothing that costs anything on the renders
  * where the order did not change. Each moved row is put back where it was with
  * a transform, and that transform is released on the shared curve; the label in
  * the gutter carries the same `data-row-key` and is moved by the same loop, so
  * both halves of the row travel together.
  */
-export function useReorderAnimation(keys: readonly string[]) {
-  const ref = useRef<HTMLDivElement>(null);
+export function useReorderAnimation<E extends HTMLElement = HTMLDivElement>(
+  keys: readonly string[],
+  rowHeight: number,
+) {
+  const ref = useRef<E>(null);
   const previous = useRef<readonly string[]>(keys);
   // Renders are frequent and reorders are not, and `keys` is a fresh array on
   // every one of them. The effect is keyed on the order *as a string*, so it
@@ -275,7 +303,7 @@ export function useReorderAnimation(keys: readonly string[]) {
 
     for (const { element, by } of rows) {
       element.style.transition = "none";
-      element.style.transform = `translateY(${by * ROW_HEIGHT}px)`;
+      element.style.transform = `translateY(${by * rowHeight}px)`;
     }
     // Read, so the browser takes the offsets above as the transition's start
     // rather than collapsing both writes into no change at all.

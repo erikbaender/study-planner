@@ -5,26 +5,59 @@ import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   courseColorValue,
   courseProgress,
+  topicProgress,
+  UNIT_LABELS,
   type Course,
   type CourseHealth,
+  type IsoDate,
 } from "@/domain";
+import type { Selection } from "@/features/workspace/store";
 import { Badge, Button, ProgressBar, Separator } from "@/ui";
-import { ColorPicker, DraftText, Header, Row, Section } from "./shared";
+import { ColorPicker, DraftText, Header, ReferenceList, Row, Section } from "./shared";
 
 /* ─── Course ────────────────────────────────────────────────────────────── */
 
 export function CourseInspector({
   course,
   health,
+  today,
+  onSelect,
   onDelete,
 }: {
   course: Course;
   health: CourseHealth | undefined;
-  onDelete: () => void;
+  today: IsoDate;
+  onSelect: (selection: Selection) => void;
+  onDelete: (selection: NonNullable<Selection>) => void;
 }) {
   const repository = useRepository();
   const run = usePlannerRun();
   const progress = courseProgress(course);
+
+  /**
+   * A new topic is named rather than blank.
+   *
+   * An untitled row in a list of forty is indistinguishable from a rendering
+   * bug, and the panel puts the new topic straight into the inspector, where
+   * the name field is the first thing under the cursor anyway.
+   */
+  const addTopic = () =>
+    run(
+      repository
+        .createTopic(course.id, {
+          name: "New topic",
+          unit: course.topics.at(-1)?.unit ?? "slides",
+          color: course.color,
+        })
+        .then((id) => onSelect({ kind: "topic", id })),
+    );
+
+  const addExam = () =>
+    run(
+      repository
+        .createExam(course.id, { name: `${course.name} exam`, startDate: today })
+        .then((id) => onSelect({ kind: "exam", id })),
+    );
 
   const patch = (changes: Partial<{ name: string; code?: string; color: string; notes: string }>) =>
     run(
@@ -78,7 +111,6 @@ export function CourseInspector({
               // and reporting that as complete would be a fabrication.
               "No sizes recorded yet"}
         </Row>
-        <Row label="Topics">{course.topics.length}</Row>
         {health?.pace ? (
           <>
             <Row label="Pace">
@@ -111,6 +143,49 @@ export function CourseInspector({
 
       <Separator />
 
+      <ReferenceList
+        title="Exams"
+        items={course.exams.map((exam) => ({
+          id: exam.id,
+          label: exam.name,
+          detail:
+            exam.status === "provisional" && exam.endDate
+              ? `${exam.startDate} – ${exam.endDate}`
+              : exam.startDate,
+        }))}
+        empty="No exam date yet — a provisional window is enough to plan backwards from."
+        addLabel={`Add an exam to ${course.name}`}
+        onAdd={addExam}
+        onSelect={(id) => onSelect({ kind: "exam", id })}
+        onDelete={(id) => onDelete({ kind: "exam", id })}
+      />
+
+      <Separator />
+
+      <ReferenceList
+        title="Topics"
+        items={course.topics.map((topic) => {
+          const ratio = topicProgress(topic).ratio;
+          return {
+            id: topic.id,
+            label: topic.name,
+            // "No size" rather than 0%: a topic nobody has measured is not a
+            // topic nobody has started.
+            detail:
+              ratio === null
+                ? "no size"
+                : `${topic.completedUnits}/${topic.totalUnits} ${UNIT_LABELS[topic.unit].plural}`,
+          };
+        })}
+        empty="No topics yet. Paste your lecture list in the outline — it is far quicker than adding them one at a time."
+        addLabel={`Add a topic to ${course.name}`}
+        onAdd={addTopic}
+        onSelect={(id) => onSelect({ kind: "topic", id })}
+        onDelete={(id) => onDelete({ kind: "topic", id })}
+      />
+
+      <Separator />
+
       <Section title="Notes">
         <DraftText
           label="Notes"
@@ -124,7 +199,12 @@ export function CourseInspector({
       <Separator />
 
       <Section>
-        <Button variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onDelete}>
+        <Button
+          variant="plain"
+          leadingIcon={<Trash2 />}
+          className="text-negative"
+          onClick={() => onDelete({ kind: "course", id: course.id })}
+        >
           Delete course
         </Button>
       </Section>

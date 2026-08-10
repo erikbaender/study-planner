@@ -60,8 +60,8 @@ export function AppSidebar({
   selectedCourseId,
   onSelectPlan,
   onNewPlan,
-  onEditPlan,
-  onDeletePlan,
+  onInspectPlan,
+  planSelected,
   onSetFocus,
   onSetQuery,
   onSelectCourse,
@@ -81,8 +81,8 @@ export function AppSidebar({
   selectedCourseId: string | null;
   onSelectPlan: (planId: string) => void;
   onNewPlan: () => void;
-  onEditPlan: () => void;
-  onDeletePlan: () => void;
+  onInspectPlan: () => void;
+  planSelected: boolean;
   onSetFocus: (focus: Focus) => void;
   onSetQuery?: (query: string) => void;
   onSelectCourse: (course: Course) => void;
@@ -98,37 +98,46 @@ export function AppSidebar({
 
   return (
     <Sidebar label="Courses">
-      <DropdownMenu
-        label="Semester"
-        align="start"
-        items={[
-          ...plans.map((candidate) => ({
-            type: "checkbox" as const,
-            label: candidate.name,
-            checked: candidate.id === plan?.id,
-            onSelect: () => onSelectPlan(candidate.id),
-          })),
-          ...(plans.length > 0 ? [{ type: "separator" as const }] : []),
-          { label: "New semester…", icon: <Plus />, onSelect: onNewPlan },
-          ...(plan
-            ? [
-                { label: "Edit semester…", onSelect: onEditPlan },
-                { label: "Delete semester…", danger: true, onSelect: onDeletePlan },
-              ]
-            : []),
-        ]}
-        trigger={
-          <button
-            type="button"
-            className="flex h-7 w-full items-center gap-1.5 rounded-control px-2 text-left hover:bg-fill"
-          >
-            <span className="min-w-0 flex-1 truncate text-body font-semibold">
-              {plan?.name ?? "No semester"}
+      {/* Two controls on one line, because the header answers two questions
+          that are not the same: *which* semester (the chevron, a menu of them)
+          and *this* semester (the name, which inspects it). Renaming and
+          deleting used to be menu items opening sheets of their own; they are
+          fields in the panel now, like every other property in the app. */}
+      <div className="flex h-7 items-center gap-0.5">
+        <button
+          type="button"
+          onClick={onInspectPlan}
+          aria-current={planSelected ? "true" : undefined}
+          disabled={!plan}
+          className={clsx(
+            "flex h-7 min-w-0 flex-1 items-center rounded-control px-2 text-left",
+            planSelected ? "bg-accent-soft" : "hover:bg-fill",
+          )}
+        >
+          <span className="min-w-0 flex-1 truncate text-body font-semibold">
+            {plan?.name ?? "No semester"}
+          </span>
+        </button>
+        <DropdownMenu
+          label="Semester"
+          align="start"
+          items={[
+            ...plans.map((candidate) => ({
+              type: "checkbox" as const,
+              label: candidate.name,
+              checked: candidate.id === plan?.id,
+              onSelect: () => onSelectPlan(candidate.id),
+            })),
+            ...(plans.length > 0 ? [{ type: "separator" as const }] : []),
+            { label: "New semester…", icon: <Plus />, onSelect: onNewPlan },
+          ]}
+          trigger={
+            <span>
+              <IconButton size="sm" label="Switch semester" icon={<ChevronsUpDown />} />
             </span>
-            <ChevronsUpDown aria-hidden="true" className="size-3.5 shrink-0 text-tertiary" />
-          </button>
-        }
-      />
+          }
+        />
+      </div>
 
       <SidebarSection title="Search">
         <div className="group flex h-control items-center gap-1 rounded-control border border-transparent bg-fill px-1.5 text-tertiary transition-colors duration-100 ease-mac focus-within:border-accent focus-within:bg-content focus-within:text-accent">

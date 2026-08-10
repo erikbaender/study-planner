@@ -10,6 +10,7 @@ import {
   nextExam,
   progressOf,
   projectFinishDate,
+  topicStatus,
   velocity,
   velocityForTopics,
 } from "./metrics";
@@ -29,6 +30,27 @@ const log = (entries: Array<Partial<StudyLogEntry> & { date: string; units: numb
     topicId: "topic_1",
     ...entry,
   }));
+
+describe("topicStatus", () => {
+  it("is planned before anything is logged", () => {
+    expect(topicStatus(topic({ totalUnits: 100, completedUnits: 0 }))).toBe("planned");
+  });
+
+  it("is active once some units are logged", () => {
+    expect(topicStatus(topic({ totalUnits: 100, completedUnits: 40 }))).toBe("active");
+  });
+
+  it("is done once completed reaches the total", () => {
+    expect(topicStatus(topic({ totalUnits: 100, completedUnits: 100 }))).toBe("done");
+  });
+
+  it("never reports done for a size-untracked topic, however much is logged", () => {
+    // `totalUnits === 0` has no total to compare against — the topic reads as
+    // active at best, never done, regardless of completedUnits.
+    expect(topicStatus(topic({ totalUnits: 0, completedUnits: 0 }))).toBe("planned");
+    expect(topicStatus(topic({ totalUnits: 0, completedUnits: 40 }))).toBe("active");
+  });
+});
 
 describe("progressOf", () => {
   it("sums only topics whose size is tracked", () => {
