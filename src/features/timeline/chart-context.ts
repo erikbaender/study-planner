@@ -34,6 +34,7 @@ export type SelectionStore = {
 
 export function createSelectionStore(): SelectionStore {
   let ids: readonly string[] = [];
+  let selectedIds = new Set<string>();
   const listeners = new Set<() => void>();
 
   return {
@@ -45,11 +46,12 @@ export function createSelectionStore(): SelectionStore {
     stateOf(id) {
       if (ids.length === 0) return null;
       if (ids[ids.length - 1] === id) return "primary";
-      return ids.includes(id) ? "secondary" : null;
+      return selectedIds.has(id) ? "secondary" : null;
     },
     set(next) {
       if (next.length === ids.length && next.every((id, index) => id === ids[index])) return;
       ids = next;
+      selectedIds = new Set(next);
       for (const listener of listeners) listener();
     },
   };

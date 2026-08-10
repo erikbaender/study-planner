@@ -131,6 +131,7 @@ import {
   cancelActiveGesture,
 } from "./gestures";
 import { DragReadout } from "./readout";
+import { createRafCoalescer } from "./raf";
 import {
   hintScope,
   hintExcludedScope,
@@ -350,6 +351,10 @@ function TimelineChart({
     () => courses.map((course) => ({ course, topics: topicsForQuery(query, course) })),
     [courses, query],
   );
+  const topicsByCourse = useMemo(
+    () => new Map(visibleCourseTopics.map(({ course, topics }) => [course, topics] as const)),
+    [visibleCourseTopics],
+  );
 
   const gutter = useMemo(() => {
     const labels: { text: string; kind: LabelKind }[] = [];
@@ -386,7 +391,10 @@ function TimelineChart({
     [gutter, range.start, today, zoom],
   );
 
-  const trackVisible = useCallback(() => {
+  const trackVisibleNowRef = useRef<(scrollLeft?: number) => void>(() => {});
+  const visibleFrameRef = useRef<ReturnType<typeof createRafCoalescer<number>> | null>(null);
+
+  const trackVisibleNow = useCallback((scrollLeft?: number) => {
     const element = scrollRef.current;
     if (!element) return;
     // Nothing while an animation owns the offset. Recomputing every lane's
@@ -394,8 +402,9 @@ function TimelineChart({
     // expensive, and the answer is stale for 240ms rather than wrong: the
     // animation runs this once more when it lands.
     if (isScrollAnimating(element)) return;
-    const from = dateAt(element.scrollLeft, range.start, zoom);
-    const to = dateAt(element.scrollLeft + element.clientWidth, range.start, zoom);
+    const currentScrollLeft = scrollLeft ?? element.scrollLeft;
+    const from = dateAt(currentScrollLeft, range.start, zoom);
+    const to = dateAt(currentScrollLeft + element.clientWidth, range.start, zoom);
     viewport.setSnapshot({ from, to });
 
     // Grown well before the edge is reached, and by enough that a moment's
@@ -414,13 +423,13 @@ function TimelineChart({
     // always has width — it is days times the width of a day.
     if (element.scrollWidth > 0) {
       const chunkDays = Math.ceil(EXTEND_CHUNK_PX / PX_PER_DAY[zoom]);
-      if (element.scrollLeft < EXTEND_TRIGGER_PX && !extendingBeforeRef.current) {
+      if (currentScrollLeft < EXTEND_TRIGGER_PX && !extendingBeforeRef.current) {
         extendingBeforeRef.current = true;
         pendingShiftRef.current += chunkDays * PX_PER_DAY[zoom];
         setExtraBefore((days) => days + chunkDays);
       }
       if (
-        element.scrollWidth - (element.scrollLeft + element.clientWidth) < EXTEND_TRIGGER_PX &&
+        element.scrollWidth - (currentScrollLeft + element.clientWidth) < EXTEND_TRIGGER_PX &&
         !extendingAfterRef.current
       ) {
         extendingAfterRef.current = true;
@@ -428,6 +437,35 @@ function TimelineChart({
       }
     }
   }, [range.start, viewport, zoom]);
+
+  useLayoutEffect(() => {
+    trackVisibleNowRef.current = trackVisibleNow;
+  }, [trackVisibleNow]);
+
+  useLayoutEffect(() => {
+    const coalescer = createRafCoalescer((scrollLeft: number) =>
+      trackVisibleNowRef.current(scrollLeft),
+    );
+    visibleFrameRef.current = coalescer;
+    return () => {
+      coalescer.cancel();
+      if (visibleFrameRef.current === coalescer) visibleFrameRef.current = null;
+    };
+  }, []);
+
+  const trackVisible = useCallback(() => {
+    // Immediate callers own a meaningful moment in the interaction; discard a
+    // queued scroll pass so it cannot publish an older viewport afterwards.
+    visibleFrameRef.current?.cancel();
+    trackVisibleNow();
+  }, [trackVisibleNow]);
+
+  const scheduleTrackVisible = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    // Keep the last native position, then let one frame do the expensive work.
+    visibleFrameRef.current?.schedule(element.scrollLeft);
+  }, []);
 
   /**
    * The one definition of where Today belongs. Initial positioning uses the
@@ -579,8 +617,8 @@ function TimelineChart({
       scrollToToday(false);
       return;
     }
-    trackVisible();
-  }, [scrollToToday, trackVisible]);
+    scheduleTrackVisible();
+  }, [scrollToToday, scheduleTrackVisible]);
 
   // Edge and Chromium-based browsers can restore a previous horizontal
   // scrollLeft after the first layout pass. Give that restoration two frames
@@ -759,6 +797,7 @@ function TimelineChart({
       if (filterRestoreTimeoutRef.current !== null) {
         window.clearTimeout(filterRestoreTimeoutRef.current);
       }
+      visibleFrameRef.current?.cancel();
       cancelActiveGesture();
       if (element) stopScrollAnimation(element);
       canvas?.removeAttribute("data-timeline-zooming");
@@ -887,9 +926,9 @@ function TimelineChart({
    */
   const registry = useMemo(() => {
     const entries = new Map<string, BarTarget>();
-    for (const { topics } of visibleCourseTopics) {
+    for (const { course, topics } of visibleCourseTopics) {
       for (const topic of topics) {
-        for (const block of topic.blocks) entries.set(block.id, { block, topic });
+        for (const block of topic.blocks) entries.set(block.id, { block, topic, course });
       }
     }
     return entries;
@@ -920,12 +959,9 @@ function TimelineChart({
         onClearSelectionRef.current?.();
         return;
       }
-      const course = courses.find((candidate) =>
-        candidate.topics.some((topic) => topic.id === primary.topic.id),
-      );
-      if (course) onSelectTopicRef.current(course, primary.topic);
+      onSelectTopicRef.current(primary.course, primary.topic);
     },
-    [courses, selection],
+    [selection],
   );
 
   const openMenu = useCallback(
@@ -1084,7 +1120,7 @@ function TimelineChart({
                 key={course.id}
                 course={course}
                 health={health.get(course.id)}
-                topics={visibleCourseTopics.find((entry) => entry.course === course)?.topics ?? []}
+                topics={topicsByCourse.get(course) ?? []}
                 range={range}
                 today={today}
                 selectedId={selectedId}
@@ -1277,10 +1313,30 @@ function Ruler({
 }
 
 function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; range: Range; zoom: Zoom }) {
+  const chart = useChart();
+  const viewport = useSyncExternalStore(
+    chart.viewport.subscribe,
+    chart.viewport.getSnapshot,
+    chart.viewport.getSnapshot,
+  );
   // At Day and Week zoom the grid is regular. One painted gradient replaces
   // thousands of absolutely positioned rules without changing the geometry
   // under the bars. Month and Quarter retain their calendar-aware tick nodes.
-  if (zoom === "day" || zoom === "week") {
+  const painted = zoom === "day" || zoom === "week";
+  const visibleTicks = useMemo(() => {
+    // Day zoom has a tick per day, and the canvas grows without giving days
+    // back — filtering a list nothing is about to draw is the more expensive
+    // half of the two.
+    if (painted || !viewport) return ticks;
+    // Keep the same generous buffer as the ruler so a quick drag does not
+    // repeatedly mount calendar rules at the edge of the screen.
+    const bufferDays = Math.max(30, Math.ceil(1800 / PX_PER_DAY[zoom]));
+    const from = maxDate(range.start, addDays(viewport.from, -bufferDays));
+    const to = minDate(range.end, addDays(viewport.to, bufferDays));
+    return ticks.filter((tick) => tick.date >= from && tick.date <= to);
+  }, [painted, range.end, range.start, ticks, viewport, zoom]);
+
+  if (painted) {
     const unit = zoom === "day" ? 1 : 7;
     const step = `calc(var(${DAY_WIDTH_PROPERTY}) * ${unit})`;
     const line = `calc(var(${DAY_WIDTH_PROPERTY}) * ${unit} - 1px)`;
@@ -1302,7 +1358,7 @@ function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; ran
       className="timeline-zoom-layer pointer-events-none absolute inset-0"
       style={{ top: RULER_HEIGHT }}
     >
-      {ticks.map((tick) => (
+      {visibleTicks.map((tick) => (
         <span
           key={tick.date}
           style={{ left: xCss(tick.date, range.start) }}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { topic as makeTopic } from "@/test/factories";
+import { course as makeCourse, topic as makeTopic } from "@/test/factories";
 import { applyDelta, clampDelta, groupRange, rangeFor, type BarTarget } from "./selection";
+import { createSelectionStore } from "./chart-context";
 
 const block = (id: string, startDate: string, endDate: string) => ({
   id,
@@ -42,9 +43,10 @@ describe("groupRange", () => {
       blocks: [block("a", "2026-05-04", "2026-05-08"), block("wall", "2026-05-12", "2026-05-14")],
     });
     const open = makeTopic({ id: "topic_2", blocks: [block("b", "2026-05-04", "2026-05-06")] });
+    const course = makeCourse({ topics: [blocked, open] });
     const targets: BarTarget[] = [
-      { block: blocked.blocks[0], topic: blocked },
-      { block: open.blocks[0], topic: open },
+      { block: blocked.blocks[0], topic: blocked, course },
+      { block: open.blocks[0], topic: open, course },
     ];
 
     const range = groupRange("move", targets, new Set(["a", "b"]));
@@ -57,7 +59,8 @@ describe("groupRange", () => {
       id: "topic_1",
       blocks: [block("a", "2026-05-04", "2026-05-08"), block("b", "2026-05-12", "2026-05-14")],
     });
-    const targets: BarTarget[] = topic.blocks.map((entry) => ({ block: entry, topic }));
+    const course = makeCourse({ topics: [topic] });
+    const targets: BarTarget[] = topic.blocks.map((entry) => ({ block: entry, topic, course }));
 
     // Both selected: the gap between them is not changing, so neither bounds
     // the other and the pair can travel as far as the empty canvas allows.
@@ -65,6 +68,18 @@ describe("groupRange", () => {
       min: -Infinity,
       max: Infinity,
     });
+  });
+});
+
+describe("createSelectionStore", () => {
+  it("keeps the last selected id primary and the others secondary", () => {
+    const selection = createSelectionStore();
+
+    selection.set(["first", "second"]);
+
+    expect(selection.stateOf("first")).toBe("secondary");
+    expect(selection.stateOf("second")).toBe("primary");
+    expect(selection.stateOf("other")).toBeNull();
   });
 });
 

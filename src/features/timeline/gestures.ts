@@ -12,6 +12,7 @@ import { applyDelta, clampDelta, groupRange, type BarTarget, type DragMode } fro
 import { daysMoved } from "./geometry";
 import { stopScrollAnimation } from "./motion";
 import { setInteractionHints } from "@/features/workspace/hints";
+import { createRafCoalescer } from "./raf";
 
 /** Below this the pointer was steadying itself, not dragging. The old code had no threshold at all. */
 export const DRAG_THRESHOLD_PX = 4;
@@ -267,19 +268,25 @@ export function startBarGesture(
   const limits = groupRange(mode, targets, seen);
 
   let days = 0;
+  const publishDraft = (pointer: PointerEvent) => {
+    days = clampDelta(limits, daysMoved(pointer.clientX - event.clientX, chart.zoomRef.current));
+
+    const spans = new Map<string, Span>();
+    for (const { block } of targets) spans.set(block.id, applyDelta(mode, block, days));
+    chart.drafts.set(spans);
+    const grabbed = spans.get(blockId);
+    if (grabbed) showReadout({ x: pointer.clientX, y: pointer.clientY, ...grabbed });
+  };
+  const draftFrame = createRafCoalescer(publishDraft);
   startGestureSession(event, chart, {
     originX: event.clientX,
     originY: event.clientY,
     threshold: DRAG_THRESHOLD_PX,
     onMove(pointer) {
       scroller.dataset.timelineDragging = "true";
-      days = clampDelta(limits, daysMoved(pointer.clientX - event.clientX, chart.zoomRef.current));
-
-      const spans = new Map<string, Span>();
-      for (const { block } of targets) spans.set(block.id, applyDelta(mode, block, days));
-      chart.drafts.set(spans);
-      const grabbed = spans.get(blockId);
-      if (grabbed) showReadout({ x: pointer.clientX, y: pointer.clientY, ...grabbed });
+      // Pointer events can arrive several times between paints; the readout
+      // and every draft bar only need the position the next frame will show.
+      draftFrame.schedule(pointer);
     },
     onFinish(pointer, dragged) {
       if (!dragged) {
@@ -303,6 +310,9 @@ export function startBarGesture(
         return;
       }
 
+      // The release is authoritative even when it arrived before the queued
+      // frame. Commit its position rather than the last draft that painted.
+      days = clampDelta(limits, daysMoved(pointer.clientX - event.clientX, chart.zoomRef.current));
       if (days === 0 || !chart.repository) return;
       const repository = chart.repository;
       chart.run(
@@ -322,6 +332,7 @@ export function startBarGesture(
       if (selectsOnPress) chart.select(before);
     },
     cleanup: () => {
+      draftFrame.cancel();
       delete scroller.dataset.timelineDragging;
       delete scroller.dataset.timelineResizing;
     },

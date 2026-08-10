@@ -18,13 +18,20 @@
  * where the off-by-one lives.
  */
 
-import { addDays, differenceInDays, type EntityId, type StudyBlock, type Topic } from "@/domain";
+import {
+  addDays,
+  differenceInDays,
+  type Course,
+  type EntityId,
+  type StudyBlock,
+  type Topic,
+} from "@/domain";
 import { limitsAround, type Span } from "./blocks";
 
 export type DragMode = "move" | "start" | "end";
 
 /** A bar in a drag: the block itself and the topic whose other blocks bound it. */
-export type BarTarget = { block: StudyBlock; topic: Topic };
+export type BarTarget = { block: StudyBlock; topic: Topic; course: Course };
 
 export type DeltaRange = { min: number; max: number };
 

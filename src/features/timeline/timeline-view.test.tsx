@@ -62,6 +62,18 @@ function bar(dates: RegExp) {
   return screen.getAllByRole("button", { name: dates })[0];
 }
 
+function stubAnimationFrames() {
+  let nextId = 0;
+  const request = vi.fn((callback: FrameRequestCallback) => {
+    void callback;
+    return ++nextId;
+  });
+  const cancel = vi.fn();
+  vi.stubGlobal("requestAnimationFrame", request);
+  vi.stubGlobal("cancelAnimationFrame", cancel);
+  return { request, cancel };
+}
+
 describe("TimelineView", () => {
   it("selects a bar with the left button, and points the inspector at its topic", () => {
     const topic = makeTopic({
@@ -185,6 +197,54 @@ describe("TimelineView", () => {
     expect(target).not.toHaveAttribute("data-selection");
 
     fireEvent.pointerMove(window, { pointerId: 41, clientX: 400 });
+    expect(target).toHaveAttribute("aria-label", expect.stringContaining("2026-05-04 to 2026-05-08"));
+    expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+  });
+
+  it("commits the release position when drag frames were coalesced", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    chart([topic]);
+    const target = bar(/2026-05-04 to 2026-05-08/);
+    const frames = stubAnimationFrames();
+
+    fireEvent.pointerDown(target, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(window, { clientX: 200 });
+    fireEvent.pointerMove(window, { clientX: 300 });
+
+    // The queued draft has not painted yet, so the bar still describes its
+    // committed span while the pointer is between frames.
+    expect(target).toHaveAttribute("aria-label", expect.stringContaining("2026-05-04 to 2026-05-08"));
+    expect(frames.request).toHaveBeenCalledOnce();
+
+    fireEvent.pointerUp(window, { button: 0, clientX: 398 });
+
+    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
+      "block_1",
+      expect.objectContaining({ startDate: "2026-05-25", endDate: "2026-05-29" }),
+    );
+  });
+
+  it("cancels a queued bar draft without publishing or writing", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    chart([topic]);
+    const target = bar(/2026-05-04 to 2026-05-08/);
+    const frames = stubAnimationFrames();
+
+    fireEvent.pointerDown(target, { button: 0, pointerId: 41, clientX: 100 });
+    fireEvent.pointerMove(window, { pointerId: 41, clientX: 398 });
+    fireEvent.pointerCancel(window, { pointerId: 41 });
+
+    expect(frames.cancel).toHaveBeenCalledOnce();
     expect(target).toHaveAttribute("aria-label", expect.stringContaining("2026-05-04 to 2026-05-08"));
     expect(repository.updateStudyBlock).not.toHaveBeenCalled();
   });
