@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { assessCourse, DEFAULT_PREFERENCES } from "@/domain";
 import { course as makeCourse, exam as makeExam, plan as makePlan, topic as makeTopic } from "@/test/factories";
-import { TooltipProvider } from "@/ui";
 import { AppSidebar } from "./app-sidebar";
 
 const TODAY = "2026-05-01";
@@ -42,7 +41,7 @@ describe("AppSidebar course visibility", () => {
     };
 
     const { rerender } = render(
-      <TooltipProvider><AppSidebar {...shared} hiddenCourseIds={[]} /></TooltipProvider>,
+      <AppSidebar {...shared} hiddenCourseIds={[]} />,
     );
     const user = userEvent.setup();
     await user.click(screen.getByText("Biochemistry"));
@@ -57,7 +56,7 @@ describe("AppSidebar course visibility", () => {
     expect(onSelectCourse).toHaveBeenCalledTimes(1);
 
     rerender(
-      <TooltipProvider><AppSidebar {...shared} hiddenCourseIds={[course.id]} /></TooltipProvider>,
+      <AppSidebar {...shared} hiddenCourseIds={[course.id]} />,
     );
     expect(screen.getByText("7d")).toBeInTheDocument();
     expect(
@@ -72,7 +71,7 @@ describe("AppSidebar course visibility", () => {
       courses: [makeCourse({ name: "Physiology" }), makeCourse({ name: "anatomy" })],
     });
     render(
-      <TooltipProvider><AppSidebar
+      <AppSidebar
         plans={[plan]}
         plan={plan}
         health={new Map()}
@@ -90,7 +89,7 @@ describe("AppSidebar course visibility", () => {
         onHideAll={vi.fn()}
         onShowAll={vi.fn()}
         onNewCourse={vi.fn()}
-      /></TooltipProvider>,
+      />,
     );
 
     const rows = screen
@@ -108,7 +107,7 @@ describe("AppSidebar course visibility", () => {
       ],
     });
     render(
-      <TooltipProvider><AppSidebar
+      <AppSidebar
         plans={[plan]}
         plan={plan}
         health={new Map()}
@@ -126,7 +125,7 @@ describe("AppSidebar course visibility", () => {
         onHideAll={vi.fn()}
         onShowAll={vi.fn()}
         onNewCourse={vi.fn()}
-      /></TooltipProvider>,
+      />,
     );
 
     expect(screen.getByText("Biology")).toBeInTheDocument();
@@ -143,7 +142,7 @@ describe("AppSidebar course visibility", () => {
     const plan = makePlan({ courses: [course] });
 
     render(
-      <TooltipProvider>
+
         <AppSidebar
           plans={[plan]}
           plan={plan}
@@ -163,7 +162,7 @@ describe("AppSidebar course visibility", () => {
           onShowAll={vi.fn()}
           onNewCourse={vi.fn()}
         />
-      </TooltipProvider>,
+      ,
     );
 
     const row = screen.getByText("Finished course").closest("li");

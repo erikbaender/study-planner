@@ -15,6 +15,7 @@
  */
 
 import { clsx } from "clsx";
+import { PanelRight, Trash2 } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { Topic } from "@/domain";
 import { ContextMenu } from "@/ui";
@@ -43,9 +44,9 @@ export function TopicRow({
   return (
     <ContextMenu
       items={[
-        { label: "Show in inspector", onSelect },
+        { label: "Show in inspector", icon: <PanelRight />, onSelect },
         { type: "separator" },
-        { label: `Delete ${topic.name}`, danger: true, onSelect: onDelete },
+        { label: `Delete ${topic.name}`, icon: <Trash2 />, danger: true, onSelect: onDelete },
       ]}
     >
       <li

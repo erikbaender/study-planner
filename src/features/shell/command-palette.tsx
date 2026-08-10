@@ -1,13 +1,14 @@
 "use client";
 
 /**
- * ⌘K.
+ * The command palette.
  *
  * Spotlight's shape rather than a sheet's: a panel floating near the top of the
  * window, not hinged to its edge. The distinction is not decorative — a sheet
  * is modal to the *document* and asks you to finish something, while this is
  * modal to nothing and disappears the moment you have said where you want to
- * go.
+ * go. It opens from the ⌘-glyph button in the toolbar; the app has no keyboard
+ * shortcuts.
  *
  * Markup is the ARIA combobox pattern: focus never leaves the text field, and
  * the highlighted row is named by `aria-activedescendant`. Moving real focus
@@ -24,7 +25,6 @@ import { clsx } from "clsx";
 import { Search } from "lucide-react";
 import { Dialog as RadixDialog } from "radix-ui";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Kbd } from "@/ui";
 import { filterCommands, groupCommands, type Command } from "@/features/workspace/commands";
 
 export function CommandPalette({
@@ -205,13 +205,6 @@ export function CommandPalette({
                             >
                               {command.subtitle}
                             </span>
-                          ) : null}
-                          {command.shortcut ? (
-                            <Kbd>
-                              <span className={isActive ? "text-on-accent opacity-70" : undefined}>
-                                {command.shortcut}
-                              </span>
-                            </Kbd>
                           ) : null}
                         </li>
                       );

@@ -32,7 +32,15 @@ import { courseColorValue } from "@/domain";
 import { Badge, Button, Card, CountdownBadge, EmptyState } from "@/ui";
 import { TopicRow } from "@/features/topics/topic-row";
 import { PlanningActions } from "@/features/planning/planning-actions";
+import { hintScope, useViewHints, type InputHint } from "@/features/workspace/hints";
 import { topicsForQuery } from "@/features/workspace/scope";
+
+/** What the pointer does here, for the toolbar's hint bar. */
+const TODAY_HINTS: readonly InputHint[] = [
+  { button: "left", label: "Select topic" },
+  { button: "left", label: "Set progress", drag: true },
+  { button: "right", label: "Actions" },
+];
 
 /** How many topics the "continue" card offers. A list you scroll is a backlog, not a suggestion. */
 const CONTINUE_LIMIT = 8;
@@ -70,6 +78,7 @@ export function TodayView({
   onDeleteTopic: (course: Course, topic: Topic) => void;
   onGoToOutline: () => void;
 }) {
+  useViewHints(TODAY_HINTS);
   const exams = courses
     .flatMap((course) => {
       const courseHealth = health.get(course.id);
@@ -114,21 +123,23 @@ export function TodayView({
 
   if (courses.length === 0) {
     return (
-      <EmptyState
-        icon={<CalendarCheck />}
-        title="Nothing in focus"
-        description="No course matches the current focus. Widen it in the sidebar, or add material in the outline."
-        action={
-          <Button variant="accent" onClick={onGoToOutline}>
-            Open the outline
-          </Button>
-        }
-      />
+      <div className="h-full" {...hintScope}>
+        <EmptyState
+          icon={<CalendarCheck />}
+          title="Nothing in focus"
+          description="No course matches the current focus. Widen it in the sidebar, or add material in the outline."
+          action={
+            <Button variant="accent" onClick={onGoToOutline}>
+              Open the outline
+            </Button>
+          }
+        />
+      </div>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-4 p-6">
+    <div className="mx-auto flex max-w-4xl flex-col gap-4 p-6" {...hintScope}>
       <header className="flex flex-wrap items-baseline gap-3">
         <h2 className="text-title1 font-semibold">{formatToday(today)}</h2>
         <p className="text-body text-secondary">

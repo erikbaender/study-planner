@@ -18,26 +18,30 @@ export type { Segment } from "./segmented-control";
 
 export { Checkbox, Stepper, Switch } from "./toggles";
 
-export { Badge, Card, EmptyState, Kbd, ProgressBar, Separator, Spinner } from "./feedback";
+export { Badge, Card, EmptyState, ProgressBar, Separator, Spinner } from "./feedback";
 export type { BadgeTone } from "./feedback";
 
 export { ProgressSlider } from "./progress-slider";
 
 export {
   ContextMenu,
+  ContextMenuAt,
   DropdownMenu,
   Popover,
   Sheet,
   SheetClose,
   Toolbar,
   ToolbarSpacer,
-  Tooltip,
-  TooltipProvider,
 } from "./overlays";
 export type { MenuItem } from "./overlays";
+
+export { DragIcon, MouseButtonIcon } from "./input-icons";
+export type { PointerButton } from "./input-icons";
 
 export { CountdownBadge, Sidebar, SidebarItem, SidebarSection } from "./sidebar";
 
 export { AnimationSpeedControl, AppearanceControl } from "./appearance";
+export { KeyboardModeControl, useKeyboardMode } from "./keyboard-mode";
+export type { KeyboardMode } from "./keyboard-mode";
 export { ThemeProvider, ThemeScript, useTheme } from "./theme";
 export type { Appearance, ResolvedAppearance } from "./theme";

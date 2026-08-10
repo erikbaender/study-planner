@@ -186,13 +186,6 @@ export function EmptyState({
   );
 }
 
-/** A keyboard shortcut, for menus and the command palette. */
-export function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="ml-auto pl-4 text-callout text-tertiary font-sans">{children}</kbd>
-  );
-}
-
 export function Spinner({ label = "Loading", className }: { label?: string; className?: string }) {
   return (
     <span

@@ -16,7 +16,7 @@
  */
 
 import { useState } from "react";
-import { ChevronRight, ClipboardPaste, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, ClipboardPaste, PanelRight, Plus, Trash2 } from "lucide-react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
@@ -45,11 +45,18 @@ import {
   Sheet,
   TextArea,
   TextField,
-  Tooltip,
 } from "@/ui";
 import { TopicTable } from "./topic-table";
 import { AutoPlanButton } from "@/features/planning/planning-actions";
+import { clickHint, hintScope, hintTarget, useViewHints, type InputHint } from "@/features/workspace/hints";
 import { topicsForQuery } from "@/features/workspace/scope";
+
+/** What the pointer does here, for the toolbar's hint bar. */
+const OUTLINE_HINTS: readonly InputHint[] = [
+  { button: "left", label: "Select or edit" },
+  { button: "left", label: "Set progress", drag: true },
+  { button: "right", label: "Actions" },
+];
 
 export function OutlineView({
   courses,
@@ -78,6 +85,7 @@ export function OutlineView({
   onDeleteCourse: (course: Course) => void;
   onNewCourse: () => void;
 }) {
+  useViewHints(OUTLINE_HINTS);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Selecting a course in the sidebar should reveal its material rather than
   // leave you hunting for a triangle.
@@ -85,20 +93,22 @@ export function OutlineView({
 
   if (courses.length === 0) {
     return (
-      <EmptyState
-        title="No courses in focus"
-        description="Add a course, or widen the focus in the sidebar to see the ones you have."
-        action={
-          <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
-            New course
-          </Button>
-        }
-      />
+      <div className="h-full" {...hintScope}>
+        <EmptyState
+          title="No courses in focus"
+          description="Add a course, or widen the focus in the sidebar to see the ones you have."
+          action={
+            <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
+              New course
+            </Button>
+          }
+        />
+      </div>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6" {...hintScope}>
       {courses.map((course) => (
         <CourseSection
           key={course.id}
@@ -177,7 +187,7 @@ function CourseSection({
   return (
     <ContextMenu
       items={[
-        { label: "Show in inspector", onSelect: onSelectCourse },
+        { label: "Show in inspector", icon: <PanelRight />, onSelect: onSelectCourse },
         { label: "Add topic", icon: <Plus />, onSelect: () => addRow(undefined) },
         { type: "separator" },
         { label: "Delete course", icon: <Trash2 />, danger: true, onSelect: onDeleteCourse },
@@ -353,14 +363,13 @@ function ExamRow({
         ))
       )}
 
-      <Tooltip content="Add an exam date">
-        <IconButton
-          size="sm"
-          label={`Add an exam to ${course.name}`}
-          icon={<Plus />}
-          onClick={() => setAdding(true)}
-        />
-      </Tooltip>
+      <IconButton
+        size="sm"
+        label={`Add an exam to ${course.name}`}
+        icon={<Plus />}
+        onClick={() => setAdding(true)}
+        {...hintTarget(clickHint("Add an exam date"))}
+      />
 
       <ExamSheet
         open={adding}

@@ -43,7 +43,6 @@ function build(overrides: Partial<Parameters<typeof buildCommands>[0]> = {}) {
   return buildCommands({
     plan,
     hasData: true,
-    shortcut: () => "⌘K",
     actions: noopActions(),
     ...overrides,
   });
@@ -63,7 +62,7 @@ describe("buildCommands", () => {
 
   it("runs the action it was built with", () => {
     const actions = noopActions();
-    const commands = buildCommands({ plan, hasData: true, shortcut: () => "", actions });
+    const commands = buildCommands({ plan, hasData: true, actions });
     commands.find((command) => command.id === "view:outline")!.run();
     expect(actions.setView).toHaveBeenCalledWith("outline");
   });
