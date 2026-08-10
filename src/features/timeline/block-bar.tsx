@@ -50,7 +50,7 @@ export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
   };
 }
 
-/** The overdue mark keeps the Lucide triangle's geometry, but fills its interior. */
+/** An opaque warning mark keeps the chart's brightness while borrowing red's hue. */
 function OverdueIcon() {
   return (
     <svg
@@ -65,7 +65,7 @@ function OverdueIcon() {
     >
       <path
         d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
-        fill="var(--mac-content-alt)"
+        fill="color-mix(in srgb, var(--mac-negative) 15%, var(--mac-content) 85%)"
       />
       <path d="M12 9v4" />
       <path d="M12 17h.01" />
