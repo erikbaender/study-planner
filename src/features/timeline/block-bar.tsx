@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { AlertTriangle, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -48,6 +48,29 @@ export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
       chart.run(chart.repository.deleteStudyBlock(blockId));
     },
   };
+}
+
+/** The overdue mark keeps the Lucide triangle's geometry, but fills its interior. */
+function OverdueIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-7 text-negative"
+    >
+      <path
+        d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
+        fill="var(--mac-content-alt)"
+      />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
 }
 
 /**
@@ -288,7 +311,6 @@ function BlockBar({
   // unfinished work is the one thing on this chart that needs acting on, and it
   // used to be drawn *fainter* than everything else.
   const overdue = past && (progress.ratio ?? 0) < 1;
-  const label = `${shortDate(shown.startDate)} – ${shortDate(shown.endDate)}`;
 
   return (
     <>
@@ -386,7 +408,9 @@ function BlockBar({
               ? "2px solid var(--mac-accent)"
               : barSelection === "secondary"
                 ? "2px solid color-mix(in srgb, var(--mac-accent) 50%, transparent)"
-                : `1px ${block.source === "manual" ? "dashed" : "solid"} color-mix(in srgb, ${tint} 55%, transparent)`,
+                : overdue
+                  ? "1.5px solid var(--mac-negative)"
+                  : `1px ${block.source === "manual" ? "dashed" : "solid"} color-mix(in srgb, ${tint} 55%, transparent)`,
           outlineOffset: barSelection ? 2 : -1,
         }}
         className={clsx(
@@ -409,26 +433,9 @@ function BlockBar({
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
           >
-            <AlertTriangle
-              aria-hidden="true"
-              className="absolute size-5 text-content"
-              strokeWidth={6}
-            />
-            <AlertTriangle
-              aria-hidden="true"
-              className="relative size-5 text-negative"
-              strokeWidth={2.5}
-            />
+            <OverdueIcon />
           </span>
         ) : null}
-        {/* The dates, in the bar, when there is room for them. A chart of
-            anonymous rectangles makes you hover every one to read it back. */}
-        <span
-          aria-hidden="true"
-          className="timeline-bar-label pointer-events-none absolute inset-0 items-center justify-center overflow-hidden rounded-[inherit] px-1.5 text-caption tabular-nums whitespace-nowrap text-secondary"
-        >
-          {label}
-        </span>
         {/* The resize edges, shown on hover. There is no mode to reveal them in
             any more, so they appear where the hand already is. */}
         <span
@@ -437,7 +444,7 @@ function BlockBar({
             if (event.button === LEFT) startBarGesture(event, chart, "start", block.id);
           }}
           {...hintTarget(HANDLE_HINTS)}
-          className="timeline-bar-handle timeline-tint absolute inset-y-0 left-0 w-1.5 opacity-0"
+          className="timeline-bar-handle timeline-tint absolute inset-y-0 left-0 w-1.5 rounded-l-[inherit] opacity-0"
           style={{ background: "var(--mac-label-secondary)" }}
         />
         <span
@@ -446,7 +453,7 @@ function BlockBar({
             if (event.button === LEFT) startBarGesture(event, chart, "end", block.id);
           }}
           {...hintTarget(HANDLE_HINTS)}
-          className="timeline-bar-handle timeline-tint absolute inset-y-0 right-0 w-1.5 opacity-0"
+          className="timeline-bar-handle timeline-tint absolute inset-y-0 right-0 w-1.5 rounded-r-[inherit] opacity-0"
           style={{ background: "var(--mac-label-secondary)" }}
         />
       </button>
