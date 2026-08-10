@@ -59,7 +59,7 @@ import {
   resolveSelection,
   type ResolvedSelection,
 } from "@/features/workspace/scope";
-import { revealSelection, useWorkspace } from "@/features/workspace/store";
+import { toggleRevealSelection, revealSelection, useWorkspace } from "@/features/workspace/store";
 
 /** Read once per mount: the planner is day-granular, so a re-render mid-day is not worth it. */
 function useToday() {
@@ -99,10 +99,10 @@ export function AppShell() {
   // rows are filters over the whole workspace, not navigation into part of it.
   const focused = useMemo(
     () =>
-      coursesInFocus(plan, workspace.focus, health, {
+      coursesInFocus(plan, workspace.focus, health, today, {
         hiddenCourseIds: workspace.hiddenCourseIds,
       }),
-    [plan, workspace.focus, health, workspace.hiddenCourseIds],
+    [plan, workspace.focus, health, today, workspace.hiddenCourseIds],
   );
   const filteredFocused = useMemo(
     () => focused.filter((course) => courseMatchesQuery(workspace.query, course)),
@@ -176,14 +176,14 @@ export function AppShell() {
   };
 
   // Selecting is not scoping. Clicking a course in the sidebar inspects it and
-  // opens its section in the outline; it does not hide the other nine. Narrowing
-  // to one course is what the Focus rows are for, and conflating the two is how
-  // a sidebar click becomes something you undo.
-  const selectCourse = (course: Course) => revealSelection({ kind: "course", id: course.id });
+  // opens its section in the outline; clicking it again clears that selection.
+  // It does not hide the other courses — narrowing to one is what the Focus
+  // rows are for.
+  const selectCourse = (course: Course) => toggleRevealSelection({ kind: "course", id: course.id });
   const selectTopic = (_course: Course, topic: Topic) =>
-    revealSelection({ kind: "topic", id: topic.id });
+    toggleRevealSelection({ kind: "topic", id: topic.id });
   const selectExam = (_course: Course, exam: Exam) =>
-    revealSelection({ kind: "exam", id: exam.id });
+    toggleRevealSelection({ kind: "exam", id: exam.id });
 
   /* ─── Command palette ─────────────────────────────────────────────────── */
 
@@ -195,7 +195,7 @@ export function AppShell() {
         actions: {
           setView: workspace.setView,
           focusAll: () => workspace.setFocus({ kind: "all" }),
-          focusBehind: () => workspace.setFocus({ kind: "behind" }),
+          focusAttention: () => workspace.setFocus({ kind: "attention" }),
           focusSoon: () => workspace.setFocus({ kind: "soon" }),
           revealCourse: selectCourse,
           revealTopic: (topic) => revealSelection({ kind: "topic", id: topic.id }),
@@ -267,6 +267,7 @@ export function AppShell() {
             plans={snapshot.plans}
             plan={plan}
             health={health}
+            today={today}
             focus={workspace.focus}
             hiddenCourseIds={workspace.hiddenCourseIds}
             query={workspace.query}

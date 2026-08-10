@@ -211,6 +211,16 @@ span:has(> .topic-progress-thumb) {
   background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
 }
 
+/* Inspection selection is blue even for a completed course and while the
+   pointer is over it; the completion tint must not win over selection. */
+.course-completion-row[aria-current="true"] {
+  background-color: var(--mac-accent-soft);
+}
+
+.course-completion-row[aria-current="true"]:hover {
+  background-image: none;
+}
+
 .topic-completion-fill {
   background-color: var(--topic-completion-color);
   transform-origin: center;
@@ -408,6 +418,55 @@ span:has(> .topic-progress-thumb) {
   background-color: color-mix(in srgb, var(--timeline-row-tint, var(--mac-label)) 16%, transparent);
 }
 
+/* The label is the foreground half of the row, so it gets the brighter fill
+   and owns the seam where it meets the chart. */
+.timeline-course-panel .timeline-row[data-hovered="true"] {
+  background-color: color-mix(in srgb, var(--timeline-row-tint, var(--mac-label)) 26%, transparent);
+}
+
+/* The panel owns the grey border for the whole course. Paint over just the
+   active row's slice so the seam belongs to the row highlight, too. */
+.timeline-course-panel {
+  border-right: 0;
+}
+
+.timeline-course-panel::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+  content: "";
+  background: color-mix(in srgb, var(--mac-separator-strong) 60%, transparent);
+  z-index: 0;
+}
+
+.timeline-course-panel .timeline-row {
+  position: relative;
+  z-index: 1;
+}
+
+.timeline-course-panel .timeline-row[data-hovered="true"]::after,
+.timeline-course-panel .timeline-row[data-selected="true"]::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+  content: "";
+  z-index: 1;
+}
+
+.timeline-course-panel .timeline-row[data-hovered="true"]::after {
+  background: color-mix(in srgb, var(--timeline-row-tint, var(--mac-label)) 78%, transparent);
+}
+
+.timeline-course-panel .timeline-row[data-selected="true"]::after {
+  background: var(--mac-accent);
+}
+
 /* Selection outranks hover: the row you are inspecting stays the blue one while
    the pointer travels over it. Blue, because selection is blue everywhere in
    the app — the course's own colour said "this course" a second time rather
@@ -419,6 +478,25 @@ span:has(> .topic-progress-thumb) {
 
 .timeline-row[data-selected="true"] {
   color: var(--mac-label);
+}
+
+/* The gutter sits above the chart, so its selected half gets a little more
+   weight than the translucent highlight carried by the lane underneath. The
+   inset edge also colours only this row's slice of the panel outline. */
+.timeline-course-panel .timeline-row[data-selected="true"] {
+  background-color: color-mix(in srgb, var(--mac-accent) 24%, transparent);
+}
+
+/* A moving or resizing bar has no vertical manipulation mode: remove the
+   course-colour hover state while keeping the blue selection state above it. */
+[data-timeline-dragging="true"] .timeline-lane[data-hovered="true"]:not([data-selected="true"]),
+[data-timeline-dragging="true"] .timeline-row[data-hovered="true"]:not([data-selected="true"]) {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+[data-timeline-dragging="true"] .timeline-course-panel .timeline-row[data-hovered="true"]:not([data-selected="true"])::after {
+  display: none;
 }
 
 /**
@@ -492,7 +570,7 @@ span:has(> .topic-progress-thumb) {
 }
 
 .timeline-scrollport .timeline-course-panel button,
-.timeline-scrollport .timeline-marker {
+.timeline-scrollport .timeline-marker > button {
   cursor: pointer !important;
 }
 
@@ -682,7 +760,8 @@ span:has(> .topic-progress-thumb) {
      avoiding the pure hues used to space the course palette. The light-theme
      variants are dark enough to clear AA as text on white. */
   --mac-negative: #d9363e;
-  --mac-warning: #8a6800;
+  /* Near-pure yellow stays between the gold and lime course hues. */
+  --mac-warning: #9b7f19;
   --mac-positive: #238636;
   --mac-completion-mark: #1e1e1e;
 
@@ -730,7 +809,7 @@ span:has(> .topic-progress-thumb) {
 
   /* Brightened: the light-mode variants are unreadable on #1e1e1e. */
   --mac-negative: #ff6b72;
-  --mac-warning: #ffd24a;
+  --mac-warning: #edc85a;
   --mac-positive: #45d16f;
   --mac-completion-mark: #1e1e1e;
 

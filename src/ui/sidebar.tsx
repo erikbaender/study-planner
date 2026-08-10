@@ -167,21 +167,26 @@ export function CountdownBadge({
   days,
   provisional,
   atRisk,
+  onTrack,
 }: {
   days: number;
   provisional?: boolean;
   /** The course will not be finished in time. Shown, and said, rather than left to the colour. */
   atRisk?: boolean;
+  /** The course-list variant uses green for a confirmed on-track pace. */
+  onTrack?: boolean;
 }) {
   // At risk overrides the distance: an exam six weeks away that you will not be
   // ready for is the more urgent fact, and "6w" in grey says the opposite.
   const tone = atRisk
-    ? "negative"
-    : days <= 3
-      ? "negative"
-      : days <= 10
-        ? "warning"
-        : "neutral";
+    ? "warning"
+    : onTrack
+      ? "positive"
+      : days <= 3
+        ? "negative"
+        : days <= 10
+          ? "warning"
+          : "neutral";
   return (
     <Badge tone={tone}>
       <span className="sr-only">

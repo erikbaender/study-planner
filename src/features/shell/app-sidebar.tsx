@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import type { CSSProperties, RefObject } from "react";
-import type { Course, CourseHealth, Plan } from "@/domain";
+import type { Course, CourseHealth, IsoDate, Plan } from "@/domain";
 import { courseColorValue, courseProgress } from "@/domain";
 import {
   CountdownBadge,
@@ -43,6 +43,7 @@ import {
 import {
   hasExamSoon,
   isBehind,
+  needsAttention,
   sortCoursesAlphabetically,
 } from "@/features/workspace/scope";
 import type { Focus } from "@/features/workspace/store";
@@ -51,6 +52,7 @@ export function AppSidebar({
   plans,
   plan,
   health,
+  today,
   focus,
   hiddenCourseIds,
   query,
@@ -71,6 +73,7 @@ export function AppSidebar({
   plans: readonly Plan[];
   plan: Plan | undefined;
   health: Map<string, CourseHealth>;
+  today: IsoDate;
   focus: Focus;
   hiddenCourseIds: readonly string[];
   query: string;
@@ -89,7 +92,7 @@ export function AppSidebar({
   onNewCourse: () => void;
 }) {
   const courses = plan?.courses ?? [];
-  const behindCount = courses.filter((course) => isBehind(health.get(course.id))).length;
+  const attentionCount = courses.filter((course) => needsAttention(course, health.get(course.id), today)).length;
   const soonCount = courses.filter((course) => hasExamSoon(health.get(course.id))).length;
   const visible = sortCoursesAlphabetically(courses);
 
@@ -163,11 +166,11 @@ export function AppSidebar({
           onSelect={() => onSetFocus({ kind: "all" })}
         />
         <SidebarItem
-          label="Behind"
+          label="Attention needed"
           icon={<AlertTriangle />}
-          count={behindCount}
-          selected={focus.kind === "behind"}
-          onSelect={() => onSetFocus({ kind: "behind" })}
+          count={attentionCount}
+          selected={focus.kind === "attention"}
+          onSelect={() => onSetFocus({ kind: "attention" })}
         />
         <SidebarItem
           label="Exams soon"
@@ -223,10 +226,9 @@ export function AppSidebar({
 /**
  * A course in the source list.
  *
- * Not a selectable row. Selecting a course here used to narrow every view to
- * it, which made the sidebar a navigation control that also filtered — two jobs
- * competing in one click. It is now purely a filter, with the two switches that
- * filtering actually needs:
+ * A course row selects the course for inspection; its eye control remains the
+ * separate filter action. Keeping those two actions distinct means a click on
+ * the name does not unexpectedly hide every other course:
  *
  * **Hide** removes the course from all three views. Its icon describes the
  * action it will take, matching the global show-all and hide-all controls.
@@ -263,7 +265,7 @@ function CourseFilterRow({
       aria-current={selected ? "true" : undefined}
       className={clsx(
         "course-completion-row group/row flex cursor-default flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill",
-        selected && "bg-fill",
+        selected && "bg-accent-soft text-label hover:bg-accent-soft",
       )}
       style={{ "--topic-completion-color": courseColorValue(course.color) } as CSSProperties}
       onClick={onSelect}
@@ -295,6 +297,7 @@ function CourseFilterRow({
                 days={health.daysUntilExam}
                 provisional={health.exam.status === "provisional"}
                 atRisk={isBehind(health)}
+                onTrack={health.pace?.onTrack ?? false}
               />
             </span>
           ) : null}

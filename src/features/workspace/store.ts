@@ -17,7 +17,7 @@
  * The two axes are deliberately separate:
  *
  * - **focus** is *which courses you are looking at* — all of them, the ones that
- *   are behind, or the ones with exams soon.
+ *   need attention, or the ones with exams soon.
  * - **view** is *how they are shown* — Today, Timeline, or Outline.
  *
  * macOS splits these the same way: the sidebar picks the source, the toolbar
@@ -53,7 +53,7 @@ function announceCourseFilterChange() {
  * There is deliberately no "one course" focus: the sidebar filters visibility
  * without turning course rows into navigation.
  */
-export type Focus = { kind: "all" } | { kind: "behind" } | { kind: "soon" };
+export type Focus = { kind: "all" } | { kind: "attention" } | { kind: "soon" };
 
 /** What the inspector is describing. Independent of focus: you can inspect a topic in one course while focused on all of them. */
 export type Selection =
@@ -184,4 +184,14 @@ export function revealSelection(selection: Selection) {
   const { select, setInspectorOpen } = useWorkspace.getState();
   select(selection);
   setInspectorOpen(true);
+}
+
+/** Select an entity for inspection, or clear it when the same entity is clicked again. */
+export function toggleRevealSelection(selection: Exclude<Selection, null>) {
+  const current = useWorkspace.getState().selection;
+  if (current?.kind === selection.kind && current.id === selection.id) {
+    useWorkspace.getState().select(null);
+    return;
+  }
+  revealSelection(selection);
 }

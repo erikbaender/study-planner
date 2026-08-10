@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useWorkspace, revealSelection } from "./store";
+import { toggleRevealSelection, useWorkspace, revealSelection } from "./store";
 
 const initial = useWorkspace.getState();
 
@@ -22,7 +22,7 @@ describe("the workspace store", () => {
   it("drops focus and selection when the semester changes", () => {
     // Every id in either belongs to the semester being left. Carrying them
     // across would leave the inspector describing something from elsewhere.
-    useWorkspace.getState().setFocus({ kind: "behind" });
+    useWorkspace.getState().setFocus({ kind: "attention" });
     useWorkspace.getState().toggleCourseHidden("course_1");
     useWorkspace.getState().select({ kind: "topic", id: "topic_1" });
 
@@ -44,10 +44,10 @@ describe("the workspace store", () => {
 
   it("keeps focus and selection independent", () => {
     // You can inspect a topic in one course while focused on all of them.
-    useWorkspace.getState().setFocus({ kind: "behind" });
+    useWorkspace.getState().setFocus({ kind: "attention" });
     useWorkspace.getState().select({ kind: "topic", id: "topic_1" });
 
-    expect(useWorkspace.getState().focus).toEqual({ kind: "behind" });
+    expect(useWorkspace.getState().focus).toEqual({ kind: "attention" });
     expect(useWorkspace.getState().selection).toEqual({ kind: "topic", id: "topic_1" });
   });
 
@@ -66,5 +66,13 @@ describe("the workspace store", () => {
     const state = useWorkspace.getState();
     expect(state.selection).toEqual({ kind: "course", id: "course_1" });
     expect(state.inspectorOpen).toBe(true);
+  });
+
+  it("clears the current entity when it is selected again", () => {
+    toggleRevealSelection({ kind: "course", id: "course_1" });
+    expect(useWorkspace.getState().selection).toEqual({ kind: "course", id: "course_1" });
+
+    toggleRevealSelection({ kind: "course", id: "course_1" });
+    expect(useWorkspace.getState().selection).toBeNull();
   });
 });

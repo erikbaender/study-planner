@@ -13,7 +13,7 @@ function noopActions(): CommandActions {
   return {
     setView: vi.fn(),
     focusAll: vi.fn(),
-    focusBehind: vi.fn(),
+    focusAttention: vi.fn(),
     focusSoon: vi.fn(),
     revealCourse: vi.fn(),
     revealTopic: vi.fn(),

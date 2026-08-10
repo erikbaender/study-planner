@@ -1,3 +1,5 @@
+import { clsx } from "clsx";
+import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { differenceInDays, type IsoDate } from "@/domain";
 import { shortDate } from "./geometry";
 
@@ -16,29 +18,146 @@ type Readout = { x: number; y: number; startDate: IsoDate; endDate: IsoDate };
  * in the plan to move a caption.
  */
 let readoutElement: HTMLElement | null = null;
+let manipulating = false;
+let hoveredBlockId: string | null = null;
 
-export function DragReadout() {
+export type BlockHoverReadout = {
+  blockId: string;
+  topicName: string;
+  startDate: IsoDate;
+  endDate: IsoDate;
+  completedUnits: number;
+  totalUnits: number;
+  unit: string;
+  overdue: boolean;
+  anchor: DOMRect;
+};
+
+export const TimelineInfoBox = forwardRef<HTMLSpanElement, ComponentPropsWithoutRef<"span">>(
+  function TimelineInfoBox({ className, ...props }, ref) {
+    return (
+      <span
+        ref={ref}
+        {...props}
+        className={clsx(
+          "timeline-info-box material-popover pointer-events-none fixed z-50 max-w-[calc(100vw-1rem)] rounded-chip px-1.5 py-0.5 text-caption tabular-nums whitespace-nowrap text-label shadow-popover",
+          className,
+        )}
+      />
+    );
+  },
+);
+
+export function TimelineReadout() {
   return (
-    <span
+    <TimelineInfoBox
       ref={(node) => {
         readoutElement = node;
       }}
       role="status"
       data-visible="false"
-      className="timeline-readout material-popover pointer-events-none fixed z-50 -translate-x-1/2 rounded-chip px-1.5 py-0.5 text-caption tabular-nums whitespace-nowrap text-label shadow-popover"
+      data-mode="idle"
+      className="timeline-readout -translate-x-1/2"
     />
   );
+}
+
+function setReadoutVisible(visible: boolean) {
+  if (!readoutElement) return;
+  readoutElement.dataset.visible = String(visible);
+  readoutElement.style.visibility = visible ? "visible" : "hidden";
+}
+
+function setReadoutText(text: string) {
+  if (!readoutElement) return;
+  readoutElement.replaceChildren(document.createTextNode(text));
 }
 
 export function showReadout({ x, y, startDate, endDate }: Readout) {
   if (!readoutElement) return;
   const length = differenceInDays(startDate, endDate) + 1;
-  readoutElement.textContent = `${shortDate(startDate)} – ${shortDate(endDate)} · ${length} day${length === 1 ? "" : "s"}`;
+  readoutElement.dataset.mode = "manipulation";
+  setReadoutText(`${shortDate(startDate)} – ${shortDate(endDate)} · ${length} day${length === 1 ? "" : "s"}`);
   readoutElement.style.left = `${x}px`;
   readoutElement.style.top = `${y - 28}px`;
-  readoutElement.dataset.visible = "true";
+  setReadoutVisible(true);
 }
 
 export function hideReadout() {
-  if (readoutElement) readoutElement.dataset.visible = "false";
+  setReadoutVisible(false);
+}
+
+/** Hide the hover content before a block's manipulation session takes over the same box. */
+export function beginReadoutManipulation() {
+  manipulating = true;
+  hoveredBlockId = null;
+  if (!readoutElement) return;
+  readoutElement.dataset.mode = "manipulation";
+  hideReadout();
+}
+
+/** Release the shared box after a move/resize, leaving it hidden until the next hover. */
+export function endReadoutManipulation() {
+  manipulating = false;
+  hoveredBlockId = null;
+  hideReadout();
+  if (readoutElement) readoutElement.dataset.mode = "idle";
+}
+
+function appendHoverContent(readout: BlockHoverReadout) {
+  if (!readoutElement) return;
+  const length = differenceInDays(readout.startDate, readout.endDate) + 1;
+  const content = document.createElement("span");
+  content.className = "flex flex-col gap-0.5";
+
+  const topic = document.createElement("span");
+  topic.className = "font-semibold";
+  topic.textContent = readout.topicName;
+  content.append(topic);
+
+  const dates = document.createElement("span");
+  dates.textContent = `${shortDate(readout.startDate)} – ${shortDate(readout.endDate)} · ${length} day${length === 1 ? "" : "s"}`;
+  content.append(dates);
+
+  const progress = document.createElement("span");
+  progress.textContent = `${readout.completedUnits} of ${readout.totalUnits} ${readout.unit} done${readout.overdue ? " · overdue" : ""}`;
+  content.append(progress);
+
+  readoutElement.replaceChildren(content);
+}
+
+export function showBlockHover(readout: BlockHoverReadout) {
+  if (manipulating || !readoutElement) return;
+  hoveredBlockId = readout.blockId;
+  appendHoverContent(readout);
+
+  readoutElement.dataset.mode = "hover";
+  readoutElement.dataset.visible = "true";
+  readoutElement.style.visibility = "hidden";
+  readoutElement.style.left = "0px";
+  readoutElement.style.top = "0px";
+
+  const card = readoutElement.getBoundingClientRect();
+  const left = Math.max(
+    8,
+    Math.min(
+      readout.anchor.left + readout.anchor.width / 2 - card.width / 2,
+      window.innerWidth - card.width - 8,
+    ),
+  );
+  const above = readout.anchor.top - card.height - 8;
+  const top =
+    above >= 8
+      ? above
+      : Math.min(window.innerHeight - card.height - 8, readout.anchor.bottom + 8);
+
+  readoutElement.style.left = `${left}px`;
+  readoutElement.style.top = `${Math.max(8, top)}px`;
+  readoutElement.style.visibility = "visible";
+}
+
+export function hideBlockHover(blockId: string) {
+  if (manipulating || hoveredBlockId !== blockId) return;
+  hoveredBlockId = null;
+  hideReadout();
 }

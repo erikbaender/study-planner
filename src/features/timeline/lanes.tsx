@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { ChevronRight, Layers, Plus } from "lucide-react";
+import { AlertTriangle, ChevronRight, Layers, Plus } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   clampDate,
@@ -10,7 +10,6 @@ import {
   type IsoDate,
   type Topic,
 } from "@/domain";
-import { Badge } from "@/ui";
 import {
   dateAt,
   shortDate,
@@ -36,6 +35,7 @@ import {
   type RowMotion,
 } from "./row-transitions";
 import { hintExcludedScope } from "@/features/workspace/hints";
+import { overdueBlockCount, overdueBlockCountForTopic } from "@/features/workspace/scope";
 /* ─── Lanes ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -43,10 +43,10 @@ import { hintExcludedScope } from "@/features/workspace/hints";
  *
  * The bar covers the group's whole scheduled span. Across it, `densityBar`
  * stacks one band per course — each band as thick as that course's share of the
- * work at that point — and masks the whole stack with a density step, so a
- * crowded fortnight is opaque and a quiet one drops to near the track. Nothing
- * is blended: every colour in the bar is exactly some course's own colour, and
- * a week that is three courses at once is three bands rather than a fourth hue
+ * work at that point — and gives each date run a solid opacity, so a crowded
+ * fortnight is opaque and a quiet one drops to near the track. Nothing is
+ * blended: every colour in the bar is exactly some course's own colour, and a
+ * week that is three courses at once is three bands rather than a fourth hue
  * belonging to nobody. Every edge lands on a date and is cut hard.
  *
  * The track underneath is what makes the quiet end of the ramp legible: without
@@ -80,7 +80,7 @@ function RollUpBar({
   // nothing about the picture, and a bar that flickers on a rename is worse
   // than one that never animated at all.
   const painting = useMemo(
-    () => `${density.mask}|${density.bands.map((band) => band.color + band.d).join("|")}`,
+    () => density.bands.map((band) => `${band.color}|${band.opacity}|${band.d}`).join("|"),
     [density],
   );
   const { previous, generation, settle } = useCrossfade(density, painting);
@@ -138,12 +138,37 @@ function Stack({
         leaving && "absolute inset-0 timeline-rollup-out",
         arriving && "timeline-rollup-in",
       )}
-      style={{ maskImage: density.mask, WebkitMaskImage: density.mask }}
     >
-      {density.bands.map((band) => (
-        <path key={band.color} d={band.d} fill={band.color} />
+      {density.bands.map((band, index) => (
+        <path key={`${band.color}-${index}`} d={band.d} fill={band.color} fillOpacity={band.opacity} />
       ))}
     </svg>
+  );
+}
+
+function AttentionIndicators({
+  behindDays,
+  overdueBlocks,
+}: {
+  behindDays: number | null;
+  overdueBlocks: number;
+}) {
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {behindDays !== null ? (
+        <span title={`${behindDays} days behind pace`} className="flex size-4 items-center justify-center">
+          <AlertTriangle aria-hidden="true" className="size-4 text-warning" strokeWidth={1.5} />
+        </span>
+      ) : null}
+      {overdueBlocks > 0 ? (
+        <span
+          title={`${overdueBlocks} overdue block${overdueBlocks === 1 ? "" : "s"}`}
+          className="flex size-4 items-center justify-center"
+        >
+          <AlertTriangle aria-hidden="true" className="size-4 text-negative" strokeWidth={1.5} />
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -201,12 +226,14 @@ const topicKeyOf = (topic: Topic) => topic.id;
  */
 function AllTopicsLane({
   entries,
+  health,
   range,
   today,
   selectedId,
   onSelectTopic,
 }: {
   entries: readonly { course: Course; topic: Topic }[];
+  health: Map<string, CourseHealth>;
   range: Range;
   today: IsoDate;
   selectedId: string | null;
@@ -233,6 +260,19 @@ function AllTopicsLane({
   // Summed from the rows that are actually there, including the ones on their
   // way out: the group's height and each row's own height animate as one.
   const rowsHeight = rows.reduce((total, row) => total + row.motion.height, 0) + GROUP_GAP;
+  const courseIds = new Set(entries.map(({ course }) => course.id));
+  const behindDays = Math.max(
+    -1,
+    ...[...courseIds]
+      .map((courseId) => health.get(courseId)?.pace)
+      .filter((pace): pace is NonNullable<CourseHealth["pace"]> => Boolean(pace && !pace.onTrack))
+      .map((pace) => pace.daysLate),
+  );
+  const coursesInEntries = new Map(entries.map(({ course }) => [course.id, course] as const));
+  const overdueBlocks = [...coursesInEntries.values()].reduce(
+    (total, course) => total + overdueBlockCount(course, today),
+    0,
+  );
 
   return (
     <section className="border-b border-separator">
@@ -275,14 +315,15 @@ function AllTopicsLane({
           icon={<Layers aria-hidden="true" className="size-3 shrink-0 text-tertiary" />}
           name="All courses"
           bold
-          trailing={<span className="shrink-0 text-caption tabular-nums text-tertiary">{entries.length}</span>}
+          trailing={<AttentionIndicators behindDays={behindDays >= 0 ? behindDays : null} overdueBlocks={overdueBlocks} />}
           rowsHeight={disclosure.expanded ? rowsHeight : 0}
           rows={
             disclosure.mounted
               ? rows.map(({ key, item: { course, topic }, motion }) => ({
                   key,
                   name: topic.name,
-                  dot: courseColorValue(topic.color || course.color),
+                  dot: courseColorValue(course.color),
+                  overdue: overdueBlockCountForTopic(topic, today) > 0,
                   selected: topic.id === selectedId,
                   motion,
                   onSelect: () => onSelectTopic(course, topic),
@@ -321,7 +362,7 @@ function CourseLane({
   const series = useMemo(
     () =>
       topics.map((topic) => ({
-        color: courseColorValue(topic.color || course.color),
+        color: courseColorValue(course.color),
         blocks: topic.blocks,
       })),
     [topics, course.color],
@@ -332,6 +373,8 @@ function CourseLane({
     rows.length === 0
       ? EMPTY_COURSE_HEIGHT
       : rows.reduce((total, row) => total + row.motion.height, 0) + GROUP_GAP;
+  const behindDays = health?.pace && !health.pace.onTrack ? health.pace.daysLate : null;
+  const overdueBlocks = overdueBlockCount(course, today);
 
   return (
     <section className="border-b border-separator/60">
@@ -380,16 +423,15 @@ function CourseLane({
             />
           }
           name={course.name}
-          trailing={
-            health?.pace && !health.pace.onTrack ? <Badge tone="negative">Behind</Badge> : null
-          }
+          trailing={<AttentionIndicators behindDays={behindDays} overdueBlocks={overdueBlocks} />}
           rowsHeight={disclosure.expanded && rows.length > 0 ? rowsHeight : 0}
           rows={
             disclosure.mounted
               ? rows.map(({ key, item: topic, motion }) => ({
                   key,
                   name: topic.name,
-                  dot: courseColorValue(topic.color || course.color),
+                  dot: courseColorValue(course.color),
+                  overdue: overdueBlockCountForTopic(topic, today) > 0,
                   selected: topic.id === selectedId,
                   motion,
                   onSelect: () => onSelectTopic(topic),
@@ -434,6 +476,7 @@ function GutterCard({
     key: string;
     name: string;
     dot?: string;
+    overdue?: boolean;
     selected?: boolean;
     /** Where this row is in an arrival or a departure; see "Rows arriving and leaving". */
     motion: RowMotion;
@@ -452,7 +495,7 @@ function GutterCard({
       <div
         {...hintExcludedScope}
         style={{ width: chart.gutter, height: LANE_HEIGHT + rowsHeight }}
-        className="timeline-disclosure timeline-course-panel pointer-events-auto sticky left-0 flex flex-col rounded-r-control border-r border-separator/60"
+        className="timeline-disclosure timeline-course-panel pointer-events-auto sticky left-0 flex flex-col rounded-r-control"
       >
         <button
           type="button"
@@ -523,6 +566,14 @@ function GutterCard({
                   />
                 ) : null}
                 <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                {row.overdue ? (
+                  <span
+                    title="Overdue block"
+                    className="flex size-4 shrink-0 items-center justify-center"
+                  >
+                    <AlertTriangle aria-hidden="true" className="size-4 text-negative" strokeWidth={1.5} />
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -578,7 +629,7 @@ function TopicLane({
 }) {
   const chart = useChart();
   const laneRef = useRef<HTMLDivElement>(null);
-  const tint = courseColorValue(topic.color || course.color);
+  const tint = courseColorValue(course.color);
   const progress = useMemo(() => topicProgress(topic), [topic]);
   // One pass for the row: each bar is drawn with its share of the topic's
   // progress rather than with all of it. See `blocks.ts`.
@@ -657,7 +708,7 @@ function TopicLane({
     >
       {/* The row's name now lives in the group's single `GutterCard`, drawn
           once above every row rather than repeated per row here. */}
-      {topic.blocks.length > 0 ? <OffscreenMarkers topic={topic} tint={tint} /> : null}
+      {topic.blocks.length > 0 ? <OffscreenMarkers topic={topic} tint={tint} today={today} /> : null}
       {topic.blocks.map((block) => (
         <MemoBlockBar
           key={block.id}
@@ -684,6 +735,7 @@ function TopicLane({
  */
 export const MemoAllTopicsLane = memo(AllTopicsLane, (left, right) =>
   left.entries === right.entries &&
+  left.health === right.health &&
   left.range === right.range &&
   left.today === right.today &&
   left.selectedId === right.selectedId,

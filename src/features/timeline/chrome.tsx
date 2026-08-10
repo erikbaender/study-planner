@@ -278,34 +278,6 @@ export function Weekends({ range, zoom }: { range: Range; zoom: Zoom }) {
   );
 }
 
-/**
- * What the marks mean.
- *
- * Three of the chart's conventions are unguessable — a dashed outline, a
- * hatched band, a hollow tail on a bar — and each was previously discoverable
- * only by having written the code.
- */
-export function Legend() {
-  return (
-    <div className="flex items-center gap-3 text-caption whitespace-nowrap text-tertiary">
-      <span className="flex items-center gap-1">
-        <span className="h-2.5 w-4 rounded-chip bg-secondary/25">
-          <span className="block h-full w-1/2 rounded-chip bg-secondary/70" />
-        </span>
-        done
-      </span>
-      <span className="flex items-center gap-1">
-        <span className="h-2.5 w-4 rounded-chip border border-dashed border-tertiary" />
-        manual
-      </span>
-      <span className="flex items-center gap-1">
-        <span className="h-2.5 w-4 rounded-chip bg-negative/30" />
-        overdue
-      </span>
-    </div>
-  );
-}
-
 export function TodayLine({ today, range }: { today: IsoDate; range: Range }) {
   return (
     <div

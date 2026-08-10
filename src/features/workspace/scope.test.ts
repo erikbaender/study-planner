@@ -94,21 +94,21 @@ describe("coursesInFocus", () => {
   const health = healthByCourse(plan, snapshotOf(plan), TODAY);
 
   it("returns courses alphabetically under every focus", () => {
-    expect(coursesInFocus(plan, { kind: "all" }, health).map((course) => course.name)).toEqual([
+    expect(coursesInFocus(plan, { kind: "all" }, health, TODAY).map((course) => course.name)).toEqual([
       "Anatomy",
       "Biochem",
       "Physio",
     ]);
   });
 
-  it("narrows to the courses that are actually behind", () => {
-    expect(coursesInFocus(plan, { kind: "behind" }, health).map((course) => course.name)).toEqual([
+  it("narrows to courses that are behind or have overdue work", () => {
+    expect(coursesInFocus(plan, { kind: "attention" }, health, TODAY).map((course) => course.name)).toEqual([
       "Biochem",
     ]);
   });
 
   it("narrows to the courses with an exam inside the horizon", () => {
-    expect(coursesInFocus(plan, { kind: "soon" }, health).map((course) => course.name)).toEqual([
+    expect(coursesInFocus(plan, { kind: "soon" }, health, TODAY).map((course) => course.name)).toEqual([
       "Anatomy",
       "Biochem",
     ]);
@@ -116,14 +116,14 @@ describe("coursesInFocus", () => {
 
   it("drops hidden courses", () => {
     const hidden = { hiddenCourseIds: [plan.courses[0].id] };
-    expect(coursesInFocus(plan, { kind: "all" }, health, hidden).map((c) => c.name)).toEqual([
+    expect(coursesInFocus(plan, { kind: "all" }, health, TODAY, hidden).map((c) => c.name)).toEqual([
       "Anatomy",
       "Physio",
     ]);
   });
 
   it("returns nothing when there is no plan at all", () => {
-    expect(coursesInFocus(undefined, { kind: "all" }, health)).toEqual([]);
+    expect(coursesInFocus(undefined, { kind: "all" }, health, TODAY)).toEqual([]);
   });
 });
 

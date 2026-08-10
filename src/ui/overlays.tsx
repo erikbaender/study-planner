@@ -14,9 +14,11 @@
  * | medium  | Menu         | choosing an action                                |
  * | highest | Sheet        | multi-field create/edit, and only then            |
  *
- * Hover tooltips are deliberately absent: help that appears only after you have
- * already guessed where to put the pointer is help for the second visit, and the
- * toolbar's hint bar says the same things without being asked.
+ * General hover tooltips are deliberately absent: help that appears only after
+ * you have already guessed where to put the pointer is help for the second
+ * visit, and the toolbar's hint bar says the same things without being asked.
+ * Timeline blocks are the exception; their date/progress summary is a chart
+ * readout, rendered alongside the manipulation readout.
  *
  * All of it is Radix underneath, which supplies the parts that are tedious and
  * easy to get subtly wrong: focus trapping and restoration, `aria-expanded` and

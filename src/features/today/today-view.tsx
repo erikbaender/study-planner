@@ -231,7 +231,7 @@ export function TodayView({
                   {exam.name}
                 </span>
                 {courseHealth.pace ? (
-                  <Badge tone={courseHealth.pace.onTrack ? "positive" : "negative"}>
+                  <Badge tone={courseHealth.pace.onTrack ? "positive" : "warning"}>
                     {courseHealth.pace.onTrack ? "On track" : "Behind"}
                   </Badge>
                 ) : null}
@@ -248,7 +248,7 @@ export function TodayView({
       {behind.length > 0 ? (
         <Card className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            <h3 className="text-title3 font-semibold">Behind</h3>
+                <h3 className="text-title3 font-semibold">Behind</h3>
             <span className="ml-auto">
               <PlanningActions size="sm" courses={behind} snapshot={snapshot} today={today} />
             </span>
@@ -267,7 +267,7 @@ export function TodayView({
                   <span className="shrink-0 text-callout tabular-nums text-secondary">
                     {pace.remainingUnits} units left
                   </span>
-                  <Badge tone="negative">
+                  <Badge tone="warning">
                     {Number.isFinite(pace.requiredPace)
                       ? `${Math.ceil(pace.requiredPace)} / day needed`
                       : "No days left"}

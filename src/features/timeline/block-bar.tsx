@@ -32,6 +32,10 @@ import {
 } from "./hints";
 import type { Range } from "./layout";
 import { hintTarget } from "@/features/workspace/hints";
+import {
+  hideBlockHover,
+  showBlockHover,
+} from "./readout";
 /** The one delete item, so the bar's menu and the lane's cannot disagree. */
 export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
   return {
@@ -46,6 +50,29 @@ export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
   };
 }
 
+/** An opaque warning mark keeps the chart's brightness while borrowing red's hue. */
+function OverdueIcon({ className }: { className?: string } = {}) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={clsx(className ?? "size-7", "text-negative")}
+    >
+      <path
+        d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
+        fill="color-mix(in srgb, var(--mac-negative) 15%, var(--mac-content) 85%)"
+      />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
 /**
  * "There is more of this row over there."
  *
@@ -55,9 +82,14 @@ export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
  * the scrollport with `position: sticky`, count what is out there, and scroll
  * the nearest one *just* into view on the side it was hiding past.
  */
-export function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }) {
+export function OffscreenMarkers({ topic, tint, today }: { topic: Topic; tint: string; today: IsoDate }) {
   const chart = useChart();
-  const markers = useOffscreenMarkerState(topic.blocks, chart.viewport);
+  const markers = useOffscreenMarkerState(
+    topic.blocks,
+    chart.viewport,
+    today,
+    (topicProgress(topic).ratio ?? 0) < 1,
+  );
   // Both sides stay mounted while the row has anything to point at, and the
   // last thing each pointed at is kept while it fades: an element removed from
   // the DOM cannot animate its own departure.
@@ -78,6 +110,7 @@ export function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }
           tint={tint}
           visible={markers.before !== null}
           count={shown.before.count}
+          overdue={shown.before.overdue}
           date={shown.before.block.endDate}
           topic={topic.name}
           onGo={() => chart.reveal(shown.before!.block, "left")}
@@ -89,6 +122,7 @@ export function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }
           tint={tint}
           visible={markers.after !== null}
           count={shown.after.count}
+          overdue={shown.after.overdue}
           date={shown.after.block.startDate}
           topic={topic.name}
           onGo={() => chart.reveal(shown.after!.block, "right")}
@@ -98,34 +132,43 @@ export function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }
   );
 }
 
-type MarkerSide = { count: number; block: StudyBlock } | null;
+type MarkerSide = { count: number; block: StudyBlock; overdue: boolean } | null;
 type OffscreenMarkerState = { before: MarkerSide; after: MarkerSide };
 
 const NO_OFFSCREEN_MARKERS: OffscreenMarkerState = { before: null, after: null };
 
 /** One pass finds both counts and the nearest block in either direction. */
-function markersFor(blocks: readonly StudyBlock[], viewport: Viewport): OffscreenMarkerState {
+function markersFor(
+  blocks: readonly StudyBlock[],
+  viewport: Viewport,
+  today: IsoDate,
+  topicOverdue: boolean,
+): OffscreenMarkerState {
   if (!viewport || blocks.length === 0) return NO_OFFSCREEN_MARKERS;
 
   let beforeCount = 0;
   let afterCount = 0;
   let nearestBefore: StudyBlock | null = null;
   let nearestAfter: StudyBlock | null = null;
+  let beforeOverdue = false;
+  let afterOverdue = false;
 
   for (const block of blocks) {
     if (block.endDate < viewport.from) {
       beforeCount += 1;
+      beforeOverdue ||= topicOverdue && block.endDate < today;
       if (!nearestBefore || block.endDate > nearestBefore.endDate) nearestBefore = block;
     } else if (block.startDate > viewport.to) {
       afterCount += 1;
+      afterOverdue ||= topicOverdue && block.endDate < today;
       if (!nearestAfter || block.startDate < nearestAfter.startDate) nearestAfter = block;
     }
   }
 
   if (!nearestBefore && !nearestAfter) return NO_OFFSCREEN_MARKERS;
   return {
-    before: nearestBefore ? { count: beforeCount, block: nearestBefore } : null,
-    after: nearestAfter ? { count: afterCount, block: nearestAfter } : null,
+    before: nearestBefore ? { count: beforeCount, block: nearestBefore, overdue: beforeOverdue } : null,
+    after: nearestAfter ? { count: afterCount, block: nearestAfter, overdue: afterOverdue } : null,
   };
 }
 
@@ -133,8 +176,10 @@ function sameMarkerState(left: OffscreenMarkerState, right: OffscreenMarkerState
   return (
     left.before?.count === right.before?.count &&
     left.before?.block === right.before?.block &&
+    left.before?.overdue === right.before?.overdue &&
     left.after?.count === right.after?.count &&
     left.after?.block === right.after?.block
+    && left.after?.overdue === right.after?.overdue
   );
 }
 
@@ -146,23 +191,32 @@ function sameMarkerState(left: OffscreenMarkerState, right: OffscreenMarkerState
 function useOffscreenMarkerState(
   blocks: readonly StudyBlock[],
   store: ViewportStore,
+  today: IsoDate,
+  topicOverdue: boolean,
 ): OffscreenMarkerState {
   const cacheRef = useRef<{
     blocks: readonly StudyBlock[];
     viewport: Viewport;
+    today: IsoDate;
+    topicOverdue: boolean;
     result: OffscreenMarkerState;
   } | null>(null);
 
   const getSnapshot = useCallback(() => {
     const viewport = store.getSnapshot();
     const cached = cacheRef.current;
-    if (cached?.blocks === blocks && cached.viewport === viewport) return cached.result;
+    if (
+      cached?.blocks === blocks &&
+      cached.viewport === viewport &&
+      cached.today === today &&
+      cached.topicOverdue === topicOverdue
+    ) return cached.result;
 
-    const selected = markersFor(blocks, viewport);
+    const selected = markersFor(blocks, viewport, today, topicOverdue);
     const result = cached && sameMarkerState(cached.result, selected) ? cached.result : selected;
-    cacheRef.current = { blocks, viewport, result };
+    cacheRef.current = { blocks, viewport, today, topicOverdue, result };
     return result;
-  }, [blocks, store]);
+  }, [blocks, store, today, topicOverdue]);
 
   return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
 }
@@ -174,6 +228,7 @@ function Marker({
   count,
   date,
   topic,
+  overdue,
   onGo,
 }: {
   side: "left" | "right";
@@ -183,6 +238,7 @@ function Marker({
   count: number;
   date: IsoDate;
   topic: string;
+  overdue: boolean;
   onGo: () => void;
 }) {
   const chart = useChart();
@@ -190,7 +246,20 @@ function Marker({
   const where = side === "left" ? "earlier" : "later";
 
   return (
-    <button
+    <span
+      data-visible={visible}
+      className={clsx(
+        "timeline-marker sticky z-30 mt-1 flex h-4 items-center gap-1",
+        side === "left" ? "float-left" : "float-right right-1",
+      )}
+      style={side === "left" ? { left: chart.gutter + 4 } : undefined}
+    >
+      {side === "right" && overdue ? (
+        <span className="pointer-events-none flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <OverdueIcon className="size-4" />
+        </span>
+      ) : null}
+      <button
       type="button"
       // A press here is neither a rubber band nor a bar gesture: the marker is
       // chrome sitting over the canvas, and the canvas underneath must not hear
@@ -198,7 +267,6 @@ function Marker({
       // the scrollport's capture phase before this ever runs.
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onGo}
-      data-visible={visible}
       aria-hidden={!visible}
       tabIndex={visible ? undefined : -1}
       title={`${count} ${where} block${count === 1 ? "" : "s"} for ${topic} — go to ${shortDate(date)}`}
@@ -210,26 +278,27 @@ function Marker({
       // In the colour of the work it points at: a row of grey chips down the
       // edge of the chart says only "something is out there", and in the
       // combined lane the useful half of that is *whose*.
-      style={{
-        ...(side === "left" ? { left: chart.gutter + 4 } : undefined),
-        background: `color-mix(in srgb, ${tint} 22%, var(--mac-material-inline))`,
-        color: tint,
-      }}
+      style={{ background: `color-mix(in srgb, ${tint} 22%, var(--mac-material-inline))`, color: tint }}
       // `mt-1` rather than a sticky `top`: a float sits at the top of the row,
       // and the offset of a sticky element is where it pins against the
       // *scrollport*, not where it sits in its row. The margin puts it on the
       // bars' own centre line, at the bars' own height.
       className={clsx(
-        "timeline-chrome timeline-marker timeline-inline sticky z-30 mt-1",
+        "timeline-chrome",
         "flex h-4 items-center gap-0.5 rounded-chip px-1 text-caption font-semibold tabular-nums",
         "hover:brightness-110",
-        side === "left" ? "float-left" : "float-right right-1",
       )}
     >
       {side === "left" ? <Chevron aria-hidden="true" className="size-3" /> : null}
       {count}
       {side === "right" ? <Chevron aria-hidden="true" className="size-3" /> : null}
-    </button>
+      </button>
+      {side === "left" && overdue ? (
+        <span className="pointer-events-none flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <OverdueIcon className="size-4" />
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -272,10 +341,11 @@ function BlockBar({
   );
   const keyboardMode = useKeyboardMode();
   const barHints = barSelection !== null ? barSelectedHints(keyboardMode) : BAR_HINTS;
+  const barHintTarget = hintTarget(barHints);
 
   const shown = draft ?? block;
   const unit = UNIT_LABELS[topic.unit].plural;
-  const tint = courseColorValue(topic.color || course.color);
+  const tint = courseColorValue(course.color);
 
   const length = differenceInDays(shown.startDate, shown.endDate) + 1;
   const past = shown.endDate < today;
@@ -283,7 +353,6 @@ function BlockBar({
   // unfinished work is the one thing on this chart that needs acting on, and it
   // used to be drawn *fainter* than everything else.
   const overdue = past && (progress.ratio ?? 0) < 1;
-  const label = `${shortDate(shown.startDate)} – ${shortDate(shown.endDate)}`;
 
   return (
     <>
@@ -312,30 +381,59 @@ function BlockBar({
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
-          chart.select([block.id]);
-          onSelect();
+          const current = chart.selection.getSnapshot();
+          if (current.includes(block.id)) chart.select(current.filter((id) => id !== block.id));
+          else {
+            chart.select([block.id]);
+            onSelect();
+          }
         }}
-        {...hintTarget(barHints)}
+        {...barHintTarget}
+        onPointerEnter={(event) => {
+          barHintTarget.onPointerEnter();
+          showBlockHover({
+            blockId: block.id,
+            topicName: topic.name,
+            startDate: shown.startDate,
+            endDate: shown.endDate,
+            completedUnits: topic.completedUnits,
+            totalUnits: topic.totalUnits,
+            unit,
+            overdue,
+            anchor: event.currentTarget.getBoundingClientRect(),
+          });
+        }}
+        onPointerLeave={() => {
+          barHintTarget.onPointerLeave();
+          hideBlockHover(block.id);
+        }}
+        onFocus={(event) => {
+          barHintTarget.onFocus();
+          showBlockHover({
+            blockId: block.id,
+            topicName: topic.name,
+            startDate: shown.startDate,
+            endDate: shown.endDate,
+            completedUnits: topic.completedUnits,
+            totalUnits: topic.totalUnits,
+            unit,
+            overdue,
+            anchor: event.currentTarget.getBoundingClientRect(),
+          });
+        }}
+        onBlur={() => {
+          barHintTarget.onBlur();
+          hideBlockHover(block.id);
+        }}
         // Everything a bar means, spoken. The old bars were `div`s and said
         // nothing at all.
         aria-label={`${topic.name}, ${shown.startDate} to ${shown.endDate}, ${length} day${length === 1 ? "" : "s"}, ${topic.completedUnits} of ${topic.totalUnits} ${unit} done${overdue ? ", overdue" : ""}`}
-        // The hover answer to "which days is this?", which previously only a
-        // screen reader was told.
-        title={`${topic.name}\n${shortDate(shown.startDate)} – ${shortDate(shown.endDate)} · ${length} day${length === 1 ? "" : "s"}\n${topic.completedUnits} of ${topic.totalUnits} ${unit} done${overdue ? " · overdue" : ""}`}
         aria-current={barSelection !== null || selected ? "true" : undefined}
         data-selection={barSelection ?? undefined}
         style={{
           left: xCss(shown.startDate, range.start),
           width: widthCss(shown.startDate, shown.endDate, 6),
-          // Overdue is carried by a dense opaque warning hatch rather than a
-          // second outline: the red pattern makes missed work unmistakable
-          // without making it look like an ordinary red study bar.
-          backgroundColor: overdue
-            ? "transparent"
-            : `color-mix(in srgb, ${tint} 22%, transparent)`,
-          backgroundImage: overdue
-            ? "repeating-linear-gradient(45deg, color-mix(in srgb, var(--mac-negative) 68%, black) 0 2px, transparent 2px 4px)"
-            : undefined,
+          backgroundColor: `color-mix(in srgb, ${tint} 22%, transparent)`,
           // One outline per bar, always. It used to be a ring *and*, on a
           // hand-placed block, a dashed border half a pixel outside it — two
           // edges on a shape four pixels tall, which read as a rendering
@@ -352,30 +450,34 @@ function BlockBar({
               ? "2px solid var(--mac-accent)"
               : barSelection === "secondary"
                 ? "2px solid color-mix(in srgb, var(--mac-accent) 50%, transparent)"
-                : `1px ${block.source === "manual" ? "dashed" : "solid"} color-mix(in srgb, ${tint} 55%, transparent)`,
+                : overdue
+                  ? "1.5px solid var(--mac-negative)"
+                  : `1px ${block.source === "manual" ? "dashed" : "solid"} color-mix(in srgb, ${tint} 55%, transparent)`,
           outlineOffset: barSelection ? 2 : -1,
         }}
         className={clsx(
-          "timeline-bar timeline-tint group absolute top-1 h-4 touch-none overflow-hidden rounded-chip",
+          "timeline-bar timeline-tint group absolute top-1 h-4 touch-none overflow-visible rounded-chip",
           barSelection && "z-10",
         )}
       >
-        {/* Progress as an internal fill. Each bar carries its *share* of the
+        <span className="absolute inset-0 overflow-hidden rounded-[inherit]">
+          {/* Progress as an internal fill. Each bar carries its *share* of the
             topic's progress, so a topic split across four windows reads as one
             quantity spread over four bars rather than as four times the work. */}
-        <span
-          aria-hidden="true"
-          className="topic-motion-width block h-full"
-          style={{ width: `${fill * 100}%`, background: tint }}
-        />
-        {/* The dates, in the bar, when there is room for them. A chart of
-            anonymous rectangles makes you hover every one to read it back. */}
-        <span
-          aria-hidden="true"
-          className="timeline-bar-label pointer-events-none absolute inset-0 items-center justify-center px-1.5 text-caption tabular-nums whitespace-nowrap text-secondary"
-        >
-          {label}
+          <span
+            aria-hidden="true"
+            className="topic-motion-width block h-full"
+            style={{ width: `${fill * 100}%`, background: tint }}
+          />
         </span>
+        {overdue ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
+          >
+            <OverdueIcon />
+          </span>
+        ) : null}
         {/* The resize edges, shown on hover. There is no mode to reveal them in
             any more, so they appear where the hand already is. */}
         <span
@@ -384,7 +486,7 @@ function BlockBar({
             if (event.button === LEFT) startBarGesture(event, chart, "start", block.id);
           }}
           {...hintTarget(HANDLE_HINTS)}
-          className="timeline-bar-handle timeline-tint absolute inset-y-0 left-0 w-1.5 opacity-0"
+          className="timeline-bar-handle timeline-tint absolute inset-y-0 left-0 w-1.5 rounded-l-[inherit] opacity-0"
           style={{ background: "var(--mac-label-secondary)" }}
         />
         <span
@@ -393,7 +495,7 @@ function BlockBar({
             if (event.button === LEFT) startBarGesture(event, chart, "end", block.id);
           }}
           {...hintTarget(HANDLE_HINTS)}
-          className="timeline-bar-handle timeline-tint absolute inset-y-0 right-0 w-1.5 opacity-0"
+          className="timeline-bar-handle timeline-tint absolute inset-y-0 right-0 w-1.5 rounded-r-[inherit] opacity-0"
           style={{ background: "var(--mac-label-secondary)" }}
         />
       </button>
