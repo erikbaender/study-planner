@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Overlays: popovers, sheets, menus, context menus, tooltips.
+ * Overlays: popovers, sheets, menus, context menus.
  *
  * These exist to end the pattern the audit found — *every* click opening a
  * full-screen modal, including a click that was meant to be a drag. macOS uses
@@ -9,10 +9,14 @@
  *
  * | Weight  | Control      | For                                              |
  * |---------|--------------|--------------------------------------------------|
- * | lowest  | Tooltip      | naming an icon                                    |
+ * | lowest  | Hint bar     | naming what the pointer does; see `hints.ts`      |
  * | low     | Popover      | inspecting or quickly editing one thing           |
  * | medium  | Menu         | choosing an action                                |
  * | highest | Sheet        | multi-field create/edit, and only then            |
+ *
+ * Hover tooltips are deliberately absent: help that appears only after you have
+ * already guessed where to put the pointer is help for the second visit, and the
+ * toolbar's hint bar says the same things without being asked.
  *
  * All of it is Radix underneath, which supplies the parts that are tedious and
  * easy to get subtly wrong: focus trapping and restoration, `aria-expanded` and
@@ -26,7 +30,6 @@ import {
   Dialog as RadixDialog,
   DropdownMenu as RadixDropdownMenu,
   Popover as RadixPopover,
-  Tooltip as RadixTooltip,
 } from "radix-ui";
 import { Check } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
@@ -291,59 +294,67 @@ export function ContextMenu({
   );
 }
 
-/* ─── Tooltip ───────────────────────────────────────────────────────────── */
-
 /**
- * Wraps the app once. Radix shares open/close timing across every tooltip
- * inside a provider, which is what produces the platform behaviour where the
- * second tooltip in a toolbar appears instantly.
+ * A context menu with no trigger to attach to.
+ *
+ * `ContextMenu` above wraps the element it belongs to, which is right for a row
+ * in a list and wrong for a chart: the timeline would need a Radix root around
+ * every one of several thousand bars, and the menu's contents depend on the
+ * *date* under the pointer rather than on which element it landed on. So the
+ * chart opens one menu, at a point, with the items it decided on — anchored to a
+ * zero-sized element parked at those coordinates.
  */
-export function TooltipProvider({ children }: { children: ReactNode }) {
-  return (
-    <RadixTooltip.Provider delayDuration={600} skipDelayDuration={300}>
-      {children}
-    </RadixTooltip.Provider>
-  );
-}
-
-export function Tooltip({
-  content,
-  children,
-  side = "bottom",
+export function ContextMenuAt({
+  open,
+  onOpenChange,
+  x,
+  y,
+  items,
 }: {
-  content: ReactNode;
-  children: ReactNode;
-  side?: "top" | "right" | "bottom" | "left";
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  x: number;
+  y: number;
+  items: readonly MenuItem[];
 }) {
   return (
-    <RadixTooltip.Root>
-      <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
-      <RadixTooltip.Portal>
-        <RadixTooltip.Content
-          side={side}
-          sideOffset={6}
-          collisionPadding={8}
-          className={clsx(
-            "material-popover z-50 rounded-chip px-1.5 py-0.5 text-callout text-label shadow-popover",
-            "inset-ring inset-ring-[var(--mac-separator-strong)]",
-            "data-[state=delayed-open]:animate-fade-in",
-          )}
+    <RadixDropdownMenu.Root open={open} onOpenChange={onOpenChange}>
+      <RadixDropdownMenu.Trigger asChild>
+        <span
+          aria-hidden="true"
+          // Fixed, because the coordinates are the pointer's: the menu opens
+          // where the click was, not where the chart has scrolled to since.
+          style={{ position: "fixed", left: x, top: y, width: 0, height: 0 }}
+        />
+      </RadixDropdownMenu.Trigger>
+      <RadixDropdownMenu.Portal>
+        <RadixDropdownMenu.Content
+          align="start"
+          side="bottom"
+          sideOffset={2}
+          collisionPadding={12}
+          className={clsx(MENU_SURFACE, "origin-(--radix-dropdown-menu-content-transform-origin)")}
         >
-          {content}
-        </RadixTooltip.Content>
-      </RadixTooltip.Portal>
-    </RadixTooltip.Root>
+          {renderItems(items, RadixDropdownMenu)}
+        </RadixDropdownMenu.Content>
+      </RadixDropdownMenu.Portal>
+    </RadixDropdownMenu.Root>
   );
 }
 
 /* ─── Toolbar ───────────────────────────────────────────────────────────── */
 
-/** The unified translucent title bar the plan's §7.2 describes. */
+/**
+ * The unified translucent title bar the plan's §7.2 describes.
+ *
+ * `relative`, because the input hint bar is centred against the window rather
+ * than laid out between the controls either side of it.
+ */
 export function Toolbar({ className, ...props }: ComponentPropsWithoutRef<"header">) {
   return (
     <header
       className={clsx(
-        "material-header flex h-11 shrink-0 items-center gap-2 border-b border-separator px-3",
+        "material-header relative flex h-11 shrink-0 items-center gap-2 border-b border-separator px-3",
         className,
       )}
       {...props}

@@ -1,10 +1,9 @@
 /**
- * What ⌘K can do.
+ * What the palette can do.
  *
- * The palette is the only path to every action that the browser cannot
- * intercept, so this list is the app's real command surface — if something is
- * doable from a toolbar or a menu and *not* from here, it is unreachable for
- * anyone who works from the keyboard.
+ * The palette lists every action the app has in one searchable place, so this
+ * list is the app's real command surface — if something is doable from a toolbar
+ * or a menu and *not* from here, it can only be found by hunting for it.
  *
  * Pure: it takes data and callbacks and returns a list. The ranking below is
  * the interesting half, and it is the reason this is not inline in the
@@ -23,7 +22,6 @@ export type Command = {
   subtitle?: string;
   /** Extra text to match against, never displayed. */
   keywords?: string;
-  shortcut?: string;
   run: () => void;
 };
 
@@ -43,12 +41,11 @@ export type CommandActions = {
 
 export function buildCommands(options: {
   plan: Plan | undefined;
-  shortcut: (id: "viewToday" | "viewTimeline" | "viewOutline" | "toggleInspector" | "newItem") => string;
   actions: CommandActions;
   /** True once there is something to export. Disabled commands are omitted rather than greyed: a palette is a list of things you can do. */
   hasData: boolean;
 }): Command[] {
-  const { plan, shortcut, actions, hasData } = options;
+  const { plan, actions, hasData } = options;
 
   const commands: Command[] = [
     {
@@ -56,7 +53,6 @@ export function buildCommands(options: {
       group: "View",
       title: "Today",
       keywords: "now agenda",
-      shortcut: shortcut("viewToday"),
       run: () => actions.setView("today"),
     },
     {
@@ -64,7 +60,6 @@ export function buildCommands(options: {
       group: "View",
       title: "Timeline",
       keywords: "gantt schedule calendar",
-      shortcut: shortcut("viewTimeline"),
       run: () => actions.setView("timeline"),
     },
     {
@@ -72,7 +67,6 @@ export function buildCommands(options: {
       group: "View",
       title: "Outline",
       keywords: "topics table list",
-      shortcut: shortcut("viewOutline"),
       run: () => actions.setView("outline"),
     },
     {
@@ -80,7 +74,6 @@ export function buildCommands(options: {
       group: "View",
       title: "Toggle inspector",
       keywords: "details panel sidebar",
-      shortcut: shortcut("toggleInspector"),
       run: actions.toggleInspector,
     },
     {
@@ -118,7 +111,6 @@ export function buildCommands(options: {
       group: "Actions",
       title: "New course",
       keywords: "add create subject",
-      shortcut: shortcut("newItem"),
       run: actions.newCourse,
     },
     {

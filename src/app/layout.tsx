@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { ConvexClientProvider } from "@/components/ConvexClientProvider";
-import { ThemeProvider, ThemeScript, TooltipProvider } from "@/ui";
+import { ThemeProvider, ThemeScript } from "@/ui";
 import "./globals.css";
 
 /**
@@ -34,9 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body className="min-h-full bg-window text-label">
         <ThemeProvider>
-          <TooltipProvider>
-            <ConvexClientProvider>{children}</ConvexClientProvider>
-          </TooltipProvider>
+          <ConvexClientProvider>{children}</ConvexClientProvider>
         </ThemeProvider>
       </body>
     </html>

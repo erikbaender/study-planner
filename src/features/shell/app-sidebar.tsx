@@ -39,7 +39,6 @@ import {
   Sidebar,
   SidebarItem,
   SidebarSection,
-  Tooltip,
 } from "@/ui";
 import {
   hasExamSoon,
@@ -183,15 +182,24 @@ export function AppSidebar({
         title="Courses"
         action={
           <span className="flex items-center gap-0.5">
-            <Tooltip content="Show every course">
-              <IconButton size="sm" label="Show every course" icon={<Eye />} onClick={onShowAll} />
-            </Tooltip>
-            <Tooltip content="Hide every course">
-              <IconButton size="sm" label="Hide every course" icon={<EyeOff />} onClick={onHideAll} />
-            </Tooltip>
-            <Tooltip content="New course">
-              <IconButton size="sm" label="New course" icon={<Plus />} onClick={onNewCourse} />
-            </Tooltip>
+            <IconButton
+              size="sm"
+              label="Show every course"
+              icon={<Eye />}
+              onClick={onShowAll}
+            />
+            <IconButton
+              size="sm"
+              label="Hide every course"
+              icon={<EyeOff />}
+              onClick={onHideAll}
+            />
+            <IconButton
+              size="sm"
+              label="New course"
+              icon={<Plus />}
+              onClick={onNewCourse}
+            />
           </span>
         }
       >
@@ -292,8 +300,7 @@ function CourseFilterRow({
           ) : null}
 
           <span className="flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity] duration-100 ease-mac pointer-events-none group-hover/row:w-control group-hover/row:opacity-100 group-hover/row:pointer-events-auto group-focus-within/row:w-control group-focus-within/row:opacity-100 group-focus-within/row:pointer-events-auto">
-            <Tooltip content={hidden ? "Show this course" : "Hide this course"}>
-              <IconButton
+            <IconButton
                 size="sm"
                 label={hidden ? `Show ${course.name}` : `Hide ${course.name}`}
                 icon={hidden ? <Eye /> : <EyeOff />}
@@ -308,7 +315,6 @@ function CourseFilterRow({
                   onToggleHidden();
                 }}
               />
-            </Tooltip>
           </span>
         </span>
       </span>

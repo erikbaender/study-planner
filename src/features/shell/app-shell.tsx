@@ -52,7 +52,6 @@ import { OutlineView } from "@/features/outline/outline-view";
 import { TimelineView } from "@/features/timeline/timeline-view";
 import { TodayView } from "@/features/today/today-view";
 import { buildCommands } from "@/features/workspace/commands";
-import { isApplePlatform, shortcutLabel, useKeyboardMap } from "@/features/workspace/keyboard";
 import {
   coursesInFocus,
   courseMatchesQuery,
@@ -92,7 +91,6 @@ export function AppShell() {
   const [deletePlanOpen, setDeletePlanOpen] = useState(false);
 
   const workspace = useWorkspace();
-  const apple = useMemo(() => isApplePlatform(), []);
 
   const plan =
     snapshot.plans.find((candidate) => candidate.id === workspace.planId) ?? snapshot.plans[0];
@@ -114,6 +112,10 @@ export function AppShell() {
     () => resolveSelection(plan, workspace.selection),
     [plan, workspace.selection],
   );
+  // A stale id can remain in the ephemeral store after its course or topic is
+  // filtered out or deleted. The inspector describes resolved data, so its
+  // visible state follows that data rather than leaving an empty panel open.
+  const inspectorOpen = workspace.inspectorOpen && selection !== null;
   const pendingDelete = useMemo(
     () => resolveSelection(plan, workspace.pendingDelete),
     [plan, workspace.pendingDelete],
@@ -183,33 +185,13 @@ export function AppShell() {
   const selectExam = (_course: Course, exam: Exam) =>
     revealSelection({ kind: "exam", id: exam.id });
 
-  /* ─── Keyboard and palette ────────────────────────────────────────────── */
-
-  useKeyboardMap({
-    openPalette: () => workspace.setPaletteOpen(true),
-    focusSearch: () => searchRef.current?.focus(),
-    viewToday: () => workspace.setView("today"),
-    viewTimeline: () => workspace.setView("timeline"),
-    viewOutline: () => workspace.setView("outline"),
-    toggleInspector: workspace.toggleInspector,
-    newItem: () => workspace.setCreating(plan ? "course" : "plan"),
-    deleteSelection: () => {
-      if (workspace.selection) workspace.setPendingDelete(workspace.selection);
-    },
-    // Quick look: Space opens the inspector on whatever is selected, and closes
-    // it again. Doing nothing without a selection is deliberate — opening an
-    // empty panel is not a preview of anything.
-    quickLook: () => {
-      if (workspace.selection) workspace.toggleInspector();
-    },
-  });
+  /* ─── Command palette ─────────────────────────────────────────────────── */
 
   const commands = useMemo(
     () =>
       buildCommands({
         plan,
         hasData: snapshot.plans.length > 0,
-        shortcut: (id) => shortcutLabel(id, apple),
         actions: {
           setView: workspace.setView,
           focusAll: () => workspace.setFocus({ kind: "all" }),
@@ -228,7 +210,7 @@ export function AppShell() {
     // closures are stable enough that rebuilding on every render would only
     // cost the palette its memo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [plan, snapshot, apple],
+    [plan, snapshot],
   );
 
   /* ─── Render ──────────────────────────────────────────────────────────── */
@@ -241,12 +223,11 @@ export function AppShell() {
         contentId={contentId}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
-        inspectorOpen={workspace.inspectorOpen}
+        inspectorOpen={inspectorOpen}
         onToggleInspector={workspace.toggleInspector}
-        inspectorShortcut={shortcutLabel("toggleInspector", apple)}
+        onOpenPalette={() => workspace.setPaletteOpen(true)}
         onNewPlan={() => workspace.setCreating("plan")}
         onNewCourse={() => workspace.setCreating("course")}
-        newShortcut={shortcutLabel("newItem", apple)}
         onLoadSampleData={() => setSampleDataOpen(true)}
         onExport={exportJson}
         onImport={importJson}
@@ -374,12 +355,12 @@ export function AppShell() {
         </main>
 
         <div
-          aria-hidden={!workspace.inspectorOpen}
-          inert={!workspace.inspectorOpen}
+          aria-hidden={!inspectorOpen}
+          inert={!inspectorOpen}
           data-panel-side="right"
-          data-panel-state={workspace.inspectorOpen ? "open" : "closed"}
+          data-panel-state={inspectorOpen ? "open" : "closed"}
           className={`side-panel-shell absolute inset-y-0 right-0 z-30 flex w-72 overflow-hidden material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none ${
-            workspace.inspectorOpen ? "" : "lg:w-0"
+            inspectorOpen ? "" : "lg:w-0"
           }`}
         >
           <Inspector

@@ -78,7 +78,7 @@ describe("TopicTable", () => {
     expect(repository.updateTopic).not.toHaveBeenCalled();
   });
 
-  it("asks for a new row on ⌘⏎ and not on plain Enter", async () => {
+  it("does not add a row from the keyboard: Enter only commits the cell", async () => {
     const onAddRow = vi.fn();
     const user = userEvent.setup();
     renderTable(onAddRow);
@@ -86,11 +86,11 @@ describe("TopicTable", () => {
     const name = screen.getByLabelText("Name of Glycolysis");
     await user.click(name);
     await user.keyboard("{Enter}");
-    expect(onAddRow).not.toHaveBeenCalled();
-
     await user.keyboard("{Meta>}{Enter}{/Meta}");
-    // The new row lands in the section the cursor was in, not at the bottom.
-    expect(onAddRow).toHaveBeenCalledWith("Block 1");
+
+    // Adding a row is the context menu's "New topic below" and the button under
+    // the table; the app has no keyboard shortcuts.
+    expect(onAddRow).not.toHaveBeenCalled();
   });
 
   it("offers no slider for a topic whose size nobody has stated", () => {

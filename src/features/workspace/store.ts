@@ -37,6 +37,13 @@ export const VIEW_LABELS: Record<ViewId, string> = {
   outline: "Outline",
 };
 
+/** Fired synchronously before a workspace filter can change rendered course geometry. */
+export const COURSE_FILTER_WILL_CHANGE = "planner:course-filter-will-change";
+
+function announceCourseFilterChange() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(COURSE_FILTER_WILL_CHANGE));
+}
+
 /**
  * Which courses are in scope.
  *
@@ -121,24 +128,52 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
       selection: null,
     }),
   setView: (view) => set({ view }),
-  setFocus: (focus) => set({ focus }),
+  setFocus: (focus) =>
+    set((state) => {
+      if (state.focus.kind === focus.kind) return state;
+      announceCourseFilterChange();
+      return { focus };
+    }),
 
   toggleCourseHidden: (courseId) =>
-    set((state) => ({
-      hiddenCourseIds: state.hiddenCourseIds.includes(courseId)
-        ? state.hiddenCourseIds.filter((id) => id !== courseId)
-        : [...state.hiddenCourseIds, courseId],
-    })),
+    set((state) => {
+      announceCourseFilterChange();
+      return {
+        hiddenCourseIds: state.hiddenCourseIds.includes(courseId)
+          ? state.hiddenCourseIds.filter((id) => id !== courseId)
+          : [...state.hiddenCourseIds, courseId],
+      };
+    }),
 
-  hideAllCourses: (courseIds) => set({ hiddenCourseIds: [...courseIds] }),
-  showAllCourses: () => set({ hiddenCourseIds: [] }),
+  hideAllCourses: (courseIds) =>
+    set((state) => {
+      if (
+        state.hiddenCourseIds.length === courseIds.length &&
+        state.hiddenCourseIds.every((id, index) => id === courseIds[index])
+      ) {
+        return state;
+      }
+      announceCourseFilterChange();
+      return { hiddenCourseIds: [...courseIds] };
+    }),
+  showAllCourses: () =>
+    set((state) => {
+      if (state.hiddenCourseIds.length === 0) return state;
+      announceCourseFilterChange();
+      return { hiddenCourseIds: [] };
+    }),
   select: (selection) => set({ selection }),
   setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),
   toggleInspector: () => set((state) => ({ inspectorOpen: !state.inspectorOpen })),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setCreating: (creating) => set({ creating }),
   setPendingDelete: (pendingDelete) => set({ pendingDelete }),
-  setQuery: (query) => set({ query }),
+  setQuery: (query) =>
+    set((state) => {
+      if (state.query === query) return state;
+      announceCourseFilterChange();
+      return { query };
+    }),
 }));
 
 /**

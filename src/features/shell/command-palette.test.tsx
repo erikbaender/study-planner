@@ -7,7 +7,7 @@ import type { Command } from "@/features/workspace/commands";
 
 function commandsFor(run: (id: string) => void): Command[] {
   return [
-    { id: "view:today", group: "View", title: "Today", shortcut: "⌘1", run: () => run("view:today") },
+    { id: "view:today", group: "View", title: "Today", run: () => run("view:today") },
     { id: "view:outline", group: "View", title: "Outline", run: () => run("view:outline") },
     { id: "course:bc", group: "Courses", title: "Biochemistry", subtitle: "2 topics", run: () => run("course:bc") },
     { id: "topic:gly", group: "Topics", title: "Glycolysis", subtitle: "Biochemistry", run: () => run("topic:gly") },

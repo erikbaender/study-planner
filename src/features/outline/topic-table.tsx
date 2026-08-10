@@ -18,6 +18,7 @@
  */
 
 import { clsx } from "clsx";
+import { PanelRight, Plus, Trash2 } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 import { usePlannerErrors, useRepository } from "@/data/use-repository";
 import { courseColorValue, UNITS, UNIT_LABELS, type Course, type Topic, type Unit } from "@/domain";
@@ -137,10 +138,10 @@ function TopicTableRow({
   return (
     <ContextMenu
       items={[
-        { label: "Show in inspector", onSelect },
-        { label: "New topic below", shortcut: "⌘⏎", onSelect: onAddRow },
+        { label: "Show in inspector", icon: <PanelRight />, onSelect },
+        { label: "New topic below", icon: <Plus />, onSelect: onAddRow },
         { type: "separator" },
-        { label: `Delete ${topic.name}`, danger: true, onSelect: onDelete },
+        { label: `Delete ${topic.name}`, icon: <Trash2 />, danger: true, onSelect: onDelete },
       ]}
     >
       <li
@@ -160,7 +161,6 @@ function TopicTableRow({
           label={`Name of ${topic.name}`}
           value={topic.name}
           onCommit={(name) => name && patch({ name })}
-          onAddRow={onAddRow}
         />
 
         <span className="flex items-baseline gap-1">
@@ -174,7 +174,6 @@ function TopicTableRow({
                 patch({ totalUnits: total });
               }
             }}
-            onAddRow={onAddRow}
           />
         </span>
 
@@ -217,13 +216,11 @@ function Cell({
   label,
   value,
   onCommit,
-  onAddRow,
   numeric,
 }: {
   label: string;
   value: string;
   onCommit: (next: string) => void;
-  onAddRow: () => void;
   numeric?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
@@ -247,9 +244,6 @@ function Cell({
           setDraft(value);
         } else if (event.key === "Enter") {
           event.preventDefault();
-          // ⌘⏎ is "another one like this" — the gesture you want after typing a
-          // row, and the one §7.3 asks for. Plain Enter just commits.
-          if (event.metaKey || event.ctrlKey) onAddRow();
           if (draft.trim() !== value) onCommit(draft.trim());
         }
       }}

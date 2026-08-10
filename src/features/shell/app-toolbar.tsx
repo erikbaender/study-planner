@@ -11,15 +11,24 @@
  * The view switcher is a segmented control rather than tabs, per §7.4. It also
  * drives the three panels, so it carries `aria-controls` pointing at the one
  * content region they share.
+ *
+ * Between the two groups, centred against the window rather than against them,
+ * is the input hint bar. It stays empty over toolbar and side-panel chrome and
+ * describes mouse input only while the pointer is inside the central view. See
+ * `workspace/hints.ts`.
  */
 
 import { useRef } from "react";
 import {
+  Command,
+  Download,
+  FlaskConical,
   MoreHorizontal,
   PanelLeft,
   PanelRight,
   Plus,
   Settings2,
+  Upload,
 } from "lucide-react";
 import {
   AnimationSpeedControl,
@@ -28,14 +37,15 @@ import {
   Button,
   DropdownMenu,
   IconButton,
+  KeyboardModeControl,
   Popover,
   SegmentedControl,
   Separator,
   Toolbar,
   ToolbarSpacer,
-  Tooltip,
 } from "@/ui";
 import { VIEWS, VIEW_LABELS, type ViewId } from "@/features/workspace/store";
+import { InputHintBar } from "./input-hints";
 
 export function AppToolbar(props: {
     view: ViewId;
@@ -45,10 +55,9 @@ export function AppToolbar(props: {
     onToggleSidebar: () => void;
     inspectorOpen: boolean;
     onToggleInspector: () => void;
-    inspectorShortcut: string;
+    onOpenPalette: () => void;
     onNewPlan: () => void;
     onNewCourse: () => void;
-    newShortcut: string;
     onLoadSampleData: () => void;
     onExport: () => void;
     onImport: (file: File) => void;
@@ -61,52 +70,59 @@ export function AppToolbar(props: {
 
   return (
     <Toolbar>
-      <Tooltip content={props.sidebarOpen ? "Hide sidebar" : "Show sidebar"}>
-        <IconButton
-          size="sm"
-          label={props.sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-          aria-pressed={props.sidebarOpen}
-          icon={<PanelLeft />}
-          onClick={props.onToggleSidebar}
-        />
-      </Tooltip>
-
-      <SegmentedControl<ViewId>
-        label="View"
-        aria-controls={props.contentId}
-        value={props.view}
-        onValueChange={props.onViewChange}
-        segments={VIEWS.map((view) => ({ value: view, label: VIEW_LABELS[view] }))}
+      <IconButton
+        size="sm"
+        label={props.sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        aria-pressed={props.sidebarOpen}
+        icon={<PanelLeft />}
+        onClick={props.onToggleSidebar}
       />
 
+      <span>
+        <SegmentedControl<ViewId>
+          label="View"
+          aria-controls={props.contentId}
+          value={props.view}
+          onValueChange={props.onViewChange}
+          segments={VIEWS.map((view) => ({ value: view, label: VIEW_LABELS[view] }))}
+        />
+      </span>
+
+      <InputHintBar />
+
       <ToolbarSpacer />
+
+      {/* The palette used to be reachable only from ⌘K, and the app no longer
+          has keyboard shortcuts — so it has the button it always needed. */}
+      <IconButton
+        size="sm"
+        label="Commands"
+        icon={<Command />}
+        onClick={props.onOpenPalette}
+      />
 
       <DropdownMenu
         label="New"
         align="end"
         items={[
-          { label: "New course", icon: <Plus />, shortcut: props.newShortcut, onSelect: props.onNewCourse },
-          { label: "New semester", onSelect: props.onNewPlan },
+          { label: "New course", icon: <Plus />, onSelect: props.onNewCourse },
+          { label: "New semester", icon: <Plus />, onSelect: props.onNewPlan },
         ]}
         trigger={
           <span>
-            <Tooltip content="New">
-              <IconButton size="sm" label="New" icon={<Plus />} />
-            </Tooltip>
+            <IconButton size="sm" label="New" icon={<Plus />} />
           </span>
         }
       />
 
-      <Tooltip content={`Inspector ${props.inspectorShortcut}`}>
-        <IconButton
-          size="sm"
-          label="Inspector"
-          aria-pressed={props.inspectorOpen}
-          variant={props.inspectorOpen ? "push" : "plain"}
-          icon={<PanelRight />}
-          onClick={props.onToggleInspector}
-        />
-      </Tooltip>
+      <IconButton
+        size="sm"
+        label="Inspector"
+        aria-pressed={props.inspectorOpen}
+        variant={props.inspectorOpen ? "push" : "plain"}
+        icon={<PanelRight />}
+        onClick={props.onToggleInspector}
+      />
 
       <Separator orientation="vertical" className="mx-1 h-4" />
 
@@ -115,9 +131,7 @@ export function AppToolbar(props: {
         align="end"
         trigger={
           <span>
-            <Tooltip content="Appearance">
-              <IconButton size="sm" label="Appearance" icon={<Settings2 />} />
-            </Tooltip>
+            <IconButton size="sm" label="Appearance" icon={<Settings2 />} />
           </span>
         }
       >
@@ -130,6 +144,10 @@ export function AppToolbar(props: {
             <h2 className="text-callout font-semibold text-secondary">Motion</h2>
             <AnimationSpeedControl />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <h2 className="text-callout font-semibold text-secondary">Keyboard</h2>
+            <KeyboardModeControl />
+          </div>
         </div>
       </Popover>
 
@@ -137,19 +155,22 @@ export function AppToolbar(props: {
         label="More"
         align="end"
         items={[
-          { label: "Load sample data", onSelect: props.onLoadSampleData },
+          { label: "Load sample data", icon: <FlaskConical />, onSelect: props.onLoadSampleData },
           { type: "separator" },
-          { label: "Export as JSON", onSelect: props.onExport, disabled: !props.canExport },
+          {
+            label: "Export as JSON",
+            icon: <Download />,
+            onSelect: props.onExport,
+            disabled: !props.canExport,
+          },
           // The file dialog can only be opened from a user gesture, and a menu
           // item is one — so a hidden input is clicked rather than a `<label>`
           // being smuggled into the menu.
-          { label: "Import JSON…", onSelect: () => fileRef.current?.click() },
+          { label: "Import JSON…", icon: <Upload />, onSelect: () => fileRef.current?.click() },
         ]}
         trigger={
           <span>
-            <Tooltip content="More">
-              <IconButton size="sm" label="More" icon={<MoreHorizontal />} />
-            </Tooltip>
+            <IconButton size="sm" label="More" icon={<MoreHorizontal />} />
           </span>
         }
       />
