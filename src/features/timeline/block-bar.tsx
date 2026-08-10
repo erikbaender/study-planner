@@ -254,8 +254,8 @@ function Marker({
       )}
       style={side === "left" ? { left: chart.gutter + 4 } : undefined}
     >
-      {side === "left" && overdue ? (
-        <span className="pointer-events-none order-2 flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+      {side === "right" && overdue ? (
+        <span className="pointer-events-none flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
           <OverdueIcon className="size-4" />
         </span>
       ) : null}
@@ -293,7 +293,7 @@ function Marker({
       {count}
       {side === "right" ? <Chevron aria-hidden="true" className="size-3" /> : null}
       </button>
-      {side === "right" && overdue ? (
+      {side === "left" && overdue ? (
         <span className="pointer-events-none flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
           <OverdueIcon className="size-4" />
         </span>
