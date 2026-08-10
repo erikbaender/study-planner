@@ -43,10 +43,10 @@ import { hintExcludedScope } from "@/features/workspace/hints";
  *
  * The bar covers the group's whole scheduled span. Across it, `densityBar`
  * stacks one band per course — each band as thick as that course's share of the
- * work at that point — and masks the whole stack with a density step, so a
- * crowded fortnight is opaque and a quiet one drops to near the track. Nothing
- * is blended: every colour in the bar is exactly some course's own colour, and
- * a week that is three courses at once is three bands rather than a fourth hue
+ * work at that point — and gives each date run a solid opacity, so a crowded
+ * fortnight is opaque and a quiet one drops to near the track. Nothing is
+ * blended: every colour in the bar is exactly some course's own colour, and a
+ * week that is three courses at once is three bands rather than a fourth hue
  * belonging to nobody. Every edge lands on a date and is cut hard.
  *
  * The track underneath is what makes the quiet end of the ramp legible: without
@@ -80,7 +80,7 @@ function RollUpBar({
   // nothing about the picture, and a bar that flickers on a rename is worse
   // than one that never animated at all.
   const painting = useMemo(
-    () => `${density.mask}|${density.bands.map((band) => band.color + band.d).join("|")}`,
+    () => density.bands.map((band) => `${band.color}|${band.opacity}|${band.d}`).join("|"),
     [density],
   );
   const { previous, generation, settle } = useCrossfade(density, painting);
@@ -138,10 +138,9 @@ function Stack({
         leaving && "absolute inset-0 timeline-rollup-out",
         arriving && "timeline-rollup-in",
       )}
-      style={{ maskImage: density.mask, WebkitMaskImage: density.mask }}
     >
-      {density.bands.map((band) => (
-        <path key={band.color} d={band.d} fill={band.color} />
+      {density.bands.map((band, index) => (
+        <path key={`${band.color}-${index}`} d={band.d} fill={band.color} fillOpacity={band.opacity} />
       ))}
     </svg>
   );

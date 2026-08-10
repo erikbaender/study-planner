@@ -8,13 +8,13 @@
  * where the fortnight of nothing is, whether the fortnight of nothing is right
  * before an exam.
  *
- * Two questions, so two channels, and they are kept apart:
+ * Two questions, kept apart in each solid segment:
  *
  *   - *Who* is a stack. The bar's height at any point is divided among the
  *     courses scheduled there, each band as thick as that course's share of the
  *     work at that moment. A week that is three courses at once is three bands.
- *   - *How much* is a mask. An alpha step across the span, holding the whole
- *     stack back where the plan thins out.
+ *   - *How much* is opacity. Each date run gets an alpha based on its load,
+ *     holding the stack back where the plan thins out.
  *
  * Blending was the first attempt and it was wrong in a way no amount of colour
  * science fixes: the average of coral and jade is a colour that names no course
@@ -44,10 +44,8 @@ export type DensitySeries = {
 };
 
 export type DensityBar = {
-  /** Stacked bands, bottom of the stack first, over a 100 × 100 box. */
-  bands: readonly { color: string; d: string }[];
-  /** `linear-gradient(...)` for `mask-image`: the stack shows through where the plan is thick. */
-  mask: string;
+  /** Solid stacked segments, bottom of the stack first, over a 100 × 100 box. */
+  bands: readonly { color: string; d: string; opacity: number }[];
   /** Where the plan is thickest, for the bar's label. Null when nothing is scheduled. */
   peak: { date: IsoDate; blocks: number } | null;
 };
@@ -86,7 +84,7 @@ const MAX_ALPHA = 1;
  */
 const SATURATION_QUANTILE = 0.9;
 
-const EMPTY: DensityBar = { bands: [], mask: "none", peak: null };
+const EMPTY: DensityBar = { bands: [], peak: null };
 
 /** A stretch of days the bar draws identically: one step of the whole picture. */
 type Run = {
@@ -141,8 +139,7 @@ export function densityBar(
   const runs = mergeRuns(runsOf(counts, totals, days), full);
 
   return {
-    bands: bandPaths(colors, runs, days),
-    mask: maskGradient(runs, days, full),
+    bands: bandPaths(colors, runs, days, full),
     peak: { date: addDays(span.start, peakDay), blocks: peakWeight },
   };
 }
@@ -248,39 +245,22 @@ function alphaOf(total: number, full: number): number {
 }
 
 /**
- * The mask, as steps.
- *
- * Two stops per run, at its own alpha: one where it starts and one where it
- * ends. The next run opens at the position the last one closed, so the two
- * meet at a single percentage and the change between them happens in no
- * distance at all — which is what makes the edge a cut rather than a fade.
- */
-function maskGradient(runs: readonly Run[], days: number, full: number): string {
-  const stops: string[] = [];
-  for (const run of runs) {
-    const alpha = alphaOf(run.total, full).toFixed(3);
-    stops.push(`rgb(0 0 0 / ${alpha}) ${percent(run.from / days)}`);
-    stops.push(`rgb(0 0 0 / ${alpha}) ${percent((run.to + 1) / days)}`);
-  }
-  return `linear-gradient(to right, ${stops.join(", ")})`;
-}
-
-/**
- * The stack, as one path of rectangles per band.
+ * The stack, as solid rectangles.
  *
  * Each run is a column, split top to bottom among the courses scheduled in it.
- * A course that is absent from a run contributes no rectangle there, so a band
- * is only ever drawn over the dates it actually covers.
+ * A course that is absent from a run contributes no rectangle there. Opacity is
+ * attached to each rectangle rather than applied through a CSS gradient, so
+ * every workload change remains a solid, hard-edged segment.
  */
 function bandPaths(
   colors: readonly string[],
   runs: readonly Run[],
   days: number,
-): { color: string; d: string }[] {
-  const bands: { color: string; d: string }[] = [];
+  full: number,
+): { color: string; d: string; opacity: number }[] {
+  const bands: { color: string; d: string; opacity: number }[] = [];
 
   for (let band = 0; band < colors.length; band += 1) {
-    const parts: string[] = [];
     for (const run of runs) {
       if (run.total <= 0 || run.counts[band] <= 0) continue;
 
@@ -291,16 +271,15 @@ function bandPaths(
       const left = (run.from / days) * DENSITY_BOX;
       const right = ((run.to + 1) / days) * DENSITY_BOX;
 
-      parts.push(`M${round(left)} ${round(top)}H${round(right)}V${round(bottom)}H${round(left)}Z`);
+      bands.push({
+        color: colors[band],
+        d: `M${round(left)} ${round(top)}H${round(right)}V${round(bottom)}H${round(left)}Z`,
+        opacity: alphaOf(run.total, full),
+      });
     }
-    if (parts.length > 0) bands.push({ color: colors[band], d: parts.join("") });
   }
 
   return bands;
-}
-
-function percent(fraction: number): string {
-  return `${(Math.round(fraction * 10000) / 100).toFixed(2)}%`;
 }
 
 function round(value: number): string {
