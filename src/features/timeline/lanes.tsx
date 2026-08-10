@@ -495,7 +495,7 @@ function GutterCard({
       <div
         {...hintExcludedScope}
         style={{ width: chart.gutter, height: LANE_HEIGHT + rowsHeight }}
-        className="timeline-disclosure timeline-course-panel pointer-events-auto sticky left-0 flex flex-col rounded-r-control border-r border-separator/60"
+        className="timeline-disclosure timeline-course-panel pointer-events-auto sticky left-0 flex flex-col rounded-r-control"
       >
         <button
           type="button"

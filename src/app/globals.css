@@ -426,15 +426,32 @@ span:has(> .topic-progress-thumb) {
 
 /* The panel owns the grey border for the whole course. Paint over just the
    active row's slice so the seam belongs to the row highlight, too. */
+.timeline-course-panel {
+  border-right: 0;
+}
+
+.timeline-course-panel::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+  content: "";
+  background: color-mix(in srgb, var(--mac-separator-strong) 60%, transparent);
+  z-index: 0;
+}
+
 .timeline-course-panel .timeline-row {
   position: relative;
+  z-index: 1;
 }
 
 .timeline-course-panel .timeline-row[data-hovered="true"]::after,
 .timeline-course-panel .timeline-row[data-selected="true"]::after {
   position: absolute;
   top: 0;
-  right: -1px;
+  right: 0;
   bottom: 0;
   width: 1px;
   pointer-events: none;
