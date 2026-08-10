@@ -39,9 +39,7 @@ import {
   Trash2,
 } from "lucide-react";
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
   memo,
@@ -51,7 +49,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
-import type { PlannerRepository } from "@/data/repository";
 import {
   addDays,
   clampDate,
@@ -81,7 +78,6 @@ import {
 import {
   bandsFor,
   daysCss,
-  daysMoved,
   dateAt,
   DAY_WIDTH_PROPERTY,
   PX_PER_DAY,
@@ -97,13 +93,7 @@ import {
   type Zoom,
 } from "./geometry";
 import { fillsByBlock, type Span } from "./blocks";
-import {
-  applyDelta,
-  clampDelta,
-  groupRange,
-  type BarTarget,
-  type DragMode,
-} from "./selection";
+import type { BarTarget } from "./selection";
 import {
   animateScrollLeft,
   isScrollAnimating,
@@ -113,12 +103,39 @@ import {
   stopScrollAnimation,
 } from "./motion";
 import {
+  ChartContext,
+  createDraftStore,
+  createSelectionStore,
+  createViewportStore,
+  useChart,
+  type Chart,
+  type Viewport,
+  type ViewportStore,
+} from "./chart-context";
+import { gutterWidth, type LabelKind } from "./gutter";
+import {
+  BAR_HINTS,
+  CHART_HINTS,
+  HANDLE_HINTS,
+  RULER_HINTS,
+  barSelectedHints,
+  chartSelectedHints,
+} from "./hints";
+import {
+  LEFT,
+  MIDDLE,
+  startBarGesture,
+  startBoxSelect,
+  startPan,
+  startRulerPan,
+  cancelActiveGesture,
+} from "./gestures";
+import { DragReadout } from "./readout";
+import {
   hintScope,
   hintExcludedScope,
   hintTarget,
-  setInteractionHints,
   useViewHints,
-  type InputHint,
 } from "@/features/workspace/hints";
 import { topicsForQuery } from "@/features/workspace/scope";
 import { COURSE_FILTER_WILL_CHANGE } from "@/features/workspace/store";
@@ -131,8 +148,6 @@ const GROUP_GAP = 4;
 const BAND_HEIGHT = 18;
 const TICK_HEIGHT = 18;
 const RULER_HEIGHT = BAND_HEIGHT + TICK_HEIGHT;
-/** Below this the pointer was steadying itself, not dragging. The old code had no threshold at all. */
-const DRAG_THRESHOLD_PX = 4;
 /** How close to an edge of the canvas triggers growing it further; see `contentRange`. */
 const EXTEND_TRIGGER_PX = 1200;
 /** How much canvas one extension adds, comfortably past `EXTEND_TRIGGER_PX` so it does not immediately re-trigger. */
@@ -142,662 +157,7 @@ const REVEAL_PADDING_PX = 24;
 /** The height the "no topics yet" line occupies while a course opens onto it. */
 const EMPTY_COURSE_HEIGHT = 44;
 
-/* ─── Label gutter ──────────────────────────────────────────────────────────
- *
- * One width for every label in the chart — course names, topic names, "All
- * topics" — instead of each row sizing to its own text. Independent widths
- * made the left edge of the canvas ragged and let a long name eat width no
- * neighbouring row needed; one shared column reads as a real gutter and costs
- * only as much space as the longest name actually on screen.
- * ────────────────────────────────────────────────────────────────────────── */
-
-/** The row's own course colour, for the hover highlight both halves share. */
 const ROW_TINT_PROPERTY = "--timeline-row-tint";
-
-const GUTTER_MIN = 140;
-const GUTTER_MAX = 320;
-
-type LabelKind = "allTopics" | "course" | "topicWithDot" | "topicPlain";
-
-/** Everything around the text — chevrons, dots, padding — that the column also has to fit. */
-const LABEL_CHROME: Record<LabelKind, number> = {
-  allTopics: 56, // chevron + layers icon + paddings
-  course: 56, // chevron + colour dot + paddings
-  topicWithDot: 30, // colour dot + paddings, no chevron
-  topicPlain: 40, // the nested indent, no icon
-};
-
-const LABEL_WEIGHT: Record<LabelKind, number> = {
-  allTopics: 600,
-  course: 500,
-  topicWithDot: 400,
-  topicPlain: 400,
-};
-
-/**
- * Text width via canvas, not a DOM measurement.
- *
- * A DOM measurement would be exact, but costs a layout pass per label on
- * every render. `measureText` uses the same font metrics the browser lays the
- * text out with and is cheap enough to run for every visible row every time.
- */
-let measureCtx: CanvasRenderingContext2D | null | undefined;
-function textWidth(text: string, weight: number): number {
-  if (measureCtx === undefined) {
-    measureCtx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
-  }
-  // SSR, or a browser that refused a 2D context: a rough estimate beats a
-  // 0-width flash on first paint.
-  if (!measureCtx) return text.length * 7;
-  measureCtx.font = `${weight} 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif`;
-  return measureCtx.measureText(text).width;
-}
-
-/** The one width every label shares, sized to whichever visible name is longest. */
-function gutterWidth(labels: readonly { text: string; kind: LabelKind }[]): number {
-  const widest = labels.reduce(
-    (max, { text, kind }) => Math.max(max, LABEL_CHROME[kind] + textWidth(text, LABEL_WEIGHT[kind])),
-    0,
-  );
-  return Math.min(GUTTER_MAX, Math.max(GUTTER_MIN, Math.ceil(widest)));
-}
-
-
-/* ─── The three buttons ─────────────────────────────────────────────────────
- *
- * There is no mode any more. A View/Edit switch made the same press mean two
- * different things depending on a control at the other end of the toolbar, and
- * the workaround it needed — the right button as a held modifier — spent the one
- * button a chart like this owes to a context menu. Both are gone. Each button
- * does one thing, everywhere in the chart, always:
- *
- * - **Left** selects, and drags what is selected. On a bar: press and release
- *   without travelling and it is selected; travel and every selected bar moves
- *   with it, or resizes if the press landed on an edge. On empty canvas: a
- *   rectangle, which selects everything it touches, and a release that never
- *   travelled clears the selection.
- * - **Middle** moves the chart, from anywhere — a bar, the gutter, empty canvas.
- *   Panning is navigation, so it must never depend on finding somewhere safe to
- *   put the pointer down.
- * - **Right** opens the menu for whatever is under it: a bar offers to delete
- *   itself, empty lane offers a block on the day that was clicked.
- * ────────────────────────────────────────────────────────────────────────── */
-
-const LEFT = 0;
-const MIDDLE = 1;
-
-/**
- * And the same thing said in the toolbar, always.
- *
- * The chart used to carry one line of prose describing the mode it was in. The
- * hint bar replaces it: what each button does, in the context the pointer is
- * actually in, in the one place in the app that answers that question. See
- * `workspace/hints.ts`.
- */
-const CHART_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Box select", drag: true },
-  { button: "middle", label: "Pan view", drag: true },
-  { button: "right", label: "Actions" },
-];
-
-function chartSelectedHints(keyboardMode: "mac" | "windows"): readonly InputHint[] {
-  return [
-    CHART_HINTS[0],
-    { button: "left", label: "Extend selection", modifier: "Shift", drag: true },
-    {
-      button: "left",
-      label: "Subtract selection",
-      modifier: keyboardMode === "mac" ? "⌘" : "Ctrl",
-      drag: true,
-    },
-    CHART_HINTS[1],
-    CHART_HINTS[2],
-  ];
-}
-
-const BAR_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Select" },
-  { button: "left", label: "Move", drag: true },
-  { button: "right", label: "Actions" },
-];
-
-function barSelectedHints(keyboardMode: "mac" | "windows"): readonly InputHint[] {
-  return [
-    BAR_HINTS[0],
-    BAR_HINTS[1],
-    { button: "left", label: "Extend selection", modifier: "Shift" },
-    {
-      button: "left",
-      label: "Subtract selection",
-      modifier: keyboardMode === "mac" ? "⌘" : "Ctrl",
-    },
-    BAR_HINTS[2],
-  ];
-}
-
-const RULER_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Pan view", drag: true },
-];
-
-const HANDLE_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Resize", drag: true },
-  { button: "middle", label: "Pan view", drag: true },
-  { button: "right", label: "Actions" },
-];
-
-const MOVE_GESTURE_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Move", drag: true },
-];
-
-const RESIZE_GESTURE_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Resize", drag: true },
-];
-
-const PAN_GESTURE_HINTS: readonly InputHint[] = [
-  { button: "middle", label: "Pan view", drag: true },
-];
-
-/**
- * The selection, as Blender has it.
- *
- * Several bars can be selected; the inspector can describe one thing. So the
- * selection is ordered and the *last* thing added to it is primary — the one the
- * inspector follows, drawn with a full accent outline while the rest carry a
- * half-strength one. That is the same convention Blender's active-versus-selected
- * outline uses, and it answers the question a multi-selection otherwise leaves
- * open: which of these is the panel talking about?
- *
- * An external store rather than state on the chart: a selection change must
- * repaint the bars that changed and nothing else. Routed through React state it
- * would reconcile every lane in the plan on every click.
- */
-export type BarSelection = "primary" | "secondary" | null;
-
-type SelectionStore = {
-  subscribe: (listener: () => void) => () => void;
-  getSnapshot: () => readonly string[];
-  /** What this bar is, for the one bar asking. A primitive, so an unchanged bar never re-renders. */
-  stateOf: (id: string) => BarSelection;
-  set: (ids: readonly string[]) => void;
-};
-
-function createSelectionStore(): SelectionStore {
-  let ids: readonly string[] = [];
-  const listeners = new Set<() => void>();
-
-  return {
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    getSnapshot: () => ids,
-    stateOf(id) {
-      if (ids.length === 0) return null;
-      if (ids[ids.length - 1] === id) return "primary";
-      return ids.includes(id) ? "secondary" : null;
-    },
-    set(next) {
-      if (next.length === ids.length && next.every((id, index) => id === ids[index])) return;
-      ids = next;
-      for (const listener of listeners) listener();
-    },
-  };
-}
-
-/**
- * Where the bars are *while* a drag is in flight.
- *
- * Each bar used to hold its own draft span in state, which is exactly right for
- * a gesture that moves one bar and useless for one that moves forty — and worse,
- * a block drawn in two lanes at once (its course's, and the combined lane) is two
- * components that would have to agree. One store keyed by block id, written each
- * frame, read by every bar that draws that block.
- */
-type DraftStore = {
-  subscribe: (listener: () => void) => () => void;
-  spanOf: (id: string) => Span | null;
-  set: (spans: ReadonlyMap<string, Span> | null) => void;
-};
-
-function createDraftStore(): DraftStore {
-  let spans: ReadonlyMap<string, Span> | null = null;
-  const listeners = new Set<() => void>();
-
-  return {
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    // `null` for every bar not in the drag, on every frame of it: an unchanged
-    // snapshot is what keeps `useSyncExternalStore` from re-rendering them.
-    spanOf: (id) => spans?.get(id) ?? null,
-    set(next) {
-      spans = next;
-      for (const listener of listeners) listener();
-    },
-  };
-}
-
-type Viewport = { from: IsoDate; to: IsoDate } | null;
-
-/**
- * Scroll position is external to React's timeline tree.
- *
- * A top-level state update here used to reconcile the ruler, grid, 344 topic
- * lanes, and every bar whenever the viewport crossed a day. Marker consumers
- * subscribe directly instead, and their selector below keeps its snapshot
- * stable until one of that topic's blocks actually crosses an edge.
- */
-type ViewportStore = {
-  subscribe: (listener: () => void) => () => void;
-  getSnapshot: () => Viewport;
-  setSnapshot: (next: Exclude<Viewport, null>) => void;
-};
-
-function createViewportStore(): ViewportStore {
-  let snapshot: Viewport = null;
-  const listeners = new Set<() => void>();
-
-  return {
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    getSnapshot: () => snapshot,
-    setSnapshot(next) {
-      if (snapshot?.from === next.from && snapshot.to === next.to) return;
-      snapshot = next;
-      for (const listener of listeners) listener();
-    },
-  };
-}
-
-const EMPTY_VIEWPORT_STORE: ViewportStore = {
-  subscribe: () => () => {},
-  getSnapshot: () => null,
-  setSnapshot: () => {},
-};
-
-const EMPTY_SELECTION_STORE: SelectionStore = {
-  subscribe: () => () => {},
-  getSnapshot: () => [],
-  stateOf: () => null,
-  set: () => {},
-};
-
-const EMPTY_DRAFT_STORE: DraftStore = {
-  subscribe: () => () => {},
-  spanOf: () => null,
-  set: () => {},
-};
-
-type Chart = {
-  scroller: React.RefObject<HTMLDivElement | null>;
-  /** Shared mutation services, resolved once for the whole chart. */
-  repository: PlannerRepository | null;
-  run: (action: Promise<unknown>) => void;
-  /** The committed scale for pointer hit-testing without a row render. */
-  zoomRef: React.RefObject<Zoom>;
-  viewport: ViewportStore;
-  /** Bring a span just inside the given edge of the scrollport, animated. */
-  reveal: (span: Span, side: "left" | "right") => void;
-  selection: SelectionStore;
-  drafts: DraftStore;
-  /**
-   * Every drawn block, by id. A gesture on one bar has to move all of them, and
-   * a bar knows only its own topic — the registry is how the drag reaches the
-   * others. A ref rather than a value so writing it does not invalidate the
-   * context every lane consumes.
-   */
-  registry: React.RefObject<ReadonlyMap<string, BarTarget>>;
-  /** Select these bars, last one primary, and point the inspector at it. */
-  select: (ids: readonly string[]) => void;
-  /** Nothing is selected now, and the inspector has nothing to describe. */
-  clearSelection: () => void;
-  /** The right-button menu, at the pointer, with the items the caller decided on. */
-  openMenu: (at: { clientX: number; clientY: number }, items: readonly MenuItem[]) => void;
-  /** The shared label-column width; see "Label gutter" above. */
-  gutter: number;
-};
-
-const ChartContext = createContext<Chart>({
-  scroller: { current: null },
-  repository: null,
-  run: () => {},
-  zoomRef: { current: "week" },
-  viewport: EMPTY_VIEWPORT_STORE,
-  reveal: () => {},
-  selection: EMPTY_SELECTION_STORE,
-  drafts: EMPTY_DRAFT_STORE,
-  registry: { current: new Map() },
-  select: () => {},
-  clearSelection: () => {},
-  openMenu: () => {},
-  gutter: GUTTER_MIN,
-});
-
-/**
- * A drag is not a click.
- *
- * The chart can be grabbed anywhere, including on top of real buttons — a
- * course header, an off-screen marker — and the browser still reports a click
- * on whatever the press started on once the hand comes up. Dragging the canvas
- * from a course name used to collapse the course, which reads as the chart
- * fighting the gesture. The one click a completed pan produces is eaten on the
- * capture phase, before the button under it hears about it; the timeout is for
- * the rare drag that ends where no click follows, so the guard never survives
- * into someone's next press.
- */
-function swallowNextClick() {
-  const swallow = (event: MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-  window.addEventListener("click", swallow, { capture: true, once: true });
-  window.setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
-}
-
-/**
- * Grab-scrolling, on the middle button.
- *
- * The canvas moves under the pointer rather than the pointer picking anything
- * up, and the gesture is identical wherever it starts — on a bar, on a course
- * name, on empty canvas. That is the whole reason it is the middle button:
- * navigation that has to find somewhere safe to press is navigation you have to
- * think about.
- */
-function startPan(event: React.PointerEvent, chart: Chart) {
-  const element = chart.scroller.current;
-  if (!element) return;
-  event.preventDefault();
-  event.stopPropagation();
-  setInteractionHints(PAN_GESTURE_HINTS);
-  // Show the closed hand at press time, before the pointer has moved enough
-  // to qualify as a drag.
-  element.dataset.timelinePanning = "true";
-  // A hand on the chart outranks anything it was doing by itself.
-  stopScrollAnimation(element);
-
-  const button = event.button;
-  const originX = event.clientX;
-  const originY = event.clientY;
-  let lastX = event.clientX;
-  let lastY = event.clientY;
-  let panning = false;
-
-  /**
-   * Frame to frame, not press to now.
-   *
-   * The offset used to be recomputed from the position of the press — and the
-   * chart moves the offset out from under a drag by itself: reaching the left
-   * of the canvas grows it backward and shifts `scrollLeft` to hold the picture
-   * still (see `pendingShiftRef`). Against an absolute origin the next move
-   * undid that shift, which put the chart back where it had been, which
-   * triggered the extension again. Dragging left simply stopped working, right
-   * where the canvas has to grow. Applying each frame's delta instead means
-   * anything else that legitimately moves the offset is left alone.
-   */
-  const move = (pointer: PointerEvent) => {
-    if (
-      !panning &&
-      Math.abs(pointer.clientX - originX) < DRAG_THRESHOLD_PX &&
-      Math.abs(pointer.clientY - originY) < DRAG_THRESHOLD_PX
-    ) {
-      return;
-    }
-    panning = true;
-    const deltaX = pointer.clientX - lastX;
-    const deltaY = pointer.clientY - lastY;
-    if (deltaX) element.scrollLeft -= deltaX;
-    if (deltaY) element.scrollTop -= deltaY;
-    lastX = pointer.clientX;
-    lastY = pointer.clientY;
-  };
-
-  // Only the button that started this: a left press part-way through a pan is
-  // not the end of it.
-  const up = (pointer: PointerEvent) => {
-    if (pointer.button !== button) return;
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    delete element.dataset.timelinePanning;
-    setInteractionHints(null);
-    if (panning) swallowNextClick();
-  };
-
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-}
-
-/** The date ruler is its own horizontal drag affordance; it never pans vertically. */
-function startRulerPan(event: React.PointerEvent, chart: Chart) {
-  const element = chart.scroller.current;
-  if (!element) return;
-  event.preventDefault();
-  event.stopPropagation();
-  setInteractionHints(RULER_HINTS);
-  element.dataset.timelinePanning = "true";
-
-  let lastX = event.clientX;
-  const up = (pointer: PointerEvent) => {
-    if (pointer.button !== event.button) return;
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    delete element.dataset.timelinePanning;
-    setInteractionHints(null);
-  };
-  const move = (pointer: PointerEvent) => {
-    const deltaX = pointer.clientX - lastX;
-    if (deltaX) element.scrollLeft -= deltaX;
-    lastX = pointer.clientX;
-  };
-
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-}
-
-/* ─── The left button ───────────────────────────────────────────────────── */
-
-/**
- * A press on a bar.
- *
- * Blender's rule, because it is the one that never surprises: pressing an
- * unselected bar selects it, and only it, before anything moves — so a drag
- * always moves what you can see is selected. Pressing one that is already
- * selected leaves the selection alone, which is what makes dragging a group
- * possible at all. Shift defers to the release and toggles.
- *
- * Below the threshold nothing has moved, and the release is the selection.
- */
-function startBarGesture(
-  event: React.PointerEvent,
-  chart: Chart,
-  mode: DragMode,
-  blockId: string,
-) {
-  event.stopPropagation();
-  event.preventDefault();
-
-  const scroller = chart.scroller.current;
-  if (!scroller) return;
-  if (mode === "start" || mode === "end") scroller.dataset.timelineResizing = "true";
-  setInteractionHints(mode === "move" ? MOVE_GESTURE_HINTS : RESIZE_GESTURE_HINTS);
-
-  const extend = event.shiftKey;
-  const subtract = event.ctrlKey || event.metaKey;
-  const selected = chart.selection.getSnapshot();
-  if (!extend && !subtract && !selected.includes(blockId)) chart.select([blockId]);
-
-  const ids = chart.selection.getSnapshot();
-  const registry = chart.registry.current;
-  // The bar under the hand always travels, even when the press is a
-  // shift-extend that has not been applied yet.
-  const targets: BarTarget[] = [];
-  const seen = new Set<string>();
-  for (const id of ids.includes(blockId) ? ids : [...ids, blockId]) {
-    const target = registry.get(id);
-    if (target && !seen.has(id)) {
-      seen.add(id);
-      targets.push(target);
-    }
-  }
-  const limits = groupRange(mode, targets, seen);
-
-  const originX = event.clientX;
-  let dragging = false;
-  let days = 0;
-
-  const move = (pointer: PointerEvent) => {
-    const deltaX = pointer.clientX - originX;
-    if (!dragging && Math.abs(deltaX) < DRAG_THRESHOLD_PX) return;
-    dragging = true;
-    scroller.dataset.timelineDragging = "true";
-    days = clampDelta(limits, daysMoved(deltaX, chart.zoomRef.current));
-
-    const spans = new Map<string, Span>();
-    for (const { block } of targets) spans.set(block.id, applyDelta(mode, block, days));
-    chart.drafts.set(spans);
-    const grabbed = spans.get(blockId);
-    if (grabbed) showReadout({ x: pointer.clientX, y: pointer.clientY, ...grabbed });
-  };
-
-  const up = (pointer: PointerEvent) => {
-    if (pointer.button !== event.button) return;
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    delete scroller.dataset.timelineDragging;
-    delete scroller.dataset.timelineResizing;
-    setInteractionHints(null);
-    hideReadout();
-    chart.drafts.set(null);
-
-    if (!dragging) {
-      // A tap. Shift toggles this bar in or out of the selection, while
-      // Ctrl/⌘ removes it without disturbing the rest of the selection.
-      if (subtract) {
-        const current = chart.selection.getSnapshot();
-        if (current.includes(blockId)) {
-          chart.select(current.filter((id) => id !== blockId));
-        }
-      } else if (extend) {
-        const current = chart.selection.getSnapshot();
-        chart.select(
-          current.includes(blockId)
-            ? current.filter((id) => id !== blockId)
-            : [...current, blockId],
-        );
-      } else {
-        chart.select([blockId]);
-      }
-      return;
-    }
-
-    if (days === 0 || !chart.repository) return;
-    const repository = chart.repository;
-    chart.run(
-      Promise.all(
-        targets.map(({ block }) => {
-          const next = applyDelta(mode, block, days);
-          return repository.updateStudyBlock(block.id, {
-            startDate: next.startDate,
-            endDate: next.endDate,
-            plannedUnits: block.plannedUnits,
-          });
-        }),
-      ),
-    );
-  };
-
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-}
-
-/**
- * A press on empty canvas: the rubber band.
- *
- * Empty canvas used to draw a new block, which meant the one gesture people try
- * first — sweeping across a chart to see what is in a fortnight — silently
- * created work. Creating is now a deliberate act on the right button, and the
- * sweep does what a sweep does everywhere else.
- *
- * Hit-testing is done against the DOM rather than against the plan: the band is
- * a rectangle on the screen, the bars are elements on the screen, and asking the
- * browser which of them overlap is both exact and free of the geometry the
- * scroll offset, the zoom and the gutter would otherwise have to be folded into.
- */
-function startBoxSelect(event: React.PointerEvent, chart: Chart, band: HTMLElement | null) {
-  const scroller = chart.scroller.current;
-  if (!scroller) return;
-  event.preventDefault();
-
-  const originX = event.clientX;
-  const originY = event.clientY;
-  const extend = event.shiftKey;
-  const subtract = event.ctrlKey || event.metaKey;
-  let dragging = false;
-
-  const move = (pointer: PointerEvent) => {
-    if (
-      !dragging &&
-      Math.abs(pointer.clientX - originX) < DRAG_THRESHOLD_PX &&
-      Math.abs(pointer.clientY - originY) < DRAG_THRESHOLD_PX
-    ) {
-      return;
-    }
-    dragging = true;
-    if (!band) return;
-    // Written straight to the element. The band moves with the pointer, and a
-    // state update per frame would reconcile every lane in the plan.
-    band.style.left = `${Math.min(originX, pointer.clientX)}px`;
-    band.style.top = `${Math.min(originY, pointer.clientY)}px`;
-    band.style.width = `${Math.abs(pointer.clientX - originX)}px`;
-    band.style.height = `${Math.abs(pointer.clientY - originY)}px`;
-    band.dataset.visible = "true";
-  };
-
-  const up = (pointer: PointerEvent) => {
-    if (pointer.button !== event.button) return;
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    if (band) band.dataset.visible = "false";
-
-    if (!dragging) {
-      if (!extend && !subtract) chart.clearSelection();
-      return;
-    }
-    swallowNextClick();
-
-    const left = Math.min(originX, pointer.clientX);
-    const right = Math.max(originX, pointer.clientX);
-    const top = Math.min(originY, pointer.clientY);
-    const bottom = Math.max(originY, pointer.clientY);
-
-    const hit: string[] = [];
-    for (const element of scroller.querySelectorAll<HTMLElement>("[data-block-id]")) {
-      const id = element.dataset.blockId;
-      if (!id || hit.includes(id)) continue;
-      const box = element.getBoundingClientRect();
-      // Touching counts, as it does in Blender: a band drawn *over* a bar
-      // without swallowing it whole has still pointed at it.
-      if (box.right >= left && box.left <= right && box.bottom >= top && box.top <= bottom) {
-        hit.push(id);
-      }
-    }
-
-    if (subtract) {
-      const current = chart.selection.getSnapshot();
-      chart.select(current.filter((id) => !hit.includes(id)));
-    } else if (extend) {
-      const current = chart.selection.getSnapshot();
-      chart.select([...current, ...hit.filter((id) => !current.includes(id))]);
-    } else {
-      chart.select(hit);
-    }
-  };
-
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-}
 
 type TimelineProps = {
   courses: readonly Course[];
@@ -1388,8 +748,10 @@ function TimelineChart({
     filterRestoreTimeoutRef.current = window.setTimeout(retryAfterLayout, 50);
   }, [courseKey, trackVisible]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const element = scrollRef.current;
+    const canvas = canvasRef.current;
+    return () => {
       window.clearTimeout(zoomTimerRef.current);
       if (filterRestoreFrameRef.current !== null) {
         cancelAnimationFrame(filterRestoreFrameRef.current);
@@ -1397,10 +759,11 @@ function TimelineChart({
       if (filterRestoreTimeoutRef.current !== null) {
         window.clearTimeout(filterRestoreTimeoutRef.current);
       }
-      canvasRef.current?.removeAttribute("data-timeline-zooming");
-    },
-    [],
-  );
+      cancelActiveGesture();
+      if (element) stopScrollAnimation(element);
+      canvas?.removeAttribute("data-timeline-zooming");
+    };
+  }, []);
 
   // A sidebar or inspector resize changes the right edge without a scroll.
   // Keep markers correct without making viewport dimensions React state.
@@ -1831,7 +1194,7 @@ function Ruler({
   today: IsoDate;
   zoom: Zoom;
 }) {
-  const chart = useContext(ChartContext);
+  const chart = useChart();
   const viewport = useSyncExternalStore(
     chart.viewport.subscribe,
     chart.viewport.getSnapshot,
@@ -2104,7 +1467,7 @@ function ExamMarkers({ courses, range }: { courses: readonly Course[]; range: Ra
 type RowPhase = "enter" | "grow" | "shown" | "fade" | "shrink";
 
 /** What a row looks like right now: how much room it takes, and whether it is drawn. */
-export type RowMotion = { height: number; visible: boolean };
+type RowMotion = { height: number; visible: boolean };
 
 // One object per state rather than one per render: a row is memoized on its
 // props, and a fresh `{height, visible}` every time would either re-render every
@@ -2649,7 +2012,7 @@ function GutterCard({
   /** Driven by the lane's disclosure, so the card grows in step with the rows beside it. */
   rowsHeight: number;
 }) {
-  const chart = useContext(ChartContext);
+  const chart = useChart();
 
   return (
     // Above the today line (z-30) and below the ruler (z-50): it is chrome
@@ -2783,7 +2146,7 @@ function TopicLane({
   motion: RowMotion;
   onSelect: () => void;
 }) {
-  const chart = useContext(ChartContext);
+  const chart = useChart();
   const laneRef = useRef<HTMLDivElement>(null);
   const tint = courseColorValue(topic.color || course.color);
   const progress = useMemo(() => topicProgress(topic), [topic]);
@@ -2907,7 +2270,7 @@ function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
  * the nearest one *just* into view on the side it was hiding past.
  */
 function OffscreenMarkers({ topic, tint }: { topic: Topic; tint: string }) {
-  const chart = useContext(ChartContext);
+  const chart = useChart();
   const markers = useOffscreenMarkerState(topic.blocks, chart.viewport);
   // Both sides stay mounted while the row has anything to point at, and the
   // last thing each pointed at is kept while it fades: an element removed from
@@ -3036,7 +2399,7 @@ function Marker({
   topic: string;
   onGo: () => void;
 }) {
-  const chart = useContext(ChartContext);
+  const chart = useChart();
   const Chevron = side === "left" ? ChevronLeft : ChevronRight;
   const where = side === "left" ? "earlier" : "later";
 
@@ -3108,7 +2471,7 @@ function BlockBar({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const chart = useContext(ChartContext);
+  const chart = useChart();
   // Both of these are subscriptions to a store rather than props, so that a
   // selection change or a drag frame repaints the bars it touched and no others.
   const draft = useSyncExternalStore(
@@ -3312,48 +2675,6 @@ const MemoBlockBar = memo(BlockBar, (left, right) =>
   left.today === right.today &&
   left.selected === right.selected,
 );
-
-/** Where the pointer is, and what the drag under it currently means. */
-type Readout = { x: number; y: number; startDate: IsoDate; endDate: IsoDate };
-
-/**
- * The dates under a drag, at the pointer.
- *
- * Fixed rather than absolute so it is never clipped by the scroller, and offset
- * above the cursor so it does not cover the bar it is describing.
- *
- * One element for the whole chart, written to directly. A drag now moves a whole
- * selection, so the readout cannot belong to a bar; and it follows the pointer,
- * so it cannot be React state — an update per frame would reconcile every lane
- * in the plan to move a caption.
- */
-let readoutElement: HTMLElement | null = null;
-
-function DragReadout() {
-  return (
-    <span
-      ref={(node) => {
-        readoutElement = node;
-      }}
-      role="status"
-      data-visible="false"
-      className="timeline-readout material-popover pointer-events-none fixed z-50 -translate-x-1/2 rounded-chip px-1.5 py-0.5 text-caption tabular-nums whitespace-nowrap text-label shadow-popover"
-    />
-  );
-}
-
-function showReadout({ x, y, startDate, endDate }: Readout) {
-  if (!readoutElement) return;
-  const length = differenceInDays(startDate, endDate) + 1;
-  readoutElement.textContent = `${shortDate(startDate)} – ${shortDate(endDate)} · ${length} day${length === 1 ? "" : "s"}`;
-  readoutElement.style.left = `${x}px`;
-  readoutElement.style.top = `${y - 28}px`;
-  readoutElement.dataset.visible = "true";
-}
-
-function hideReadout() {
-  if (readoutElement) readoutElement.dataset.visible = "false";
-}
 
 /** Where a topic's work begins: the earliest block it has, or nothing if it has none. */
 function firstBlockStart(topic: Topic): IsoDate | null {
