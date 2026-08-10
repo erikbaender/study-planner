@@ -419,6 +419,7 @@ function TimelineChart({
           <div className="relative">
             <MemoAllTopicsLane
               entries={everyTopic}
+              health={health}
               range={range}
               today={today}
               selectedId={selectedId}

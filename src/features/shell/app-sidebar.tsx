@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import type { CSSProperties, RefObject } from "react";
-import type { Course, CourseHealth, Plan } from "@/domain";
+import type { Course, CourseHealth, IsoDate, Plan } from "@/domain";
 import { courseColorValue, courseProgress } from "@/domain";
 import {
   CountdownBadge,
@@ -43,6 +43,7 @@ import {
 import {
   hasExamSoon,
   isBehind,
+  needsAttention,
   sortCoursesAlphabetically,
 } from "@/features/workspace/scope";
 import type { Focus } from "@/features/workspace/store";
@@ -51,6 +52,7 @@ export function AppSidebar({
   plans,
   plan,
   health,
+  today,
   focus,
   hiddenCourseIds,
   query,
@@ -71,6 +73,7 @@ export function AppSidebar({
   plans: readonly Plan[];
   plan: Plan | undefined;
   health: Map<string, CourseHealth>;
+  today: IsoDate;
   focus: Focus;
   hiddenCourseIds: readonly string[];
   query: string;
@@ -89,7 +92,7 @@ export function AppSidebar({
   onNewCourse: () => void;
 }) {
   const courses = plan?.courses ?? [];
-  const behindCount = courses.filter((course) => isBehind(health.get(course.id))).length;
+  const attentionCount = courses.filter((course) => needsAttention(course, health.get(course.id), today)).length;
   const soonCount = courses.filter((course) => hasExamSoon(health.get(course.id))).length;
   const visible = sortCoursesAlphabetically(courses);
 
@@ -163,11 +166,11 @@ export function AppSidebar({
           onSelect={() => onSetFocus({ kind: "all" })}
         />
         <SidebarItem
-          label="Behind"
+          label="Attention needed"
           icon={<AlertTriangle />}
-          count={behindCount}
-          selected={focus.kind === "behind"}
-          onSelect={() => onSetFocus({ kind: "behind" })}
+          count={attentionCount}
+          selected={focus.kind === "attention"}
+          onSelect={() => onSetFocus({ kind: "attention" })}
         />
         <SidebarItem
           label="Exams soon"
@@ -294,6 +297,7 @@ function CourseFilterRow({
                 days={health.daysUntilExam}
                 provisional={health.exam.status === "provisional"}
                 atRisk={isBehind(health)}
+                onTrack={health.pace?.onTrack ?? false}
               />
             </span>
           ) : null}

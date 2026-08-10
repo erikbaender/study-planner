@@ -28,7 +28,7 @@ export type Command = {
 export type CommandActions = {
   setView: (view: "today" | "timeline" | "outline") => void;
   focusAll: () => void;
-  focusBehind: () => void;
+  focusAttention: () => void;
   focusSoon: () => void;
   revealCourse: (course: Course) => void;
   revealTopic: (topic: Topic) => void;
@@ -84,12 +84,12 @@ export function buildCommands(options: {
       run: actions.focusAll,
     },
     {
-      id: "focus:behind",
+      id: "focus:attention",
       group: "Go to",
-      title: "Behind",
-      subtitle: "Courses that will not finish before their exam",
-      keywords: "late catch up",
-      run: actions.focusBehind,
+      title: "Attention needed",
+      subtitle: "Courses that are behind pace or have overdue work",
+      keywords: "behind overdue late catch up",
+      run: actions.focusAttention,
     },
     {
       id: "focus:soon",

@@ -707,7 +707,8 @@ span:has(> .topic-progress-thumb) {
      avoiding the pure hues used to space the course palette. The light-theme
      variants are dark enough to clear AA as text on white. */
   --mac-negative: #d9363e;
-  --mac-warning: #8a6800;
+  /* Near-pure yellow stays between the gold and lime course hues. */
+  --mac-warning: #9b7f19;
   --mac-positive: #238636;
   --mac-completion-mark: #1e1e1e;
 
@@ -755,7 +756,7 @@ span:has(> .topic-progress-thumb) {
 
   /* Brightened: the light-mode variants are unreadable on #1e1e1e. */
   --mac-negative: #ff6b72;
-  --mac-warning: #ffd24a;
+  --mac-warning: #edc85a;
   --mac-positive: #45d16f;
   --mac-completion-mark: #1e1e1e;
 

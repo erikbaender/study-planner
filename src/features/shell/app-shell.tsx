@@ -99,10 +99,10 @@ export function AppShell() {
   // rows are filters over the whole workspace, not navigation into part of it.
   const focused = useMemo(
     () =>
-      coursesInFocus(plan, workspace.focus, health, {
+      coursesInFocus(plan, workspace.focus, health, today, {
         hiddenCourseIds: workspace.hiddenCourseIds,
       }),
-    [plan, workspace.focus, health, workspace.hiddenCourseIds],
+    [plan, workspace.focus, health, today, workspace.hiddenCourseIds],
   );
   const filteredFocused = useMemo(
     () => focused.filter((course) => courseMatchesQuery(workspace.query, course)),
@@ -195,7 +195,7 @@ export function AppShell() {
         actions: {
           setView: workspace.setView,
           focusAll: () => workspace.setFocus({ kind: "all" }),
-          focusBehind: () => workspace.setFocus({ kind: "behind" }),
+          focusAttention: () => workspace.setFocus({ kind: "attention" }),
           focusSoon: () => workspace.setFocus({ kind: "soon" }),
           revealCourse: selectCourse,
           revealTopic: (topic) => revealSelection({ kind: "topic", id: topic.id }),
@@ -267,6 +267,7 @@ export function AppShell() {
             plans={snapshot.plans}
             plan={plan}
             health={health}
+            today={today}
             focus={workspace.focus}
             hiddenCourseIds={workspace.hiddenCourseIds}
             query={workspace.query}

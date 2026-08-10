@@ -82,7 +82,7 @@ export function CourseInspector({
         {health?.pace ? (
           <>
             <Row label="Pace">
-              <Badge tone={health.pace.onTrack ? "positive" : "negative"}>
+              <Badge tone={health.pace.onTrack ? "positive" : "warning"}>
                 {health.pace.onTrack
                   ? "On track"
                   : health.pace.daysLate > 0
@@ -131,4 +131,3 @@ export function CourseInspector({
     </>
   );
 }
-

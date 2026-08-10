@@ -17,9 +17,11 @@ import {
   assessCourse,
   daysUntil,
   effectiveDeadline,
+  topicProgress,
   type Course,
   type CourseHealth,
   type Exam,
+  type IsoDate,
   type Plan,
   type PlannerSnapshot,
   type Topic,
@@ -51,6 +53,31 @@ export function isBehind(health: CourseHealth | undefined): boolean {
   // `pace` is null when the course has no upcoming exam. Without a deadline
   // "behind" has no meaning, so such a course is not behind — it is unscheduled.
   return health?.pace ? !health.pace.onTrack : false;
+}
+
+/** An unfinished scheduled block whose window has already closed. */
+export function hasOverdueWork(course: Course, today: IsoDate): boolean {
+  return overdueBlockCount(course, today) > 0;
+}
+
+export function overdueBlockCount(course: Course, today: IsoDate): number {
+  return course.topics.reduce(
+    (total, topic) => total + overdueBlockCountForTopic(topic, today),
+    0,
+  );
+}
+
+export function overdueBlockCountForTopic(topic: Topic, today: IsoDate): number {
+  if ((topicProgress(topic).ratio ?? 0) >= 1) return 0;
+  return topic.blocks.filter((block) => block.endDate < today).length;
+}
+
+export function needsAttention(
+  course: Course,
+  health: CourseHealth | undefined,
+  today: IsoDate,
+): boolean {
+  return isBehind(health) || hasOverdueWork(course, today);
 }
 
 export function hasExamSoon(health: CourseHealth | undefined, within = EXAM_SOON_DAYS): boolean {
@@ -87,6 +114,7 @@ export function coursesInFocus(
   plan: Plan | undefined,
   focus: Focus,
   health: Map<string, CourseHealth>,
+  today: IsoDate,
   visibility: Visibility = { hiddenCourseIds: [] },
 ): Course[] {
   const courses = plan?.courses ?? [];
@@ -94,8 +122,8 @@ export function coursesInFocus(
   const matching =
     focus.kind === "all"
       ? courses
-      : focus.kind === "behind"
-        ? courses.filter((course) => isBehind(health.get(course.id)))
+      : focus.kind === "attention"
+        ? courses.filter((course) => needsAttention(course, health.get(course.id), today))
         : courses.filter((course) => hasExamSoon(health.get(course.id)));
 
   return sortCoursesAlphabetically(

@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { ChevronRight, Layers, Plus } from "lucide-react";
+import { AlertTriangle, ChevronRight, Layers, Plus } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   clampDate,
@@ -36,6 +36,7 @@ import {
   type RowMotion,
 } from "./row-transitions";
 import { hintExcludedScope } from "@/features/workspace/hints";
+import { overdueBlockCount } from "@/features/workspace/scope";
 /* ─── Lanes ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -146,6 +147,35 @@ function Stack({
   );
 }
 
+function AttentionIndicators({
+  behindDays,
+  overdueBlocks,
+}: {
+  behindDays: number | null;
+  overdueBlocks: number;
+}) {
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {behindDays !== null ? (
+        <span title={`${behindDays} days behind pace`}>
+          <Badge tone="warning">
+            <AlertTriangle aria-hidden="true" className="size-2.5" strokeWidth={3} />
+            <span aria-hidden="true">{behindDays}d</span>
+          </Badge>
+        </span>
+      ) : null}
+      {overdueBlocks > 0 ? (
+        <span title={`${overdueBlocks} overdue block${overdueBlocks === 1 ? "" : "s"}`}>
+          <Badge tone="negative">
+            <AlertTriangle aria-hidden="true" className="size-2.5" strokeWidth={3} />
+            <span aria-hidden="true">{overdueBlocks}</span>
+          </Badge>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 /**
  * Hold on to the last drawing while the next one arrives.
  *
@@ -200,12 +230,14 @@ const topicKeyOf = (topic: Topic) => topic.id;
  */
 function AllTopicsLane({
   entries,
+  health,
   range,
   today,
   selectedId,
   onSelectTopic,
 }: {
   entries: readonly { course: Course; topic: Topic }[];
+  health: Map<string, CourseHealth>;
   range: Range;
   today: IsoDate;
   selectedId: string | null;
@@ -232,6 +264,19 @@ function AllTopicsLane({
   // Summed from the rows that are actually there, including the ones on their
   // way out: the group's height and each row's own height animate as one.
   const rowsHeight = rows.reduce((total, row) => total + row.motion.height, 0) + GROUP_GAP;
+  const courseIds = new Set(entries.map(({ course }) => course.id));
+  const behindDays = Math.max(
+    -1,
+    ...[...courseIds]
+      .map((courseId) => health.get(courseId)?.pace)
+      .filter((pace): pace is NonNullable<CourseHealth["pace"]> => Boolean(pace && !pace.onTrack))
+      .map((pace) => pace.daysLate),
+  );
+  const coursesInEntries = new Map(entries.map(({ course }) => [course.id, course] as const));
+  const overdueBlocks = [...coursesInEntries.values()].reduce(
+    (total, course) => total + overdueBlockCount(course, today),
+    0,
+  );
 
   return (
     <section className="border-b border-separator">
@@ -274,14 +319,22 @@ function AllTopicsLane({
           icon={<Layers aria-hidden="true" className="size-3 shrink-0 text-tertiary" />}
           name="All courses"
           bold
-          trailing={<span className="shrink-0 text-caption tabular-nums text-tertiary">{entries.length}</span>}
+          trailing={
+            <span className="flex shrink-0 items-center gap-1">
+              <AttentionIndicators
+                behindDays={behindDays >= 0 ? behindDays : null}
+                overdueBlocks={overdueBlocks}
+              />
+              <span className="text-caption tabular-nums text-tertiary">{entries.length}</span>
+            </span>
+          }
           rowsHeight={disclosure.expanded ? rowsHeight : 0}
           rows={
             disclosure.mounted
               ? rows.map(({ key, item: { course, topic }, motion }) => ({
                   key,
                   name: topic.name,
-                  dot: courseColorValue(topic.color || course.color),
+                  dot: courseColorValue(course.color),
                   selected: topic.id === selectedId,
                   motion,
                   onSelect: () => onSelectTopic(course, topic),
@@ -320,7 +373,7 @@ function CourseLane({
   const series = useMemo(
     () =>
       topics.map((topic) => ({
-        color: courseColorValue(topic.color || course.color),
+        color: courseColorValue(course.color),
         blocks: topic.blocks,
       })),
     [topics, course.color],
@@ -331,6 +384,8 @@ function CourseLane({
     rows.length === 0
       ? EMPTY_COURSE_HEIGHT
       : rows.reduce((total, row) => total + row.motion.height, 0) + GROUP_GAP;
+  const behindDays = health?.pace && !health.pace.onTrack ? health.pace.daysLate : null;
+  const overdueBlocks = overdueBlockCount(course, today);
 
   return (
     <section className="border-b border-separator/60">
@@ -379,16 +434,14 @@ function CourseLane({
             />
           }
           name={course.name}
-          trailing={
-            health?.pace && !health.pace.onTrack ? <Badge tone="negative">Behind</Badge> : null
-          }
+          trailing={<AttentionIndicators behindDays={behindDays} overdueBlocks={overdueBlocks} />}
           rowsHeight={disclosure.expanded && rows.length > 0 ? rowsHeight : 0}
           rows={
             disclosure.mounted
               ? rows.map(({ key, item: topic, motion }) => ({
                   key,
                   name: topic.name,
-                  dot: courseColorValue(topic.color || course.color),
+                  dot: courseColorValue(course.color),
                   selected: topic.id === selectedId,
                   motion,
                   onSelect: () => onSelectTopic(topic),
@@ -577,7 +630,7 @@ function TopicLane({
 }) {
   const chart = useChart();
   const laneRef = useRef<HTMLDivElement>(null);
-  const tint = courseColorValue(topic.color || course.color);
+  const tint = courseColorValue(course.color);
   const progress = useMemo(() => topicProgress(topic), [topic]);
   // One pass for the row: each bar is drawn with its share of the topic's
   // progress rather than with all of it. See `blocks.ts`.
@@ -683,6 +736,7 @@ function TopicLane({
  */
 export const MemoAllTopicsLane = memo(AllTopicsLane, (left, right) =>
   left.entries === right.entries &&
+  left.health === right.health &&
   left.range === right.range &&
   left.today === right.today &&
   left.selectedId === right.selectedId,

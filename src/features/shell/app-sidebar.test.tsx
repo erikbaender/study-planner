@@ -25,6 +25,7 @@ describe("AppSidebar course visibility", () => {
       plans: [plan],
       plan,
       health,
+      today: TODAY,
       focus: { kind: "all" } as const,
       query: "",
       selectedCourseId: null,
@@ -75,6 +76,7 @@ describe("AppSidebar course visibility", () => {
         plans={[plan]}
         plan={plan}
         health={new Map()}
+        today={TODAY}
         focus={{ kind: "all" }}
         hiddenCourseIds={[]}
         query=""
@@ -111,6 +113,7 @@ describe("AppSidebar course visibility", () => {
         plans={[plan]}
         plan={plan}
         health={new Map()}
+        today={TODAY}
         focus={{ kind: "all" }}
         hiddenCourseIds={[]}
         query="respiration"
@@ -147,6 +150,7 @@ describe("AppSidebar course visibility", () => {
           plans={[plan]}
           plan={plan}
           health={new Map()}
+          today={TODAY}
           focus={{ kind: "all" }}
           hiddenCourseIds={[]}
           query=""

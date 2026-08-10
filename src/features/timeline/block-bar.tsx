@@ -345,7 +345,7 @@ function BlockBar({
 
   const shown = draft ?? block;
   const unit = UNIT_LABELS[topic.unit].plural;
-  const tint = courseColorValue(topic.color || course.color);
+  const tint = courseColorValue(course.color);
 
   const length = differenceInDays(shown.startDate, shown.endDate) + 1;
   const past = shown.endDate < today;
