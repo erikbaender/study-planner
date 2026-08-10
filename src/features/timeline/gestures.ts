@@ -7,7 +7,12 @@ import {
   RESIZE_GESTURE_HINTS,
   RULER_HINTS,
 } from "./hints";
-import { hideReadout, showReadout } from "./readout";
+import {
+  beginReadoutManipulation,
+  endReadoutManipulation,
+  hideReadout,
+  showReadout,
+} from "./readout";
 import { applyDelta, clampDelta, groupRange, type BarTarget, type DragMode } from "./selection";
 import { daysMoved } from "./geometry";
 import { stopScrollAnimation } from "./motion";
@@ -241,6 +246,7 @@ export function startBarGesture(
 
   const scroller = chart.scroller.current;
   if (!scroller) return;
+  beginReadoutManipulation();
   const extend = event.shiftKey;
   const subtract = event.ctrlKey || event.metaKey;
   // Selected on the press, not on the release: a drag has to move what you can
@@ -339,6 +345,7 @@ export function startBarGesture(
       draftFrame.cancel();
       delete scroller.dataset.timelineDragging;
       delete scroller.dataset.timelineResizing;
+      endReadoutManipulation();
     },
   });
   if (mode === "start" || mode === "end") scroller.dataset.timelineResizing = "true";

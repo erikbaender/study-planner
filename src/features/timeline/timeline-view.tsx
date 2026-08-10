@@ -72,7 +72,7 @@ import {
   startBoxSelect,
   startPan,
 } from "./gestures";
-import { DragReadout } from "./readout";
+import { TimelineReadout } from "./readout";
 import {
   hintScope,
   useViewHints,
@@ -445,7 +445,7 @@ function TimelineChart({
           pointer, and a React update per frame would reconcile every lane in
           the plan to move a rectangle four pixels. */}
       <div ref={bandRef} data-visible="false" aria-hidden="true" className="timeline-band" />
-      <DragReadout />
+      <TimelineReadout />
 
       <ContextMenuAt
         open={menu !== null}

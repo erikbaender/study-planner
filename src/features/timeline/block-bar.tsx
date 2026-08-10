@@ -32,7 +32,10 @@ import {
 } from "./hints";
 import type { Range } from "./layout";
 import { hintTarget } from "@/features/workspace/hints";
-import { BlockHoverInfo } from "./readout";
+import {
+  hideBlockHover,
+  showBlockHover,
+} from "./readout";
 /** The one delete item, so the bar's menu and the lane's cannot disagree. */
 export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
   return {
@@ -274,8 +277,6 @@ function BlockBar({
   const keyboardMode = useKeyboardMode();
   const barHints = barSelection !== null ? barSelectedHints(keyboardMode) : BAR_HINTS;
   const barHintTarget = hintTarget(barHints);
-  const [hovered, setHovered] = useState(false);
-  const [hoverAnchor, setHoverAnchor] = useState<DOMRect | null>(null);
 
   const shown = draft ?? block;
   const unit = UNIT_LABELS[topic.unit].plural;
@@ -326,21 +327,39 @@ function BlockBar({
         {...barHintTarget}
         onPointerEnter={(event) => {
           barHintTarget.onPointerEnter();
-          setHoverAnchor(event.currentTarget.getBoundingClientRect());
-          setHovered(true);
+          showBlockHover({
+            blockId: block.id,
+            topicName: topic.name,
+            startDate: shown.startDate,
+            endDate: shown.endDate,
+            completedUnits: topic.completedUnits,
+            totalUnits: topic.totalUnits,
+            unit,
+            overdue,
+            anchor: event.currentTarget.getBoundingClientRect(),
+          });
         }}
         onPointerLeave={() => {
           barHintTarget.onPointerLeave();
-          setHovered(false);
+          hideBlockHover(block.id);
         }}
         onFocus={(event) => {
           barHintTarget.onFocus();
-          setHoverAnchor(event.currentTarget.getBoundingClientRect());
-          setHovered(true);
+          showBlockHover({
+            blockId: block.id,
+            topicName: topic.name,
+            startDate: shown.startDate,
+            endDate: shown.endDate,
+            completedUnits: topic.completedUnits,
+            totalUnits: topic.totalUnits,
+            unit,
+            overdue,
+            anchor: event.currentTarget.getBoundingClientRect(),
+          });
         }}
         onBlur={() => {
           barHintTarget.onBlur();
-          setHovered(false);
+          hideBlockHover(block.id);
         }}
         // Everything a bar means, spoken. The old bars were `div`s and said
         // nothing at all.
@@ -371,36 +390,42 @@ function BlockBar({
           outlineOffset: barSelection ? 2 : -1,
         }}
         className={clsx(
-          "timeline-bar timeline-tint group absolute top-1 h-4 touch-none overflow-hidden rounded-chip",
+          "timeline-bar timeline-tint group absolute top-1 h-4 touch-none overflow-visible rounded-chip",
           barSelection && "z-10",
         )}
       >
-        {/* Progress as an internal fill. Each bar carries its *share* of the
+        <span className="absolute inset-0 overflow-hidden rounded-[inherit]">
+          {/* Progress as an internal fill. Each bar carries its *share* of the
             topic's progress, so a topic split across four windows reads as one
             quantity spread over four bars rather than as four times the work. */}
-        <span
-          aria-hidden="true"
-          className="topic-motion-width block h-full"
-          style={{ width: `${fill * 100}%`, background: tint }}
-        />
+          <span
+            aria-hidden="true"
+            className="topic-motion-width block h-full"
+            style={{ width: `${fill * 100}%`, background: tint }}
+          />
+        </span>
         {overdue ? (
           <span
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
           >
-            <span
-              className="flex size-4 items-center justify-center bg-content"
-              style={{ clipPath: "polygon(50% 0, 100% 100%, 0 100%)" }}
-            >
-              <AlertTriangle className="size-2.5 text-negative" strokeWidth={2.5} />
-            </span>
+            <AlertTriangle
+              aria-hidden="true"
+              className="absolute size-5 text-content"
+              strokeWidth={6}
+            />
+            <AlertTriangle
+              aria-hidden="true"
+              className="relative size-5 text-negative"
+              strokeWidth={2.5}
+            />
           </span>
         ) : null}
         {/* The dates, in the bar, when there is room for them. A chart of
             anonymous rectangles makes you hover every one to read it back. */}
         <span
           aria-hidden="true"
-          className="timeline-bar-label pointer-events-none absolute inset-0 items-center justify-center px-1.5 text-caption tabular-nums whitespace-nowrap text-secondary"
+          className="timeline-bar-label pointer-events-none absolute inset-0 items-center justify-center overflow-hidden rounded-[inherit] px-1.5 text-caption tabular-nums whitespace-nowrap text-secondary"
         >
           {label}
         </span>
@@ -425,17 +450,6 @@ function BlockBar({
           style={{ background: "var(--mac-label-secondary)" }}
         />
       </button>
-      <BlockHoverInfo
-        topicName={topic.name}
-        startDate={shown.startDate}
-        endDate={shown.endDate}
-        completedUnits={topic.completedUnits}
-        totalUnits={topic.totalUnits}
-        unit={unit}
-        overdue={overdue}
-        anchor={hoverAnchor}
-        visible={hovered}
-      />
     </>
   );
 }
