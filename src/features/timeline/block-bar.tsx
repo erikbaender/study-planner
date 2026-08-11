@@ -313,7 +313,6 @@ function BlockBar({
   range,
   today,
   selected,
-  onSelect,
 }: {
   course: Course;
   topic: Topic;
@@ -324,7 +323,6 @@ function BlockBar({
   range: Range;
   today: IsoDate;
   selected: boolean;
-  onSelect: () => void;
 }) {
   const chart = useChart();
   // Both of these are subscriptions to a store rather than props, so that a
@@ -381,12 +379,14 @@ function BlockBar({
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
+          // `chart.select` is what tells the inspector which block this is, so
+          // pressing a bar is the same act as clicking one. It used to also
+          // call the row's `onSelect`, which selects the *topic* and empties
+          // the chart selection on its way — so a bar reached by keyboard
+          // opened the wrong panel and lost its own highlight doing it.
           const current = chart.selection.getSnapshot();
           if (current.includes(block.id)) chart.select(current.filter((id) => id !== block.id));
-          else {
-            chart.select([block.id]);
-            onSelect();
-          }
+          else chart.select([block.id]);
         }}
         {...barHintTarget}
         onPointerEnter={(event) => {

@@ -42,7 +42,12 @@ function placeAt(element: Element, left: number, top: number, width = 60, height
   });
 }
 
-function chart(topics: ReturnType<typeof makeTopic>[], onSelectBlock = vi.fn()) {
+function chart(
+  topics: ReturnType<typeof makeTopic>[],
+  onSelectBlock = vi.fn(),
+  onSelectTopic = vi.fn(),
+  onClearSelection = vi.fn(),
+) {
   const course = makeCourse({ name: "Biochemistry", topics });
   render(
     <TimelineView
@@ -50,12 +55,13 @@ function chart(topics: ReturnType<typeof makeTopic>[], onSelectBlock = vi.fn()) 
       health={new Map()}
       today="2026-05-01"
       selectedId={null}
-      onSelectTopic={vi.fn()}
+      onSelectTopic={onSelectTopic}
       onSelectBlock={onSelectBlock}
+      onClearSelection={onClearSelection}
       onGoToOutline={vi.fn()}
     />,
   );
-  return { course, onSelectBlock };
+  return { course, onSelectBlock, onSelectTopic, onClearSelection };
 }
 
 /** The first of the two bars drawn for a block — the combined lane's copy. */
@@ -76,6 +82,31 @@ function stubAnimationFrames() {
 }
 
 describe("TimelineView", () => {
+  it("keeps keyboard selection on the block instead of opening its topic", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+      ],
+    });
+    const onSelectBlock = vi.fn();
+    const onSelectTopic = vi.fn();
+    chart([topic], onSelectBlock, onSelectTopic);
+
+    const target = bar(/2026-05-04 to 2026-05-08/);
+    target.focus();
+    fireEvent.keyDown(target, { key: "Enter" });
+
+    // A keyboard user reached the same block the pointer user would have
+    // reached. Opening the parent topic here loses the dates and provenance
+    // that made the bar worth selecting, as well as its visible highlight.
+    expect(onSelectBlock).toHaveBeenCalledWith(topic.blocks[0]);
+    expect(onSelectBlock).toHaveBeenCalledOnce();
+    expect(onSelectTopic).not.toHaveBeenCalled();
+    expect(target).toHaveAttribute("aria-current", "true");
+    expect(target).toHaveAttribute("data-selection", "primary");
+  });
+
   it("selects a bar with the left button, and points the inspector at its block", () => {
     const topic = makeTopic({
       name: "Glycolysis",
@@ -94,6 +125,37 @@ describe("TimelineView", () => {
     expect(target).toHaveAttribute("data-selection", "primary");
     // A press that never travelled is a selection, not an edit.
     expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+  });
+
+  it("reports the remaining primary block when a multi-selection loses one bar", () => {
+    const topic = makeTopic({
+      name: "Glycolysis",
+      blocks: [
+        { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
+        { id: "block_2", topicId: "topic_1", startDate: "2026-05-18", endDate: "2026-05-20", source: "auto" },
+      ],
+    });
+    const onSelectBlock = vi.fn();
+    const onClearSelection = vi.fn();
+    chart([topic], onSelectBlock, vi.fn(), onClearSelection);
+
+    const first = bar(/2026-05-04 to 2026-05-08/);
+    const second = bar(/2026-05-18 to 2026-05-20/);
+    fireEvent.pointerDown(first, { button: 0, clientX: 100 });
+    fireEvent.pointerUp(window, { button: 0, clientX: 100 });
+    fireEvent.pointerDown(second, { button: 0, clientX: 300, shiftKey: true });
+    fireEvent.pointerUp(window, { button: 0, clientX: 300, shiftKey: true });
+
+    // Removing the first bar leaves the second bar selected. The callback is
+    // a report of that set operation, not a request to toggle the inspector.
+    fireEvent.pointerDown(first, { button: 0, clientX: 100 });
+    fireEvent.pointerUp(window, { button: 0, clientX: 100 });
+
+    expect(onSelectBlock).toHaveBeenNthCalledWith(1, topic.blocks[0]);
+    expect(onSelectBlock).toHaveBeenNthCalledWith(2, topic.blocks[1]);
+    expect(onSelectBlock).toHaveBeenNthCalledWith(3, topic.blocks[1]);
+    expect(onClearSelection).not.toHaveBeenCalled();
+    expect(second).toHaveAttribute("data-selection", "primary");
   });
 
   it("deselects a bar when it is clicked again", () => {

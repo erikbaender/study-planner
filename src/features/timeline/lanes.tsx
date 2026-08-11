@@ -368,7 +368,6 @@ function AllTopicsLane({
                   today={today}
                   selected={topic.id === selectedId}
                   motion={motion}
-                  onSelect={() => onSelectTopic(course, topic)}
                 />
               ))
             : null}
@@ -499,7 +498,6 @@ function CourseLane({
                 today={today}
                 selected={topic.id === selectedId}
                 motion={motion}
-                onSelect={() => onSelectTopic(topic)}
               />
             ))
           )}
@@ -715,7 +713,6 @@ function TopicLane({
   today,
   selected,
   motion,
-  onSelect,
 }: {
   course: Course;
   topic: Topic;
@@ -726,7 +723,6 @@ function TopicLane({
   selected: boolean;
   /** Where this row is in an arrival or a departure; see "Rows arriving and leaving". */
   motion: RowMotion;
-  onSelect: () => void;
 }) {
   const chart = useChart();
   const laneRef = useRef<HTMLDivElement>(null);
@@ -821,7 +817,6 @@ function TopicLane({
           range={range}
           today={today}
           selected={selected}
-          onSelect={onSelect}
         />
       ))}
     </div>

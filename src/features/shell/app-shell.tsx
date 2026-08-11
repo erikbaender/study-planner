@@ -332,7 +332,13 @@ export function AppShell() {
               query={workspace.query}
               selectedId={workspace.selection?.id ?? null}
               onSelectTopic={selectTopic}
-              onSelectBlock={selectBlock}
+              // Set, not toggled. Everywhere else a second click on the same
+              // row is how you close the inspector, but the chart holds a
+              // selection of its own and says when it has emptied — so it
+              // reports the block that is now primary, which after removing one
+              // bar of several is a bar that is still selected. Toggling there
+              // would close the panel on a block the chart is still holding.
+              onSelectBlock={(block) => workspace.select({ kind: "block", id: block.id })}
               onClearSelection={() => workspace.select(null)}
               onGoToOutline={() => workspace.setView("outline")}
             />
