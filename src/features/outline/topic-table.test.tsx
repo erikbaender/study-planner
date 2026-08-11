@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { course as makeCourse, topic as makeTopic } from "@/test/factories";
@@ -19,12 +19,30 @@ const TODAY = "2026-05-01";
 beforeEach(() => vi.clearAllMocks());
 
 const glycolysis = makeTopic({
+  id: "topic_glycolysis",
   name: "Glycolysis",
-  section: "Block 1",
   totalUnits: 100,
   completedUnits: 40,
+  blocks: [
+    {
+      id: "block_glycolysis_early",
+      topicId: "topic_glycolysis",
+      startDate: "2026-05-04",
+      endDate: "2026-05-08",
+      plannedUnits: 20,
+      source: "auto",
+    },
+    {
+      id: "block_glycolysis_late",
+      topicId: "topic_glycolysis",
+      startDate: "2026-05-18",
+      endDate: "2026-05-20",
+      plannedUnits: 12,
+      source: "manual",
+    },
+  ],
 });
-const krebs = makeTopic({ name: "Krebs cycle", section: "Block 2", totalUnits: 50 });
+const krebs = makeTopic({ name: "Krebs cycle", totalUnits: 50 });
 const course = makeCourse({ name: "Biochemistry", topics: [glycolysis, krebs] });
 
 function renderTable(onAddRow = vi.fn()) {
@@ -35,6 +53,7 @@ function renderTable(onAddRow = vi.fn()) {
       today={TODAY}
       selectedId={null}
       onSelect={vi.fn()}
+      onSelectBlock={vi.fn()}
       onDelete={vi.fn()}
       onAddRow={onAddRow}
     />,
@@ -43,10 +62,34 @@ function renderTable(onAddRow = vi.fn()) {
 }
 
 describe("TopicTable", () => {
-  it("groups rows under their section", () => {
-    renderTable();
-    expect(screen.getByRole("heading", { name: "Block 1" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Block 2" })).toBeInTheDocument();
+  it("discloses a topic's study blocks as selectable sub-rows", async () => {
+    const onSelectBlock = vi.fn();
+    render(
+      <TopicTable
+        course={course}
+        topics={course.topics}
+        today={TODAY}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onSelectBlock={onSelectBlock}
+        onDelete={vi.fn()}
+        onAddRow={vi.fn()}
+      />,
+    );
+
+    const disclosure = screen.getByRole("button", { name: "2 blocks for Glycolysis" });
+    await userEvent.setup().click(disclosure);
+    const firstBlock = (await screen.findByText("2026-05-04 – 2026-05-08")).closest<HTMLButtonElement>("button")!;
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(firstBlock).toHaveTextContent("20 slides");
+
+    await userEvent.setup().click(firstBlock);
+    expect(onSelectBlock).toHaveBeenCalledWith(glycolysis.blocks[0]);
+
+    // The disclosure grows after its two animation frames, so its space is
+    // asserted after the motion has had a chance to settle rather than on the
+    // zero-height mounting frame.
+    await waitFor(() => expect(firstBlock.closest(".disclosure")).toHaveStyle({ height: "72px" }));
   });
 
   it("commits a size change on blur and leaves progress alone", async () => {
@@ -103,6 +146,7 @@ describe("TopicTable", () => {
         today={TODAY}
         selectedId={null}
         onSelect={vi.fn()}
+        onSelectBlock={vi.fn()}
         onDelete={vi.fn()}
         onAddRow={vi.fn()}
       />,
@@ -130,8 +174,8 @@ describe("TopicTable", () => {
 
     await user.click(checkbox);
     expect(checkbox).not.toBeChecked();
-    expect(checkbox.closest("li")).toHaveAttribute("data-completion-trigger", "checkbox");
-    expect(checkbox.closest("li")).toHaveAttribute("data-completion-direction", "off");
+    expect(checkbox.closest(".topic-completion-row")).toHaveAttribute("data-completion-trigger", "checkbox");
+    expect(checkbox.closest(".topic-completion-row")).toHaveAttribute("data-completion-direction", "off");
     expect(repository.logStudy).toHaveBeenLastCalledWith({
       topicId: glycolysis.id,
       date: TODAY,
@@ -148,6 +192,7 @@ describe("TopicTable", () => {
         today={TODAY}
         selectedId={null}
         onSelect={vi.fn()}
+        onSelectBlock={vi.fn()}
         onDelete={vi.fn()}
         onAddRow={vi.fn()}
       />,
@@ -159,7 +204,9 @@ describe("TopicTable", () => {
   it("keeps the readout, working slider, and checkbox in trailing order", () => {
     renderTable();
 
-    const row = screen.getByLabelText("Name of Glycolysis").closest("li")!;
+    const row = screen
+      .getByLabelText("Name of Glycolysis")
+      .closest<HTMLElement>(".topic-completion-row")!;
     const readout = within(row).getByText("40 / 100 slides");
     const slider = within(row).getByRole("slider", { name: "Glycolysis progress" });
     const checkbox = within(row).getByRole("checkbox", { name: "Mark Glycolysis as done" });
@@ -178,11 +225,14 @@ describe("TopicTable", () => {
         today={TODAY}
         selectedId={null}
         onSelect={vi.fn()}
+        onSelectBlock={vi.fn()}
         onDelete={vi.fn()}
         onAddRow={vi.fn()}
       />,
     );
-    const loadedRow = screen.getByLabelText("Name of Already finished").closest("li")!;
+    const loadedRow = screen
+      .getByLabelText("Name of Already finished")
+      .closest<HTMLElement>(".topic-completion-row")!;
     expect(loadedRow).not.toHaveAttribute("data-completion-animating");
 
     rerender(
@@ -192,13 +242,16 @@ describe("TopicTable", () => {
         today={TODAY}
         selectedId={null}
         onSelect={vi.fn()}
+        onSelectBlock={vi.fn()}
         onDelete={vi.fn()}
         onAddRow={vi.fn()}
       />,
     );
     const user = userEvent.setup();
     const checkbox = screen.getByRole("checkbox", { name: "Mark Glycolysis as done" });
-    const row = screen.getByLabelText("Name of Glycolysis").closest("li")!;
+    const row = screen
+      .getByLabelText("Name of Glycolysis")
+      .closest<HTMLElement>(".topic-completion-row")!;
     await user.click(checkbox);
     expect(row).toHaveAttribute("data-completion-trigger", "checkbox");
     expect(row).toHaveAttribute("data-completion-direction", "on");
@@ -211,7 +264,9 @@ describe("TopicTable", () => {
   it("marks a row for animation when its slider reaches full", async () => {
     const user = userEvent.setup();
     renderTable();
-    const row = screen.getByLabelText("Name of Glycolysis").closest("li")!;
+    const row = screen
+      .getByLabelText("Name of Glycolysis")
+      .closest<HTMLElement>(".topic-completion-row")!;
     const slider = within(row).getByRole("slider", { name: "Glycolysis progress" });
 
     await user.click(slider);
@@ -232,11 +287,14 @@ describe("TopicTable", () => {
         today={TODAY}
         selectedId={null}
         onSelect={vi.fn()}
+        onSelectBlock={vi.fn()}
         onDelete={vi.fn()}
         onAddRow={vi.fn()}
       />,
     );
-    const row = screen.getByLabelText("Name of Finished").closest("li")!;
+    const row = screen
+      .getByLabelText("Name of Finished")
+      .closest<HTMLElement>(".topic-completion-row")!;
     const slider = within(row).getByRole("slider", { name: "Finished progress" });
 
     await user.click(slider);

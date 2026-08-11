@@ -10,7 +10,7 @@
  * a fixture by accident.
  */
 
-import type { Course, Exam, Plan, PlannerSnapshot, Topic } from "@/domain/types";
+import type { Course, Exam, Plan, PlannerSnapshot, StudyBlock, Topic } from "@/domain/types";
 import { DEFAULT_PREFERENCES } from "@/domain/types";
 
 let counter = 0;
@@ -29,6 +29,17 @@ export function topic(overrides: Partial<Topic> = {}): Topic {
     notes: "",
     order: 0,
     blocks: [],
+    ...overrides,
+  };
+}
+
+export function block(overrides: Partial<StudyBlock> = {}): StudyBlock {
+  return {
+    id: overrides.id ?? nextId("block"),
+    topicId: "topic_1",
+    startDate: "2026-05-01",
+    endDate: "2026-05-01",
+    source: "manual",
     ...overrides,
   };
 }

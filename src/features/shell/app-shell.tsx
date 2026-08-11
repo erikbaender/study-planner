@@ -320,11 +320,8 @@ export function AppShell() {
               snapshot={snapshot}
               today={today}
               query={workspace.query}
-              selectedTopicId={workspace.selection?.kind === "topic" ? workspace.selection.id : null}
-              onSelectTopic={selectTopic}
-              onDeleteTopic={(_course, topic) =>
-                workspace.setPendingDelete({ kind: "topic", id: topic.id })
-              }
+              selectedBlockId={workspace.selection?.kind === "block" ? workspace.selection.id : null}
+              onSelectBlock={selectBlock}
               onGoToOutline={() => workspace.setView("outline")}
             />
           ) : workspace.view === "timeline" ? (
@@ -350,6 +347,7 @@ export function AppShell() {
               onSelectCourse={selectCourse}
               onSelectTopic={selectTopic}
               onSelectExam={selectExam}
+              onSelectBlock={selectBlock}
               onDeleteTopic={(_course, topic) =>
                 workspace.setPendingDelete({ kind: "topic", id: topic.id })
               }

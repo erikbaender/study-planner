@@ -11,7 +11,10 @@ import {
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
 import { TodayView } from "./today-view";
 
-const repository = { logStudy: vi.fn(() => Promise.resolve()) };
+const repository = {
+  logStudy: vi.fn(() => Promise.resolve()),
+  deleteStudyBlock: vi.fn(() => Promise.resolve()),
+};
 const run = vi.fn();
 
 vi.mock("@/data/use-repository", () => ({
@@ -38,6 +41,8 @@ function healthOf(courses: readonly Course[]): Map<string, CourseHealth> {
 function renderToday(
   courses: readonly Course[],
   studyLog: Parameters<typeof TodayView>[0]["studyLog"] = [],
+  selectedBlockId: string | null = null,
+  onSelectBlock = vi.fn(),
 ) {
   render(
     <TodayView
@@ -46,9 +51,8 @@ function renderToday(
       studyLog={studyLog}
       snapshot={{ ...EMPTY_SNAPSHOT, studyLog: [...studyLog] }}
       today={TODAY}
-      selectedTopicId={null}
-      onSelectTopic={vi.fn()}
-      onDeleteTopic={vi.fn()}
+      selectedBlockId={selectedBlockId}
+      onSelectBlock={onSelectBlock}
       onGoToOutline={vi.fn()}
     />,
   );
@@ -98,58 +102,74 @@ describe("TodayView", () => {
     expect(screen.queryByText(/D exam/)).not.toBeInTheDocument();
   });
 
-  it("offers part-finished topics before untouched ones", () => {
-    // Finishing something in flight beats opening something new.
+  it("lists today's work one row per scheduled block", () => {
+    // The plan is made of dated blocks now. A topic can therefore appear more
+    // than once, because each occurrence is a separate piece of work to open.
     const course = makeCourse({
       name: "Biochem",
       topics: [
-        makeTopic({ name: "Untouched", totalUnits: 100, completedUnits: 0, order: 0 }),
-        makeTopic({ name: "Started", totalUnits: 100, completedUnits: 60, order: 1 }),
+        makeTopic({
+          name: "Glycolysis",
+          blocks: [
+            { id: "block_morning", topicId: "topic_morning", startDate: TODAY, endDate: TODAY, plannedUnits: 12, source: "auto" },
+            { id: "block_afternoon", topicId: "topic_morning", startDate: TODAY, endDate: TODAY, plannedUnits: 8, source: "manual" },
+          ],
+        }),
       ],
     });
     renderToday([course]);
 
-    const rows = within(card("Pick up where you left off")).getAllByRole("listitem");
-    expect(rows[0]).toHaveTextContent("Started");
-    expect(rows[1]).toHaveTextContent("Untouched");
+    const rows = within(card("Today’s plan")).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("12 today · Glycolysis");
+    expect(rows[1]).toHaveTextContent("8 today · Glycolysis");
+    expect(within(rows[0]).getByRole("button", { name: "Remove Glycolysis from today" })).toBeInTheDocument();
   });
 
-  it("puts the course with the nearer exam first", () => {
-    const soon = makeCourse({
-      name: "Soon",
-      topics: [makeTopic({ name: "Soon topic", totalUnits: 100, completedUnits: 10 })],
-      exams: [makeExam({ startDate: "2026-05-05" })],
-    });
-    const later = makeCourse({
-      name: "Later",
-      topics: [makeTopic({ name: "Later topic", totalUnits: 100, completedUnits: 10 })],
-      exams: [makeExam({ startDate: "2026-09-05" })],
-    });
-    renderToday([later, soon]);
+  it("selects a block row rather than its parent topic", async () => {
+    const block = {
+      id: "block_selected",
+      topicId: "topic_selected",
+      startDate: TODAY,
+      endDate: TODAY,
+      plannedUnits: 10,
+      source: "manual" as const,
+    };
+    const topic = makeTopic({ id: "topic_selected", name: "Glycolysis", blocks: [block] });
+    const onSelectBlock = vi.fn();
+    renderToday([makeCourse({ name: "Biochem", topics: [topic] })], [], null, onSelectBlock);
 
-    const rows = within(card("Pick up where you left off")).getAllByRole("listitem");
-    expect(rows[0]).toHaveTextContent("Soon topic");
+    await userEvent.setup().click(
+      within(card("Today’s plan")).getByRole("button", { name: /Biochem.*10 today.*Glycolysis/ }),
+    );
+    expect(onSelectBlock).toHaveBeenCalledWith(block);
   });
 
-  it("leaves out finished and unsized topics", () => {
-    // A finished topic is not something to pick up; an unsized one has no bar
-    // to move, so offering it would be offering a control that does nothing.
+  it("does not invent Today's rows for topics without a block covering today", () => {
     const course = makeCourse({
       topics: [
-        makeTopic({ name: "Finished", totalUnits: 50, completedUnits: 50, status: "done" }),
+        makeTopic({ name: "Finished", totalUnits: 50, completedUnits: 50 }),
         makeTopic({ name: "Unsized", totalUnits: 0 }),
-        makeTopic({ name: "Live", totalUnits: 50, completedUnits: 5 }),
+        makeTopic({
+          name: "Live",
+          totalUnits: 50,
+          completedUnits: 5,
+          blocks: [{ id: "block_future", topicId: "topic_future", startDate: "2026-05-03", endDate: "2026-05-04", source: "auto" }],
+        }),
       ],
     });
     renderToday([course]);
 
-    const rows = within(card("Pick up where you left off")).getAllByRole("listitem");
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toHaveTextContent("Live");
+    expect(within(card("Today’s plan")).queryAllByRole("listitem")).toHaveLength(0);
   });
 
   it("logs the difference when a bar is dragged from here", async () => {
-    const topic = makeTopic({ name: "Glycolysis", totalUnits: 100, completedUnits: 40 });
+    const topic = makeTopic({
+      name: "Glycolysis",
+      totalUnits: 100,
+      completedUnits: 40,
+      blocks: [{ id: "block_progress", topicId: "topic_progress", startDate: TODAY, endDate: TODAY, source: "auto" }],
+    });
     const user = userEvent.setup();
     renderToday([makeCourse({ topics: [topic] })]);
 
@@ -163,18 +183,16 @@ describe("TodayView", () => {
     });
   });
 
-  it("shows the behind card only when something is behind", () => {
-    const fine = makeCourse({ topics: [makeTopic({ totalUnits: 10, completedUnits: 10 })] });
-    renderToday([fine]);
-    expect(screen.queryByRole("heading", { name: "Behind" })).not.toBeInTheDocument();
-
+  it("shows a slipping course's health beside its upcoming exam", () => {
     const doomed = makeCourse({
       name: "Doomed",
       topics: [makeTopic({ totalUnits: 5000 })],
       exams: [makeExam({ startDate: "2026-05-04" })],
     });
     renderToday([doomed]);
-    expect(within(card("Behind")).getByText("Doomed")).toBeInTheDocument();
+    const examRow = within(card("Coming up")).getByRole("listitem");
+    expect(examRow).toHaveTextContent("Doomed");
+    expect(examRow).toHaveTextContent("Behind");
   });
 
   it("says there are no dates rather than showing an empty exam list", () => {
@@ -191,9 +209,8 @@ describe("TodayView", () => {
         studyLog={[]}
         snapshot={EMPTY_SNAPSHOT}
         today={TODAY}
-        selectedTopicId={null}
-        onSelectTopic={vi.fn()}
-        onDeleteTopic={vi.fn()}
+        selectedBlockId={null}
+        onSelectBlock={vi.fn()}
         onGoToOutline={onGoToOutline}
       />,
     );

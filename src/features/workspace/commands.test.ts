@@ -17,7 +17,6 @@ function noopActions(): CommandActions {
     focusSoon: vi.fn(),
     revealCourse: vi.fn(),
     revealTopic: vi.fn(),
-    toggleInspector: vi.fn(),
     newSemester: vi.fn(),
     newCourse: vi.fn(),
     loadSampleData: vi.fn(),
@@ -31,7 +30,7 @@ const plan = makePlan({
       name: "Biochemistry",
       code: "BC-201",
       topics: [
-        makeTopic({ name: "Glycolysis", section: "Block 1" }),
+        makeTopic({ name: "Glycolysis" }),
         makeTopic({ name: "Citric acid cycle" }),
       ],
     }),
@@ -57,7 +56,7 @@ describe("buildCommands", () => {
 
   it("names the course under each topic, so two identical titles are distinguishable", () => {
     const glycolysis = build().find((command) => command.title === "Glycolysis");
-    expect(glycolysis?.subtitle).toBe("Biochemistry · Block 1");
+    expect(glycolysis?.subtitle).toBe("Biochemistry");
   });
 
   it("runs the action it was built with", () => {

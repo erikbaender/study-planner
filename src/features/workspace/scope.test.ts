@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Course, Plan, PlannerSnapshot } from "@/domain";
 import { DEFAULT_PREFERENCES } from "@/domain";
-import { course as makeCourse, exam as makeExam, plan as makePlan, topic as makeTopic } from "@/test/factories";
+import {
+  block as makeBlock,
+  course as makeCourse,
+  exam as makeExam,
+  plan as makePlan,
+  topic as makeTopic,
+} from "@/test/factories";
 import {
   coursesInFocus,
   courseMatchesQuery,
@@ -130,23 +136,39 @@ describe("coursesInFocus", () => {
 describe("resolveSelection", () => {
   const topic = makeTopic({ name: "Glycolysis" });
   const exam = makeExam({ name: "Final" });
-  const course = makeCourse({ name: "Biochem", topics: [topic], exams: [exam] });
+  const block = makeBlock({ topicId: topic.id, startDate: "2026-05-02", endDate: "2026-05-03" });
+  const topicWithBlock = { ...topic, blocks: [block] };
+  const course = makeCourse({ name: "Biochem", topics: [topicWithBlock], exams: [exam] });
   const plan = makePlan({ courses: [course] });
 
-  it("resolves a course, a topic and an exam, each with its course", () => {
+  it("resolves all five selections with their full ancestry", () => {
+    expect(resolveSelection(plan, { kind: "plan", id: plan.id })).toEqual({
+      kind: "plan",
+      plan,
+    });
     expect(resolveSelection(plan, { kind: "course", id: course.id })).toEqual({
       kind: "course",
+      plan,
       course,
     });
     expect(resolveSelection(plan, { kind: "topic", id: topic.id })).toEqual({
       kind: "topic",
+      plan,
       course,
-      topic,
+      topic: topicWithBlock,
     });
     expect(resolveSelection(plan, { kind: "exam", id: exam.id })).toEqual({
       kind: "exam",
+      plan,
       course,
       exam,
+    });
+    expect(resolveSelection(plan, { kind: "block", id: block.id })).toEqual({
+      kind: "block",
+      plan,
+      course,
+      topic: topicWithBlock,
+      block,
     });
   });
 

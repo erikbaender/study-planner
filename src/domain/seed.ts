@@ -47,8 +47,8 @@ type CourseBlueprint = {
   name: string;
   code: string;
   unit: Unit;
-  sections: string[];
-  topicsPerSection: number;
+  topicGroups: number;
+  topicsPerGroup: number;
   /** Days from `today` to the exam. Negative values are not used. */
   examOffset: number;
   examStatus: "confirmed" | "provisional";
@@ -61,8 +61,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Biochemistry",
     code: "BIO-201",
     unit: "slides",
-    sections: ["Metabolism", "Enzymes", "Molecular biology", "Signal transduction"],
-    topicsPerSection: 11,
+    topicGroups: 4,
+    topicsPerGroup: 11,
     examOffset: 24,
     examStatus: "confirmed",
     completion: 0.42,
@@ -71,8 +71,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Physiology",
     code: "PHY-202",
     unit: "slides",
-    sections: ["Cardiovascular", "Respiratory", "Renal", "Neurophysiology"],
-    topicsPerSection: 10,
+    topicGroups: 4,
+    topicsPerGroup: 10,
     examOffset: 38,
     examStatus: "confirmed",
     completion: 0.31,
@@ -81,8 +81,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Anatomy",
     code: "ANA-203",
     unit: "pages",
-    sections: ["Upper limb", "Lower limb", "Thorax", "Abdomen", "Head and neck"],
-    topicsPerSection: 9,
+    topicGroups: 5,
+    topicsPerGroup: 9,
     examOffset: 17,
     examStatus: "confirmed",
     completion: 0.68,
@@ -91,8 +91,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Histology",
     code: "HIS-204",
     unit: "slides",
-    sections: ["Epithelia", "Connective tissue", "Organ systems"],
-    topicsPerSection: 10,
+    topicGroups: 3,
+    topicsPerGroup: 10,
     examOffset: 45,
     examStatus: "provisional",
     completion: 0.15,
@@ -101,8 +101,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Pharmacology",
     code: "PHA-301",
     unit: "cards",
-    sections: ["Pharmacokinetics", "Autonomic drugs", "Antibiotics", "Cardiac drugs"],
-    topicsPerSection: 12,
+    topicGroups: 4,
+    topicsPerGroup: 12,
     examOffset: 52,
     examStatus: "provisional",
     completion: 0.08,
@@ -111,8 +111,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Pathology",
     code: "PAT-302",
     unit: "slides",
-    sections: ["General pathology", "Neoplasia", "Systemic pathology"],
-    topicsPerSection: 13,
+    topicGroups: 3,
+    topicsPerGroup: 13,
     examOffset: 31,
     examStatus: "confirmed",
     completion: 0.22,
@@ -121,8 +121,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Microbiology",
     code: "MIC-303",
     unit: "cards",
-    sections: ["Bacteriology", "Virology", "Mycology and parasitology"],
-    topicsPerSection: 12,
+    topicGroups: 3,
+    topicsPerGroup: 12,
     examOffset: 59,
     examStatus: "provisional",
     completion: 0.05,
@@ -131,8 +131,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Immunology",
     code: "IMM-304",
     unit: "videos",
-    sections: ["Innate immunity", "Adaptive immunity", "Immunopathology"],
-    topicsPerSection: 8,
+    topicGroups: 3,
+    topicsPerGroup: 8,
     examOffset: 41,
     examStatus: "provisional",
     completion: 0.19,
@@ -141,8 +141,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Medical psychology",
     code: "PSY-105",
     unit: "pages",
-    sections: ["Learning and memory", "Doctor–patient communication"],
-    topicsPerSection: 9,
+    topicGroups: 2,
+    topicsPerGroup: 9,
     examOffset: 12,
     examStatus: "confirmed",
     completion: 0.77,
@@ -151,8 +151,8 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Epidemiology",
     code: "EPI-106",
     unit: "slides",
-    sections: ["Study design", "Biostatistics"],
-    topicsPerSection: 10,
+    topicGroups: 2,
+    topicsPerGroup: 10,
     examOffset: 8,
     examStatus: "confirmed",
     completion: 0.85,
@@ -226,21 +226,20 @@ export function generateSeedData(options: SeedOptions): SeedData {
     const topics: Topic[] = [];
     let order = 0;
 
-    // `sections.length` still shapes the pacing below — dependency chains reset
-    // and completion tapers per group — even though the grouping itself is no
-    // longer stored on the topic.
-    for (let sectionIndex = 0; sectionIndex < blueprint.sections.length; sectionIndex += 1) {
+    // Group count shapes the pacing below: dependency chains reset and
+    // completion tapers per group, even though grouping is not stored on topics.
+    for (let groupIndex = 0; groupIndex < blueprint.topicGroups; groupIndex += 1) {
       let previousTopicId: string | undefined;
 
-      for (let index = 0; index < blueprint.topicsPerSection; index += 1) {
+      for (let index = 0; index < blueprint.topicsPerGroup; index += 1) {
         const topicId = `topic_${slug(blueprint.code)}_${order}`;
         const name = `${TOPIC_NAMES[(order + courseIndex) % TOPIC_NAMES.length]}`;
         const totalUnits = sizeFor(blueprint.unit, random);
 
-        // Completion tapers across the course so early sections look worked
+        // Completion tapers across the course so early groups look worked
         // through and later ones untouched, which is how revision actually
         // looks partway through a semester.
-        const positionRatio = order / (blueprint.sections.length * blueprint.topicsPerSection);
+        const positionRatio = order / (blueprint.topicGroups * blueprint.topicsPerGroup);
         const localCompletion = clamp01(
           blueprint.completion * 2 - positionRatio * 1.4 + (random() - 0.5) * 0.2,
         );

@@ -162,6 +162,12 @@ function refreshRows<T>(
   return changed ? next : previous;
 }
 
+/**
+ * `items` is compared by identity, so it must survive this hook's own state
+ * updates: either a prop from a parent, or memoized. A caller that rebuilds the
+ * array inside the component owning the hook hands back a new one on the render
+ * its own `setState` caused, and the adjustment below then never settles.
+ */
 export function useRowTransitions<T>(
   items: readonly T[],
   keyOf: (item: T) => string,

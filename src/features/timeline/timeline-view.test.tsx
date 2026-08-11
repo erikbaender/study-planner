@@ -42,7 +42,7 @@ function placeAt(element: Element, left: number, top: number, width = 60, height
   });
 }
 
-function chart(topics: ReturnType<typeof makeTopic>[], onSelectTopic = vi.fn()) {
+function chart(topics: ReturnType<typeof makeTopic>[], onSelectBlock = vi.fn()) {
   const course = makeCourse({ name: "Biochemistry", topics });
   render(
     <TimelineView
@@ -50,11 +50,12 @@ function chart(topics: ReturnType<typeof makeTopic>[], onSelectTopic = vi.fn()) 
       health={new Map()}
       today="2026-05-01"
       selectedId={null}
-      onSelectTopic={onSelectTopic}
+      onSelectTopic={vi.fn()}
+      onSelectBlock={onSelectBlock}
       onGoToOutline={vi.fn()}
     />,
   );
-  return { course, onSelectTopic };
+  return { course, onSelectBlock };
 }
 
 /** The first of the two bars drawn for a block — the combined lane's copy. */
@@ -75,21 +76,21 @@ function stubAnimationFrames() {
 }
 
 describe("TimelineView", () => {
-  it("selects a bar with the left button, and points the inspector at its topic", () => {
+  it("selects a bar with the left button, and points the inspector at its block", () => {
     const topic = makeTopic({
       name: "Glycolysis",
       blocks: [
         { id: "block_1", topicId: "topic_1", startDate: "2026-05-04", endDate: "2026-05-08", source: "auto" },
       ],
     });
-    const { onSelectTopic } = chart([topic]);
+    const { onSelectBlock } = chart([topic]);
 
     const target = bar(/2026-05-04 to 2026-05-08/);
     fireEvent.pointerDown(target, { button: 0, clientX: 100 });
     fireEvent.pointerUp(window, { button: 0, clientX: 100 });
 
-    expect(onSelectTopic).toHaveBeenCalledWith(expect.anything(), topic);
-    expect(onSelectTopic).toHaveBeenCalledOnce();
+    expect(onSelectBlock).toHaveBeenCalledWith(topic.blocks[0]);
+    expect(onSelectBlock).toHaveBeenCalledOnce();
     expect(target).toHaveAttribute("data-selection", "primary");
     // A press that never travelled is a selection, not an edit.
     expect(repository.updateStudyBlock).not.toHaveBeenCalled();

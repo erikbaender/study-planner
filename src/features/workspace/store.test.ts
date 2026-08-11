@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { toggleRevealSelection, useWorkspace, revealSelection } from "./store";
+import { toggleSelection, useWorkspace } from "./store";
 
 const initial = useWorkspace.getState();
 
@@ -16,7 +16,6 @@ describe("the workspace store", () => {
     expect(state.view).toBe("today");
     expect(state.focus).toEqual({ kind: "all" });
     expect(state.selection).toBeNull();
-    expect(state.inspectorOpen).toBe(false);
   });
 
   it("drops focus and selection when the semester changes", () => {
@@ -51,28 +50,40 @@ describe("the workspace store", () => {
     expect(useWorkspace.getState().selection).toEqual({ kind: "topic", id: "topic_1" });
   });
 
-  it("toggles the inspector both ways", () => {
-    useWorkspace.getState().toggleInspector();
-    expect(useWorkspace.getState().inspectorOpen).toBe(true);
-    useWorkspace.getState().toggleInspector();
-    expect(useWorkspace.getState().inspectorOpen).toBe(false);
+  it("derives the inspector state from selection", () => {
+    // There is no second switch to keep in agreement with the highlighted row:
+    // selecting gives the inspector something to describe, and clearing the
+    // selection removes it.
+    useWorkspace.getState().select({ kind: "course", id: "course_1" });
+    expect(useWorkspace.getState().selection).toEqual({ kind: "course", id: "course_1" });
+
+    useWorkspace.getState().select(null);
+    expect(useWorkspace.getState().selection).toBeNull();
   });
 
-  it("opens the inspector as part of revealing something", () => {
-    // Selecting is nearly always also a request to see it, so the two are one
-    // action rather than two calls every caller has to remember to pair.
-    revealSelection({ kind: "course", id: "course_1" });
+  it("accepts every selectable entity kind", () => {
+    // The store carries ids only; resolving each id against the current plan
+    // belongs to scope. It still needs to preserve every kind that the five
+    // inspector panels can receive.
+    const selections = [
+      { kind: "plan", id: "plan_1" },
+      { kind: "course", id: "course_1" },
+      { kind: "topic", id: "topic_1" },
+      { kind: "exam", id: "exam_1" },
+      { kind: "block", id: "block_1" },
+    ] as const;
 
-    const state = useWorkspace.getState();
-    expect(state.selection).toEqual({ kind: "course", id: "course_1" });
-    expect(state.inspectorOpen).toBe(true);
+    for (const selection of selections) {
+      useWorkspace.getState().select(selection);
+      expect(useWorkspace.getState().selection).toEqual(selection);
+    }
   });
 
   it("clears the current entity when it is selected again", () => {
-    toggleRevealSelection({ kind: "course", id: "course_1" });
+    toggleSelection({ kind: "course", id: "course_1" });
     expect(useWorkspace.getState().selection).toEqual({ kind: "course", id: "course_1" });
 
-    toggleRevealSelection({ kind: "course", id: "course_1" });
+    toggleSelection({ kind: "course", id: "course_1" });
     expect(useWorkspace.getState().selection).toBeNull();
   });
 });

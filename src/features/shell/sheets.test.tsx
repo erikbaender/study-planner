@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { plan as makePlan } from "@/test/factories";
-import { ConfirmPlanDeleteSheet, EditPlanSheet, SampleDataSheet } from "./sheets";
+import { ConfirmDeleteSheet, NewPlanSheet, SampleDataSheet } from "./sheets";
 
 describe("SampleDataSheet", () => {
   it("offers all datasets and loads the selected one", async () => {
@@ -32,31 +32,31 @@ describe("SampleDataSheet", () => {
 });
 
 describe("semester sheets", () => {
-  it("saves edited semester details", async () => {
-    const onSave = vi.fn();
+  it("creates a semester with its name", async () => {
+    const onCreate = vi.fn();
+    const onOpenChange = vi.fn();
     const user = userEvent.setup();
     render(
-      <EditPlanSheet
-        plan={makePlan({ name: "Spring" })}
+      <NewPlanSheet
         open
-        onOpenChange={vi.fn()}
-        onSave={onSave}
+        onOpenChange={onOpenChange}
+        onCreate={onCreate}
       />,
     );
 
     await user.clear(screen.getByLabelText("Name"));
     await user.type(screen.getByLabelText("Name"), "Summer");
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: "Summer" }));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(onCreate).toHaveBeenCalledWith({ name: "Summer" });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("requires confirmation before deleting a semester", async () => {
+  it("uses the generic confirmation for deleting a semester", async () => {
     const onConfirm = vi.fn();
     const user = userEvent.setup();
     render(
-      <ConfirmPlanDeleteSheet
-        plan={makePlan({ name: "Spring" })}
-        open
+      <ConfirmDeleteSheet
+        target={{ kind: "plan", plan: makePlan({ name: "Spring" }) }}
         onOpenChange={vi.fn()}
         onConfirm={onConfirm}
       />,

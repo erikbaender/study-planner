@@ -73,7 +73,7 @@ export function TopicTable({
   onAddRow: () => void;
 }) {
   const rows = useRowTransitions(topics, topicKeyOf, TOPIC_ROW_HEIGHT);
-  const rowsRef = useReorderAnimation(
+  const rowsRef = useReorderAnimation<HTMLUListElement>(
     rows.map((row) => row.key),
     TOPIC_ROW_HEIGHT,
   );

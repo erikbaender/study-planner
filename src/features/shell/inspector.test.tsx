@@ -1,7 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
+import {
+  block as makeBlock,
+  course as makeCourse,
+  exam as makeExam,
+  plan as makePlan,
+  topic as makeTopic,
+} from "@/test/factories";
 import { assessCourse, DEFAULT_PREFERENCES, type CourseHealth } from "@/domain";
 import { Inspector } from "./inspector";
 
@@ -11,10 +17,12 @@ import { Inspector } from "./inspector";
  * would test Convex rather than the panel.
  */
 const repository = {
+  updatePlan: vi.fn(() => Promise.resolve()),
   updateCourse: vi.fn(() => Promise.resolve()),
   updateTopic: vi.fn(() => Promise.resolve()),
+  createStudyBlock: vi.fn(() => Promise.resolve("block_created")),
+  updateStudyBlock: vi.fn(() => Promise.resolve()),
   logStudy: vi.fn(() => Promise.resolve()),
-  setTopicDependencies: vi.fn(() => Promise.resolve()),
 };
 const run = vi.fn();
 
@@ -40,21 +48,29 @@ function healthFor(course: Parameters<typeof assessCourse>[0]["course"]): Map<st
 }
 
 describe("Inspector", () => {
-  it("says nothing is selected rather than showing an empty form", () => {
-    render(<Inspector selection={null} health={new Map()} today={TODAY} onDelete={vi.fn()} />);
-    expect(screen.getByText(/Nothing selected/)).toBeInTheDocument();
+  it("leaves the inspector empty when nothing is selected", () => {
+    render(
+      <Inspector
+        selection={null}
+        health={new Map()}
+        today={TODAY}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeEmptyDOMElement();
   });
 
   describe("a topic", () => {
     const topic = makeTopic({
       name: "Glycolysis",
-      section: "Block 1",
       totalUnits: 100,
       completedUnits: 40,
       notes: "Skip the appendix",
     });
     const course = makeCourse({ name: "Biochemistry", topics: [topic] });
-    const selection = { kind: "topic", course, topic } as const;
+    const plan = makePlan({ name: "Spring", courses: [course] });
+    const selection = { kind: "topic", plan, course, topic } as const;
 
     function renderTopic() {
       render(
@@ -62,6 +78,7 @@ describe("Inspector", () => {
           selection={selection}
           health={healthFor(course)}
           today={TODAY}
+          onSelect={vi.fn()}
           onDelete={vi.fn()}
         />,
       );
@@ -104,20 +121,11 @@ describe("Inspector", () => {
       });
     });
 
-    it("passes completedUnits through untouched when something else is edited", async () => {
-      // `updateTopic` takes a whole topic, so every edit resends the field.
-      // Resending anything other than the current value would silently
-      // overwrite progress logged in the meantime.
-      const user = userEvent.setup();
+    it("shows status as a fact derived from progress, not an editable field", () => {
       renderTopic();
 
-      await user.click(screen.getByRole("combobox", { name: "Priority" }));
-      await user.click(screen.getByRole("option", { name: "High" }));
-
-      expect(repository.updateTopic).toHaveBeenCalledWith(
-        topic.id,
-        expect.objectContaining({ priority: "high", completedUnits: 40, totalUnits: 100 }),
-      );
+      expect(screen.getByText("In progress")).toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Priority" })).not.toBeInTheDocument();
     });
 
     it("commits a renamed topic on blur, not on every keystroke", async () => {
@@ -158,21 +166,18 @@ describe("Inspector", () => {
       expect(repository.updateTopic).not.toHaveBeenCalled();
     });
 
-    it("lets a prerequisite be added", async () => {
-      const prerequisite = makeTopic({ name: "Cell biology" });
-      const dependentCourse = makeCourse({ topics: [prerequisite, topic] });
+    it("can add a manual study block without changing topic progress", async () => {
       const user = userEvent.setup();
-      render(
-        <Inspector
-          selection={{ kind: "topic", course: dependentCourse, topic }}
-          health={healthFor(dependentCourse)}
-          today={TODAY}
-          onDelete={vi.fn()}
-        />,
-      );
+      renderTopic();
 
-      await user.click(screen.getByRole("checkbox", { name: "Cell biology" }));
-      expect(repository.setTopicDependencies).toHaveBeenCalledWith(topic.id, [prerequisite.id]);
+      await user.click(screen.getByRole("button", { name: "Add a block to Glycolysis" }));
+      expect(repository.createStudyBlock).toHaveBeenCalledWith({
+        topicId: topic.id,
+        startDate: TODAY,
+        endDate: TODAY,
+        source: "manual",
+      });
+      expect(repository.logStudy).not.toHaveBeenCalled();
     });
   });
 
@@ -183,9 +188,10 @@ describe("Inspector", () => {
     it("offers no slider, because there is no scale to slide along", () => {
       render(
         <Inspector
-          selection={{ kind: "topic", course, topic }}
+          selection={{ kind: "topic", plan: makePlan({ courses: [course] }), course, topic }}
           health={healthFor(course)}
           today={TODAY}
+          onSelect={vi.fn()}
           onDelete={vi.fn()}
         />,
       );
@@ -204,13 +210,15 @@ describe("Inspector", () => {
       topics: [makeTopic({ totalUnits: 100, completedUnits: 25 })],
       exams: [makeExam({ startDate: "2026-05-15" })],
     });
+    const plan = makePlan({ courses: [course] });
 
     it("shows the pace it can measure", () => {
       render(
         <Inspector
-          selection={{ kind: "course", course }}
+          selection={{ kind: "course", plan, course }}
           health={healthFor(course)}
           today={TODAY}
+          onSelect={vi.fn()}
           onDelete={vi.fn()}
         />,
       );
@@ -225,9 +233,10 @@ describe("Inspector", () => {
       const undated = makeCourse({ name: "Elective", topics: [makeTopic({ totalUnits: 10 })] });
       render(
         <Inspector
-          selection={{ kind: "course", course: undated }}
+          selection={{ kind: "course", plan: makePlan({ courses: [undated] }), course: undated }}
           health={healthFor(undated)}
           today={TODAY}
+          onSelect={vi.fn()}
           onDelete={vi.fn()}
         />,
       );
@@ -239,9 +248,10 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       render(
         <Inspector
-          selection={{ kind: "course", course }}
+          selection={{ kind: "course", plan, course }}
           health={healthFor(course)}
           today={TODAY}
+          onSelect={vi.fn()}
           onDelete={vi.fn()}
         />,
       );
@@ -254,6 +264,70 @@ describe("Inspector", () => {
     });
   });
 
+  describe("a semester", () => {
+    it("edits its name inline and sends deletion upward", async () => {
+      const plan = makePlan({ name: "Spring" });
+      const onDelete = vi.fn();
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          selection={{ kind: "plan", plan }}
+          health={new Map()}
+          today={TODAY}
+          onSelect={vi.fn()}
+          onDelete={onDelete}
+        />,
+      );
+
+      const field = screen.getByLabelText("Name");
+      await user.clear(field);
+      await user.type(field, "Summer");
+      await user.tab();
+
+      expect(repository.updatePlan).toHaveBeenCalledWith(plan.id, {
+        name: "Summer",
+        notes: "",
+      });
+      await user.click(screen.getByRole("button", { name: "Delete semester" }));
+      expect(onDelete).toHaveBeenCalledWith({ kind: "plan", id: plan.id });
+    });
+  });
+
+  describe("a study block", () => {
+    it("shows its own dates and provenance", async () => {
+      const topic = makeTopic({ name: "Glycolysis", unit: "slides" });
+      const block = makeBlock({
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        plannedUnits: 12,
+        source: "auto",
+      });
+      const course = makeCourse({ name: "Biochemistry", topics: [{ ...topic, blocks: [block] }] });
+      const plan = makePlan({ courses: [course] });
+      const onSelect = vi.fn();
+
+      render(
+        <Inspector
+          selection={{ kind: "block", plan, course, topic: course.topics[0], block }}
+          health={new Map()}
+          today={TODAY}
+          onSelect={onSelect}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Study block")).toBeInTheDocument();
+      expect(screen.getByLabelText("Starts")).toHaveValue("2026-05-04");
+      expect(screen.getByLabelText("Ends")).toHaveValue("2026-05-06");
+      expect(screen.getByText("By the scheduler")).toBeInTheDocument();
+
+      await userEvent.setup().click(screen.getAllByRole("button", { name: "Glycolysis" })[1]);
+      expect(onSelect).toHaveBeenCalledWith({ kind: "topic", id: topic.id });
+    });
+  });
+
   describe("an exam", () => {
     it("marks a provisional date as provisional and explains the consequence", () => {
       const exam = makeExam({
@@ -263,12 +337,14 @@ describe("Inspector", () => {
         status: "provisional",
       });
       const course = makeCourse({ name: "Biochemistry", exams: [exam] });
+      const plan = makePlan({ courses: [course] });
 
       render(
         <Inspector
-          selection={{ kind: "exam", course, exam }}
+          selection={{ kind: "exam", plan, course, exam }}
           health={healthFor(course)}
           today={TODAY}
+          onSelect={vi.fn()}
           onDelete={vi.fn()}
         />,
       );
@@ -287,18 +363,20 @@ describe("Inspector", () => {
     const onDelete = vi.fn();
     const topic = makeTopic({ name: "Glycolysis", totalUnits: 10 });
     const course = makeCourse({ topics: [topic] });
+    const plan = makePlan({ courses: [course] });
     const user = userEvent.setup();
 
     render(
       <Inspector
-        selection={{ kind: "topic", course, topic }}
+        selection={{ kind: "topic", plan, course, topic }}
         health={healthFor(course)}
         today={TODAY}
+        onSelect={vi.fn()}
         onDelete={onDelete}
       />,
     );
 
     await user.click(screen.getByRole("button", { name: "Delete topic" }));
-    expect(onDelete).toHaveBeenCalledWith({ kind: "topic", course, topic });
+    expect(onDelete).toHaveBeenCalledWith({ kind: "topic", id: topic.id });
   });
 });

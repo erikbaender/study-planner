@@ -90,9 +90,20 @@ export function TodayView({
     .sort((left, right) => left.days - right.days)
     .slice(0, 3);
 
-  const plannedToday = todaysWork(courses, today, snapshot, query);
+  // Memoized because `useRowTransitions` compares the list it is handed by
+  // identity, and this is the one caller that builds its list in the same
+  // component that owns the hook: an unmemoized `todaysWork` would hand back a
+  // fresh array on the very render the hook's own state update caused, which is
+  // an infinite loop rather than an animation.
+  const plannedToday = useMemo(
+    () => todaysWork(courses, today, snapshot, query),
+    [courses, today, snapshot, query],
+  );
   const rows = useRowTransitions(plannedToday, (row) => row.block.id, TODAY_ROW_HEIGHT);
-  const rowsRef = useReorderAnimation(rows.map((row) => row.key), TODAY_ROW_HEIGHT);
+  const rowsRef = useReorderAnimation<HTMLUListElement>(
+    rows.map((row) => row.key),
+    TODAY_ROW_HEIGHT,
+  );
 
   const loggedToday = studyLog
     .filter((entry) => entry.date === today)
@@ -158,7 +169,6 @@ export function TodayView({
                 rowKey={key}
                 course={item.course}
                 topic={item.topic}
-                block={item.block}
                 units={item.units}
                 today={today}
                 selected={item.block.id === selectedBlockId}
@@ -212,16 +222,15 @@ export function TodayView({
 /**
  * One block in "Today's plan".
  *
- * Not built on `TopicRow`: that row selects and deletes a *topic*, and this
- * one selects and deletes a *block* — the same slider, a different subject
- * and a different trash target, so sharing the component would mean
- * threading two incompatible sets of handlers through one prop list.
+ * Deliberately not shared with the outline's topic row: that row selects and
+ * deletes a *topic*, and this one selects and deletes a *block* — the same
+ * slider, a different subject and a different trash target, so one component
+ * would mean threading two incompatible sets of handlers through one prop list.
  */
 function TodayBlockRow({
   rowKey,
   course,
   topic,
-  block,
   units,
   today,
   selected,
@@ -232,7 +241,6 @@ function TodayBlockRow({
   rowKey: string;
   course: Course;
   topic: Topic;
-  block: StudyBlock;
   units: number;
   today: string;
   selected: boolean;

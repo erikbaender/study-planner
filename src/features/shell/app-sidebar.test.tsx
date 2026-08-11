@@ -31,8 +31,8 @@ describe("AppSidebar course visibility", () => {
       selectedCourseId: null,
       onSelectPlan: vi.fn(),
       onNewPlan: vi.fn(),
-      onEditPlan: vi.fn(),
-      onDeletePlan: vi.fn(),
+      onInspectPlan: vi.fn(),
+      planSelected: false,
       onSetFocus: vi.fn(),
       onSelectCourse,
       onToggleHidden: vi.fn(),
@@ -83,8 +83,8 @@ describe("AppSidebar course visibility", () => {
         selectedCourseId={null}
         onSelectPlan={vi.fn()}
         onNewPlan={vi.fn()}
-        onEditPlan={vi.fn()}
-        onDeletePlan={vi.fn()}
+        onInspectPlan={vi.fn()}
+        planSelected={false}
         onSetFocus={vi.fn()}
         onSelectCourse={vi.fn()}
         onToggleHidden={vi.fn()}
@@ -120,8 +120,8 @@ describe("AppSidebar course visibility", () => {
         selectedCourseId={null}
         onSelectPlan={vi.fn()}
         onNewPlan={vi.fn()}
-        onEditPlan={vi.fn()}
-        onDeletePlan={vi.fn()}
+        onInspectPlan={vi.fn()}
+        planSelected={false}
         onSetFocus={vi.fn()}
         onSelectCourse={vi.fn()}
         onToggleHidden={vi.fn()}
@@ -157,8 +157,8 @@ describe("AppSidebar course visibility", () => {
           selectedCourseId={null}
           onSelectPlan={vi.fn()}
           onNewPlan={vi.fn()}
-          onEditPlan={vi.fn()}
-          onDeletePlan={vi.fn()}
+          onInspectPlan={vi.fn()}
+          planSelected={false}
           onSetFocus={vi.fn()}
           onSelectCourse={vi.fn()}
           onToggleHidden={vi.fn()}
@@ -172,5 +172,41 @@ describe("AppSidebar course visibility", () => {
     const row = screen.getByText("Finished course").closest("li");
     expect(row).toHaveAttribute("data-course-completed", "true");
     expect(row).toHaveStyle({ "--topic-completion-color": "#e8684a" });
+  });
+
+  it("opens the semester inspector and marks the header when selected", async () => {
+    const plan = makePlan({ name: "Spring semester" });
+    const onInspectPlan = vi.fn();
+    const props = {
+      plans: [plan],
+      plan,
+      health: new Map(),
+      today: TODAY,
+      focus: { kind: "all" } as const,
+      hiddenCourseIds: [],
+      query: "",
+      selectedCourseId: null,
+      onSelectPlan: vi.fn(),
+      onNewPlan: vi.fn(),
+      onInspectPlan,
+      onSetFocus: vi.fn(),
+      onSelectCourse: vi.fn(),
+      onToggleHidden: vi.fn(),
+      onHideAll: vi.fn(),
+      onShowAll: vi.fn(),
+      onNewCourse: vi.fn(),
+    };
+
+    const { rerender } = render(<AppSidebar {...props} planSelected={false} />);
+    const semesterButton = screen.getByRole("button", { name: "Spring semester" });
+    expect(semesterButton).not.toHaveAttribute("aria-current");
+    await userEvent.setup().click(semesterButton);
+    expect(onInspectPlan).toHaveBeenCalledTimes(1);
+
+    rerender(<AppSidebar {...props} planSelected />);
+    expect(screen.getByRole("button", { name: "Spring semester" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
   });
 });
