@@ -50,7 +50,7 @@ export function PlanInspector({
       <Separator />
 
       <Section>
-        <DraftText label="Name" value={plan.name} onCommit={(name) => name && patch({ name })} />
+        <DraftText label="Name" value={plan.name} required onCommit={(name) => patch({ name })} />
       </Section>
 
       <Separator />

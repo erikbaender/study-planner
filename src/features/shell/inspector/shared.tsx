@@ -129,6 +129,7 @@ export function ReferenceList({
             <li
               key={key}
               data-row-key={key}
+              inert={!motion.visible}
               style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
               className="row-motion group/ref relative flex items-center"
             >
@@ -215,6 +216,7 @@ export function DraftText({
   multiline,
   placeholder,
   hint,
+  required,
 }: {
   label: string;
   value: string;
@@ -222,6 +224,7 @@ export function DraftText({
   multiline?: boolean;
   placeholder?: string;
   hint?: string;
+  required?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   const [settled, setSettled] = useState(value);
@@ -234,6 +237,12 @@ export function DraftText({
 
   const commit = () => {
     const trimmed = draft.trim();
+    if (required && trimmed === "") {
+      // Required inspector names cannot be persisted empty; restore the
+      // entity's value so the field and its header continue to tell one story.
+      setDraft(value);
+      return;
+    }
     if (trimmed === value) return;
     onCommit(trimmed);
   };
@@ -259,6 +268,78 @@ export function DraftText({
   };
 
   return multiline ? <TextArea rows={3} {...props} /> : <TextField {...props} />;
+}
+
+/**
+ * A non-negative number input that commits on blur or Enter and reverts on
+ * Escape or invalid input.
+ *
+ * Number inputs still expose their text while they are being edited: keeping
+ * that text locally preserves transient states such as `1.` and the empty
+ * string until there is a deliberate commit point. Parsing on every change
+ * would turn those useful editing states into repository writes or erase them
+ * before the user can finish the number.
+ */
+export function DraftNumber({
+  label,
+  value,
+  onCommit,
+  hint,
+  fieldClassName,
+}: {
+  label: string;
+  value: number;
+  onCommit: (next: number) => void;
+  hint?: string;
+  fieldClassName?: string;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const [settled, setSettled] = useState(value);
+  // Adjusted during render so a value arriving from elsewhere is adopted
+  // immediately, matching `DraftText` and avoiding one stale painted frame.
+  if (settled !== value) {
+    setSettled(value);
+    setDraft(String(value));
+  }
+
+  const commit = () => {
+    const raw = draft.trim();
+    if (raw === "") {
+      // An empty field is not the number zero: it is an unfinished edit, so
+      // restore the incoming value rather than manufacturing a zero write.
+      setDraft(String(value));
+      return;
+    }
+    const next = Number(raw);
+    if (!Number.isFinite(next) || next < 0) {
+      setDraft(String(value));
+      return;
+    }
+    if (next !== value) onCommit(next);
+  };
+
+  return (
+    <TextField
+      label={label}
+      type="number"
+      min={0}
+      fieldClassName={fieldClassName}
+      value={draft}
+      hint={hint}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          // Keep focus while restoring the entity value; blurring here would
+          // immediately run the commit path for the edit being discarded.
+          setDraft(String(value));
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        }
+      }}
+    />
+  );
 }
 
 export function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -291,4 +372,3 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (val
     </div>
   );
 }
-

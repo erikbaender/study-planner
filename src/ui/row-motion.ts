@@ -84,7 +84,11 @@ export function useDisclosure(open: boolean): { mounted: boolean; expanded: bool
 
 type RowPhase = "enter" | "grow" | "shown" | "fade" | "shrink";
 
-/** What a row looks like right now: how much room it takes, and whether it is drawn. */
+/**
+ * What a row looks like right now: how much room it takes, and whether it is
+ * drawn. Consumers also make a row inert while it is not visible, so a fading
+ * or growing label cannot become an accidental interaction or announcement.
+ */
 export type RowMotion = { height: number; visible: boolean };
 
 // One object per state *per height* rather than one per render: a row is

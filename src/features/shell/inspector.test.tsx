@@ -145,6 +145,36 @@ describe("Inspector", () => {
       );
     });
 
+    it("keeps a decimal intact while a topic size is typed", async () => {
+      const user = userEvent.setup();
+      renderTopic();
+
+      const field = screen.getByLabelText("Total");
+      await user.clear(field);
+      await user.type(field, "1.5");
+
+      expect(field).toHaveValue(1.5);
+      expect(repository.updateTopic).not.toHaveBeenCalled();
+
+      await user.tab();
+      expect(repository.updateTopic).toHaveBeenCalledWith(
+        topic.id,
+        expect.objectContaining({ totalUnits: 1.5 }),
+      );
+    });
+
+    it("restores a required name when clearing it", async () => {
+      const user = userEvent.setup();
+      renderTopic();
+
+      const field = screen.getByLabelText("Name");
+      await user.clear(field);
+      await user.tab();
+
+      expect(field).toHaveValue("Glycolysis");
+      expect(repository.updateTopic).not.toHaveBeenCalled();
+    });
+
     it("reverts an edit on Escape", async () => {
       const user = userEvent.setup();
       renderTopic();

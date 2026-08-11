@@ -49,7 +49,7 @@ export function ExamInspector({
       <Separator />
 
       <Section>
-        <DraftText label="Name" value={exam.name} onCommit={(name) => name && patch({ name })} />
+        <DraftText label="Name" value={exam.name} required onCommit={(name) => patch({ name })} />
         <TextField
           label="Date"
           type="date"

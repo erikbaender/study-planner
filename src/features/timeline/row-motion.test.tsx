@@ -48,6 +48,8 @@ describe("rows arriving and leaving", () => {
     const leaving = laneFor("Herz");
     expect(leaving.style.opacity).toBe("0");
     expect(leaving.style.height).toBe("24px");
+    expect(leaving).toHaveAttribute("inert");
+    expect(laneFor("Niere")).not.toHaveAttribute("inert");
     // The collapsing row already carries the rows below it; FLIP must not
     // animate those rows a second time when the filtered key disappears.
     expect(laneFor("Niere").style.transform).toBe("");

@@ -14,10 +14,10 @@ import {
   type Topic,
   type Unit,
 } from "@/domain";
-import { Badge, Button, ProgressBar, ProgressSlider, SelectField, Separator, TextField } from "@/ui";
+import { Badge, Button, ProgressBar, ProgressSlider, SelectField, Separator } from "@/ui";
 import { CompletionCheckbox, triggerCompletionAnimation } from "@/features/topics/progress-cell";
 import type { Selection } from "@/features/workspace/store";
-import { DraftText, Header, ReferenceList, Row, Section } from "./shared";
+import { DraftNumber, DraftText, Header, ReferenceList, Row, Section } from "./shared";
 
 /* ─── Topic ─────────────────────────────────────────────────────────────── */
 
@@ -101,23 +101,18 @@ export function TopicInspector({
       <Separator />
 
       <Section>
-        <DraftText label="Name" value={topic.name} onCommit={(name) => name && patch({ name })} />
+        <DraftText label="Name" value={topic.name} required onCommit={(name) => patch({ name })} />
       </Section>
 
       <Separator />
 
       <Section title="Size and progress">
         <div className="flex items-end gap-2">
-          <TextField
+          <DraftNumber
             label="Total"
-            type="number"
-            min={0}
+            value={topic.totalUnits}
+            onCommit={(totalUnits) => patch({ totalUnits })}
             fieldClassName="w-20"
-            value={String(topic.totalUnits)}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              if (Number.isFinite(next) && next >= 0) patch({ totalUnits: next });
-            }}
           />
           <SelectField
             label="Unit"

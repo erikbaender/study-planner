@@ -29,7 +29,7 @@ import {
 } from "@/domain";
 import type { Selection } from "@/features/workspace/store";
 import { Badge, Button, Separator, TextField } from "@/ui";
-import { Header, Row, Section } from "./shared";
+import { DraftNumber, Header, Row, Section } from "./shared";
 
 export function BlockInspector({
   course,
@@ -110,17 +110,12 @@ export function BlockInspector({
       <Separator />
 
       <Section title="Work">
-        <TextField
+        <DraftNumber
           label={`Planned ${unitLabel}`}
-          type="number"
-          min={0}
-          fieldClassName="w-28"
+          value={block.plannedUnits ?? 0}
+          onCommit={(plannedUnits) => patch({ plannedUnits })}
           hint="What this block is meant to cover. Progress itself is logged on the topic."
-          value={String(block.plannedUnits ?? 0)}
-          onChange={(event) => {
-            const next = Number(event.target.value);
-            if (Number.isFinite(next) && next >= 0) patch({ plannedUnits: next });
-          }}
+          fieldClassName="w-28"
         />
         <Row label="Placed">
           {block.source === "manual" ? (

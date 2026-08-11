@@ -195,7 +195,11 @@ function TopicTableRow({
       ]}
     >
       <li data-row-key={rowKey} className="flex flex-col">
-        <div className="row-motion" style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}>
+        <div
+          className="row-motion"
+          inert={!motion.visible}
+          style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
+        >
           <div
             data-course-id={course.id}
             aria-current={selected ? "true" : undefined}
@@ -315,6 +319,7 @@ function BlockSubRow({
   return (
     <li
       className="row-motion group flex items-center gap-2 pr-2"
+      inert={!motion.visible}
       style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
     >
       <button

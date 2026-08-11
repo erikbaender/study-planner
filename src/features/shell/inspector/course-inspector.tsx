@@ -86,7 +86,7 @@ export function CourseInspector({
       <Separator />
 
       <Section>
-        <DraftText label="Name" value={course.name} onCommit={(name) => patch({ name })} />
+        <DraftText label="Name" value={course.name} required onCommit={(name) => patch({ name })} />
         <DraftText
           label="Code"
           value={course.code ?? ""}

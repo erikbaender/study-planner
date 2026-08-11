@@ -254,6 +254,7 @@ function TodayBlockRow({
     <li
       data-row-key={rowKey}
       data-course-id={course.id}
+      inert={!motion.visible}
       className={clsx(
         "topic-completion-row row-motion group flex items-center gap-3 rounded-control px-2 py-1",
         selected ? "bg-accent-soft" : "hover:bg-fill",

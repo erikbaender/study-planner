@@ -641,6 +641,7 @@ function GutterCard({
                 // rather than "this is the one you are looking at".
                 aria-current={row.selected ? "true" : undefined}
                 data-selected={row.selected ? "true" : undefined}
+                inert={!row.motion.visible}
                 // The label fades after the row has made room for it and before
                 // the room is taken away again; see "Rows arriving and leaving".
                 aria-hidden={row.motion.visible ? undefined : "true"}
@@ -790,6 +791,7 @@ function TopicLane({
       // highlight, and for the reorder animation that has to move both.
       data-row-key={rowKey}
       data-selected={selected ? "true" : undefined}
+      inert={!motion.visible}
       // The hover highlight is the row's own course colour; see `globals.css`.
       style={
         {
