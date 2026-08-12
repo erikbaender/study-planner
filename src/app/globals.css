@@ -321,12 +321,6 @@ span:has(> .topic-progress-thumb) {
   opacity: 0;
 }
 
-/* Keep initial positioning invisible without adding a second fade to the view. */
-.timeline-canvas[data-timeline-initializing="true"] {
-  opacity: 0;
-  transition: none;
-}
-
 /* Do not let the browser preserve a historical horizontal anchor while the
    timeline's full date range is being laid out. Initial positioning owns it. */
 .timeline-scrollport {
@@ -542,6 +536,25 @@ span:has(> .topic-progress-thumb) {
 }
 
 /**
+ * A course card only does layout work while it is on screen.
+ *
+ * The outline holds a semester: seven cards of up to forty rows each, all
+ * expanded, and every one of those rows is laid out again whenever anything
+ * changes the width of the content column. The inspector opening is exactly
+ * that — a width animation, fifteen frames of it — so selecting a topic
+ * relayouted ninety rows fifteen times and the pointer stopped moving for
+ * roughly half a second. Measured on this machine: a worst frame of 404ms
+ * before, 20ms after, with one commit of 108ms where the panel mounts.
+ *
+ * `auto` rather than a fixed size, so the browser keeps each card's last real
+ * height and the scrollbar does not jump as cards are skipped and rendered.
+ */
+.outline-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
+/**
  * A course opening in the outline.
  *
  * The same motion the chart's lanes use, for the same reason and at the same
@@ -587,6 +600,13 @@ span:has(> .topic-progress-thumb) {
 
 .view-fade[data-view-fade="out"] {
   opacity: 0;
+}
+
+/* A view that reveals itself — the timeline — is restored in one frame, so
+   nothing of this fade is left running over the chart's own arrival. */
+.view-fade[data-view-fade="instant"] {
+  opacity: 1;
+  transition: none;
 }
 
 /**
@@ -710,7 +730,6 @@ span:has(> .topic-progress-thumb) {
 
 @media (prefers-reduced-motion: reduce) {
   .timeline-canvas,
-  .timeline-canvas[data-timeline-initializing="true"],
   .timeline-disclosure,
   .timeline-zoom-layer,
   .timeline-row-motion,

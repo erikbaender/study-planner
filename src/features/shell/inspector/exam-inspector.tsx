@@ -4,7 +4,7 @@ import { Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import { courseColorValue, type Course, type Exam } from "@/domain";
 import { Badge, Button, Separator, TextField } from "@/ui";
-import { InspectorHeader, Row, Section } from "./shared";
+import { InspectorHeader, NameSection, Row, Section } from "./shared";
 
 /* ─── Exam ──────────────────────────────────────────────────────────────── */
 
@@ -45,19 +45,31 @@ export function ExamInspector({
     <>
       <InspectorHeader
         kind="Exam"
+      />
+
+      <NameSection
+        kind="Exam"
         entityId={exam.id}
         name={exam.name}
-        accent={courseColorValue(course.color)}
-        onCommitName={(name) => name && patch({ name })}
-      >
+        onCommit={(name) => name && patch({ name })}
+      />
+
+      <Section title="Course">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="size-2 shrink-0 rounded-full"
+            style={{ background: courseColorValue(course.color) }}
+          />
         <button
           type="button"
           onClick={onSelectCourse}
-          className="-mx-1 truncate rounded-chip px-1 transition-colors duration-150 ease-mac hover:bg-fill hover:text-label"
+          className="min-w-0 truncate rounded-chip px-1 text-body text-secondary transition-colors duration-150 ease-mac hover:bg-fill hover:text-label"
         >
           {course.name}
         </button>
-      </InspectorHeader>
+        </div>
+      </Section>
 
       <Separator />
 

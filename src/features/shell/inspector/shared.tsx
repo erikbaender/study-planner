@@ -9,13 +9,10 @@
  * forms with a summary bolted on top — long enough to scroll, and never obvious
  * which of the two copies you were meant to change.
  *
- * The rule the rebuild follows: **the panel shows each fact exactly once, and
- * where it is shown is where it is edited.** The heading *is* the name field.
- * The dates *are* the date fields. Nothing is stated and then restated as a
- * control, so there is no summary to keep in sync and nothing to scroll past.
- * Fields that look like text until you touch them are what make that possible —
- * the same trick macOS inspectors use, and the reason the panel still reads as
- * a description rather than as a form.
+ * The rule the panel follows: **each fact appears exactly once, where it is
+ * edited.** The title identifies the kind of object; sections contain the
+ * object's editable facts. That keeps the panel legible without making a
+ * summary that can drift away from its controls.
  */
 
 import { clsx } from "clsx";
@@ -26,29 +23,25 @@ import { useWorkspace } from "@/features/workspace/store";
 
 /* ─── Shared furniture ──────────────────────────────────────────────────── */
 
-/**
- * The panel's heading, which is also the name field.
- *
- * `entityId` is what makes a freshly created topic land with its name selected:
- * the outline asks for the rename when it creates one, and the request is
- * consumed here so re-selecting the same topic later does not steal focus.
- */
-export function InspectorHeader({
+/** The panel label is deliberately separate from the object's editable name. */
+export function InspectorHeader({ kind }: { kind: string }) {
+  return (
+    <header className="px-4 pt-4 pb-1">
+      <p className="text-callout font-semibold text-secondary">{kind}</p>
+    </header>
+  );
+}
+
+export function NameSection({
   kind,
   entityId,
   name,
-  onCommitName,
-  accent,
-  children,
+  onCommit,
 }: {
   kind: string;
   entityId: string;
   name: string;
-  onCommitName: (next: string) => void;
-  /** The course colour, shown as a dot beside the name. */
-  accent?: string;
-  /** A subtitle line: where this thing sits, or how to get to it. */
-  children?: ReactNode;
+  onCommit: (next: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const renameRequestId = useWorkspace((state) => state.renameRequestId);
@@ -64,28 +57,15 @@ export function InspectorHeader({
   }, [renameRequestId, entityId, setRenameRequest]);
 
   return (
-    <header className="flex flex-col gap-1 px-3 pt-3 pb-2">
-      <p className="px-1 text-caption font-semibold tracking-wide text-tertiary uppercase">
-        {kind}
-      </p>
-      <div className="flex items-center gap-2">
-        {accent ? (
-          <span
-            aria-hidden="true"
-            className="size-2.5 shrink-0 rounded-full"
-            style={{ background: accent }}
-          />
-        ) : null}
-        <InlineText
-          inputRef={inputRef}
-          label={`${kind} name`}
-          value={name}
-          onCommit={onCommitName}
-          className="text-title3 font-semibold"
-        />
-      </div>
-      {children ? <div className="px-1 text-callout text-secondary">{children}</div> : null}
-    </header>
+    <Section title="Name">
+      <InlineText
+        inputRef={inputRef}
+        label={`${kind} name`}
+        value={name}
+        onCommit={onCommit}
+        className="text-body"
+      />
+    </Section>
   );
 }
 
@@ -261,6 +241,7 @@ export function DraftText({
   multiline,
   placeholder,
   hint,
+  hideLabel,
 }: {
   label: string;
   value: string;
@@ -268,6 +249,7 @@ export function DraftText({
   multiline?: boolean;
   placeholder?: string;
   hint?: string;
+  hideLabel?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   const [settled, setSettled] = useState(value);
@@ -287,6 +269,7 @@ export function DraftText({
     value: draft,
     placeholder,
     hint,
+    hideLabel,
     onChange: (event: { target: { value: string } }) => setDraft(event.target.value),
     onBlur: commit,
     onKeyDown: (event: React.KeyboardEvent) => {

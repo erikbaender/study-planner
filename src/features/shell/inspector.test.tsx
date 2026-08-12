@@ -13,6 +13,7 @@ import { Inspector } from "./inspector";
 const repository = {
   updateCourse: vi.fn(() => Promise.resolve()),
   updateTopic: vi.fn(() => Promise.resolve()),
+  moveTopic: vi.fn(() => Promise.resolve()),
   logStudy: vi.fn(() => Promise.resolve()),
   setTopicDependencies: vi.fn(() => Promise.resolve()),
   createStudyBlock: vi.fn(() => Promise.resolve("block_new")),
@@ -24,6 +25,7 @@ const run = vi.fn();
 vi.mock("@/data/use-repository", () => ({
   useRepository: () => repository,
   usePlannerRun: () => run,
+  usePlannerState: () => ({ status: "ready", snapshot: { plans: [] } }),
   usePlannerErrors: () => ({ run, error: null, clear: () => {} }),
 }));
 
@@ -150,6 +152,26 @@ describe("Inspector", () => {
         topic.id,
         expect.objectContaining({ name: "Glycolysis I" }),
       );
+    });
+
+    it("moves the topic through the course picker", async () => {
+      const targetCourse = makeCourse({ name: "Neurobiology" });
+      const user = userEvent.setup();
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          courses={[course, targetCourse]}
+          selection={selection}
+          health={healthFor(course)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("combobox", { name: "Course for Glycolysis" }));
+      await user.click(screen.getByRole("option", { name: "Neurobiology" }));
+
+      expect(repository.moveTopic).toHaveBeenCalledWith(topic.id, targetCourse.id);
     });
 
     it("reverts an edit on Escape", async () => {

@@ -139,6 +139,8 @@ export interface PlannerRepository {
     color: string,
   ): Promise<EntityId[]>;
   updateTopic(topicId: EntityId, patch: TopicPatch): Promise<void>;
+  /** Moves the topic without recreating its blocks, progress, or study log. */
+  moveTopic(topicId: EntityId, courseId: EntityId): Promise<void>;
   deleteTopic(topicId: EntityId): Promise<void>;
   setTopicDependencies(topicId: EntityId, dependencyIds: EntityId[]): Promise<void>;
   /** New order for every topic in the course. Partial lists are rejected, not merged. */

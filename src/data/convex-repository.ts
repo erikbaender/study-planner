@@ -351,6 +351,12 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         color: resolveCourseColorId(patch.color),
       });
     },
+    async moveTopic(topicId, courseId) {
+      await client.mutation(api.planner.moveTopic, {
+        topicId: asId<"topics">(topicId),
+        courseId: asId<"courses">(courseId),
+      });
+    },
     async deleteTopic(topicId) {
       await client.mutation(api.planner.deleteTopic, { topicId: asId<"topics">(topicId) });
     },

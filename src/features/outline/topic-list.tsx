@@ -23,10 +23,9 @@
 
 import { clsx } from "clsx";
 import { Plus, Trash2 } from "lucide-react";
-import { memo, useEffect, useRef, type CSSProperties } from "react";
+import { memo, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { courseColorValue, type Course, type Topic } from "@/domain";
-import { revealSelection } from "@/features/workspace/store";
-import { ContextMenu } from "@/ui";
+import { ContextMenu, useStableCallback } from "@/ui";
 import { useRowTransitions } from "@/ui/row-motion";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
 
@@ -35,14 +34,13 @@ import { TopicProgressCell } from "@/features/topics/progress-cell";
  * has room to draw without clipping while arrivals and departures animate.
  */
 export const TOPIC_ROW_HEIGHT = 34;
-const TOPIC_ROW_CONTENT_HEIGHT = 28;
+export const LIST_ROW_CONTENT_HEIGHT = 28;
 
 /**
  * Name · readout · progress · done.
  *
- * No colour dot: the card carries the course's colour as a rail down its left
- * edge, and repeating it on every one of forty rows turned a list of topics
- * into a list of dots.
+ * No colour dot: the card header identifies the course, and repeating it on
+ * every one of forty rows would turn a list of topics into a list of dots.
  *
  * The readout is dropped on a narrow window rather than shrunk, and the grid
  * loses its column with it: a phone has room for a name and a bar you can
@@ -76,6 +74,11 @@ export function TopicList({
   onAddRow: () => void;
 }) {
   const rows = useRowTransitions(topics, topicKey, TOPIC_ROW_HEIGHT);
+  // The rows below are memoized, and a handler rebuilt by the card on every
+  // render would make that memo a no-op: selecting one topic would reconcile
+  // all ninety. See `useStableCallback`.
+  const select = useStableCallback(onSelect);
+  const remove = useStableCallback(onDelete);
 
   return (
     <ul className="flex flex-col" data-keeps-selection>
@@ -92,8 +95,8 @@ export function TopicList({
             topic={item}
             today={today}
             selected={item.id === selectedId}
-            onSelect={onSelect}
-            onDelete={onDelete}
+            onSelect={select}
+            onDelete={remove}
           />
         </li>
       ))}
@@ -147,17 +150,16 @@ function TopicRow({
         data-keeps-selection
         onContextMenu={(event) => {
           // The course card is another context-menu trigger around this row;
-          // stop the event there so a topic action cannot select its course.
+          // stop the event there so a topic action cannot open the course menu.
           event.stopPropagation();
-          revealSelection({ kind: "topic", id: topic.id });
         }}
         className={clsx(
           "topic-completion-row relative h-full rounded-control px-2",
-          selected ? "bg-accent-soft" : "hover:bg-fill",
+          selected ? "bg-accent-soft" : "hover:bg-fill data-[state=open]:bg-fill",
         )}
         style={
           {
-            height: TOPIC_ROW_CONTENT_HEIGHT,
+            height: LIST_ROW_CONTENT_HEIGHT,
             "--topic-completion-color": courseColorValue(course.color),
           } as CSSProperties
         }
@@ -198,18 +200,31 @@ function TopicRow({
  * topic is going to be — so that is where the affordance for making one lives.
  */
 function AddTopicRow({ onClick }: { onClick: () => void }) {
+  return <AddListRow label="Add topic" onClick={onClick} />;
+}
+
+/** A list-shaped creation affordance keeps adjacent topic and exam lists aligned. */
+export function AddListRow({
+  label,
+  icon = <Plus aria-hidden="true" className="size-3.5 shrink-0" />,
+  onClick,
+}: {
+  label: string;
+  icon?: ReactNode;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      style={{ height: TOPIC_ROW_CONTENT_HEIGHT }}
+      style={{ height: LIST_ROW_CONTENT_HEIGHT }}
       className={clsx(
         "flex w-full items-center gap-2 rounded-control px-2 text-left",
         "text-callout text-tertiary hover:bg-fill hover:text-secondary",
       )}
     >
-      <Plus aria-hidden="true" className="size-3.5 shrink-0" />
-      Add topic
+      {icon}
+      {label}
     </button>
   );
 }

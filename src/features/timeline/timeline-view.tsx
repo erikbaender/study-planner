@@ -346,13 +346,28 @@ function TimelineChart({
   const revealBlockId = useWorkspace((state) => state.revealBlockId);
   useEffect(() => {
     if (!revealBlockId) return;
-    const frame = requestAnimationFrame(() => {
+    let attempts = 0;
+    let frame = 0;
+    const tryReveal = () => {
       const target = registryRef.current.get(revealBlockId);
-      useWorkspace.getState().revealBlock(null);
-      if (!target) return;
-      selection.set([revealBlockId]);
-      reveal({ startDate: target.block.startDate, endDate: target.block.endDate }, "left");
-    });
+      if (target) {
+        useWorkspace.getState().revealBlock(null);
+        selection.set([revealBlockId]);
+        reveal({ startDate: target.block.startDate, endDate: target.block.endDate }, "left");
+        return;
+      }
+
+      // Switching views mounts the chart before its first registry is useful.
+      // Keep the request alive while those rows commit, but cap retries so a
+      // deleted block cannot leave an invisible request in the workspace.
+      attempts += 1;
+      if (attempts >= 12) {
+        useWorkspace.getState().revealBlock(null);
+        return;
+      }
+      frame = requestAnimationFrame(tryReveal);
+    };
+    frame = requestAnimationFrame(tryReveal);
     return () => cancelAnimationFrame(frame);
   }, [revealBlockId, reveal, selection]);
 
@@ -433,7 +448,7 @@ function TimelineChart({
             { width: daysCss(range.days), [DAY_WIDTH_PROPERTY]: `${PX_PER_DAY[zoom]}px` } as React.CSSProperties
           }
           className="timeline-canvas relative"
-          data-timeline-initializing="true"
+          data-timeline-zooming="true"
         >
           <Ruler ticks={ticks} bands={bands} range={range} today={today} zoom={zoom} />
 

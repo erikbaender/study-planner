@@ -19,12 +19,13 @@
  *   you can see and becomes something you scroll. Every measurement here is the
  *   smallest one that still reads.
  * - **A control does one thing.** The course header opens and closes the
- *   course. Topic rows select topics, while a course is selected by its
- *   context menu so opening a course never doubles as inspecting it.
+ *   course. Topic rows select topics, while course selection happens through
+ *   the app's explicit selection surfaces so opening a course never doubles as
+ *   inspecting it.
  */
 
 import { clsx } from "clsx";
-import { useLayoutEffect, useMemo, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CalendarPlus, ClipboardPaste, Plus, Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
@@ -54,12 +55,14 @@ import {
   Sheet,
   TextArea,
   TextField,
+  useStableCallback,
   useListPresence,
 } from "@/ui";
-import { useDisclosure } from "@/ui/row-motion";
-import { TopicList } from "./topic-list";
+import { motionDuration } from "@/ui/motion";
+import { useDisclosure, useRowTransitions } from "@/ui/row-motion";
+import { AddListRow, LIST_ROW_CONTENT_HEIGHT, TOPIC_ROW_HEIGHT, TopicList } from "./topic-list";
 import { AutoPlanButton } from "@/features/planning/planning-actions";
-import { clickHint, hintScope, hintTarget, useViewHints, type InputHint } from "@/features/workspace/hints";
+import { hintScope, useViewHints, type InputHint } from "@/features/workspace/hints";
 import { topicsForQuery } from "@/features/workspace/scope";
 import { requestRename, revealSelection, useWorkspace } from "@/features/workspace/store";
 
@@ -175,7 +178,18 @@ function CourseCard({
   // Memoized because `TopicList` animates arrivals and departures, and that
   // merge is keyed on this array's identity — a fresh one per render would
   // never settle.
-  const topics = useMemo(() => topicsForQuery(query, course), [query, course]);
+  const topics = useMemo(
+    () => topicsForQuery(query, course).sort((left, right) => left.name.localeCompare(right.name, "de")),
+    [query, course],
+  );
+  const exams = useMemo(
+    () =>
+      [...course.exams].sort(
+        (left, right) =>
+          left.startDate.localeCompare(right.startDate) || left.order - right.order,
+      ),
+    [course.exams],
+  );
   const disclosure = useDisclosure(!collapsed);
   const percent = progress.ratio === null ? null : Math.round(progress.ratio * 100);
 
@@ -214,22 +228,12 @@ function CourseCard({
     >
       <section
         data-course-id={course.id}
-        onContextMenu={() => revealSelection({ kind: "course", id: course.id })}
         className={clsx(
-          "relative overflow-hidden rounded-card border bg-content",
+          "outline-card relative overflow-hidden rounded-card border bg-content",
           selected ? "border-accent" : "border-separator",
         )}
       >
-        {/* The course's colour as a rail rather than a dot. A dot is a label; a
-            rail down the whole card is what tells you, while you are reading a
-            topic thirty rows down, which course you are still inside. */}
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 w-[3px]"
-          style={{ background: tint, opacity: selected ? 1 : 0.65 }}
-        />
-
-        <div className="relative pl-[3px]" data-keeps-selection>
+        <div className="relative" data-keeps-selection>
           <button
             type="button"
             onClick={() => toggleCollapsed(course.id)}
@@ -240,11 +244,16 @@ function CourseCard({
             // selected", which is the one thing selecting a course does not
             // mean.
             className={clsx(
-              "relative flex h-9 w-full items-center gap-2.5 pr-3 pl-2 text-left",
+              "relative flex min-h-10 w-full items-center gap-2.5 py-2 pr-3 pl-2 text-left",
               "focus-visible:outline-2 focus-visible:-outline-offset-2",
               selected ? "bg-accent-soft" : "hover:bg-fill/50",
             )}
           >
+            <span
+              aria-hidden="true"
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ background: tint }}
+            />
             <h2 className="min-w-0 flex-1 truncate text-title3 font-semibold">{course.name}</h2>
 
             {course.code ? (
@@ -257,31 +266,36 @@ function CourseCard({
               {course.topics.length} topic{course.topics.length === 1 ? "" : "s"}
             </span>
 
-            <span className="w-8 shrink-0 text-right text-callout tabular-nums text-secondary">
-              {percent === null ? "—" : `${percent}%`}
-            </span>
+            {/* The permanent metrics are anchored as one group. A conditional
+                countdown can then grow to their left without moving either
+                the percentage or the progress bar. */}
+            <span className="ml-auto flex shrink-0 items-center gap-2.5">
+              {health?.exam && health.daysUntilExam !== null ? (
+                <CountdownBadge
+                  days={health.daysUntilExam}
+                  provisional={health.exam.status === "provisional"}
+                  atRisk={Boolean(health.pace && !health.pace.onTrack)}
+                />
+              ) : null}
 
-            <ProgressBar
-              ratio={progress.ratio}
-              label={`${course.name} progress`}
-              tint={tint}
-              size="sm"
-              className="hidden w-20 shrink-0 sm:block"
-            />
+              <span className="w-8 text-right text-callout tabular-nums text-secondary">
+                {percent === null ? "—" : `${percent}%`}
+              </span>
 
-            {health?.exam && health.daysUntilExam !== null ? (
-              <CountdownBadge
-                days={health.daysUntilExam}
-                provisional={health.exam.status === "provisional"}
-                atRisk={Boolean(health.pace && !health.pace.onTrack)}
+              <ProgressBar
+                ratio={progress.ratio}
+                label={`${course.name} progress`}
+                tint={tint}
+                size="sm"
+                className="hidden w-20 sm:block"
               />
-            ) : null}
+            </span>
           </button>
         </div>
 
         {disclosure.mounted ? (
           <CardBody expanded={disclosure.expanded}>
-            <div className="border-t border-separator pl-[3px]">
+            <div className="border-t border-separator">
               <div className="px-2 py-1">
                 {topics.length > 0 || course.topics.length === 0 ? (
                   <TopicList
@@ -300,11 +314,9 @@ function CourseCard({
                 )}
               </div>
 
-              <div
-                className="flex flex-wrap items-center gap-1.5 border-t border-separator px-2 py-1.5"
-                data-keeps-selection
-              >
-                <ExamChips
+              <div data-keeps-selection>
+                <ExamList
+                  exams={exams}
                   course={course}
                   today={today}
                   selectedId={selectedId}
@@ -312,11 +324,23 @@ function CourseCard({
                   onDelete={(exam) => run(repository.deleteExam(exam.id))}
                   onCreate={(input) => run(repository.createExam(course.id, input))}
                 />
+              </div>
 
-                <span className="ml-auto flex items-center gap-1.5">
-                  <Button size="sm" leadingIcon={<ClipboardPaste />} onClick={() => setPasting(true)}>
-                    Paste outline
-                  </Button>
+              <div
+                className="flex items-center gap-1.5 border-t border-separator px-2 py-1.5"
+                data-keeps-selection
+              >
+                <Button
+                  size="sm"
+                  variant="accent"
+                  leadingIcon={<ClipboardPaste />}
+                  onClick={() => setPasting(true)}
+                >
+                  Paste outline
+                </Button>
+                {/* AutoPlanButton owns its trigger variant. These selectors keep
+                    it visually paired with the primary paste action here. */}
+                <span className="[&>button]:!bg-accent [&>button]:!text-on-accent [&>button]:!shadow-raised [&>button:hover]:!bg-accent-hover [&>button:active]:!bg-accent-hover">
                   <AutoPlanButton course={course} snapshot={snapshot} today={today} />
                 </span>
               </div>
@@ -341,39 +365,60 @@ function CourseCard({
 /**
  * A course opening and closing.
  *
- * The height is measured rather than computed: the rows are a known height, but
- * the exam line wraps, the action bar does not, and a card that animates to a
- * height its contents disagree with either clips its last row or leaves a strip
- * of empty card under it. Measuring is one layout read per change of contents,
- * against a mistake that is visible on every single open.
+ * The height is measured rather than computed: the card contents can change
+ * while a disclosure is open, and a card that animates to a stale height either
+ * clips its last row or leaves a strip of empty card under it.
+ *
+ * It is measured *only across the toggle itself*, and the card sits at `auto`
+ * the rest of the time. Keeping a `ResizeObserver` on the contents was one
+ * layout read per change of contents in theory and a re-render of the entire
+ * course on every frame of any animation that changes the window's width in
+ * practice — the inspector sliding in resized the content column, which resized
+ * this, which set state, which laid the card out again. At `auto` a card
+ * follows its contents for free, which is what the observer was there for.
  */
 function CardBody({ expanded, children }: { expanded: boolean; children: React.ReactNode }) {
-  const [height, setHeight] = useState(0);
-  const [content, setContent] = useState<HTMLDivElement | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const mounted = useRef(false);
 
+  // Written to the element rather than held in state. The height only exists
+  // for the length of the animation, nothing else in the card depends on it,
+  // and rendering twice per frame to carry a number the browser is already
+  // interpolating is the expensive way to say the same thing.
   useLayoutEffect(() => {
-    if (!content) return;
-    const measure = () => setHeight(content.offsetHeight);
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    // Re-measured as the contents change, so a topic filtered out of an open
-    // course shrinks the card by exactly as much as the row it removed.
-    const observer = new ResizeObserver(measure);
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, [content]);
+    const element = box.current;
+    if (!element) return;
+
+    if (!mounted.current) {
+      mounted.current = true;
+      // A card that is simply open on arrival is open. Committing zero and
+      // correcting it afterwards is a transition, and a view that plays one for
+      // every card the moment you switch to it is a splash screen.
+      element.style.height = expanded ? "auto" : "0px";
+      return;
+    }
+
+    const full = content.current?.offsetHeight ?? 0;
+    // Both ends have to be real lengths: `auto` is not a value a transition can
+    // start from, so a closing card is pinned to the height it currently has
+    // before it is given zero.
+    element.style.height = expanded ? "0px" : `${full}px`;
+    void element.offsetHeight;
+    element.style.height = expanded ? `${full}px` : "0px";
+
+    if (!expanded) return;
+    // Back to `auto` once it has arrived, so a card that later gains a row
+    // follows its contents without anything having to measure them.
+    const timer = window.setTimeout(() => {
+      element.style.height = "auto";
+    }, motionDuration(document.documentElement) / 2);
+    return () => window.clearTimeout(timer);
+  }, [expanded]);
 
   return (
-    <div
-      className="outline-disclosure"
-      // `auto` until the contents have been measured, so a card that is simply
-      // open on arrival is open — it does not grow into place. Committing a
-      // height of zero first and correcting it afterwards is a transition, and
-      // a view that plays one for every card the moment you switch to it is a
-      // splash screen.
-      style={{ height: expanded ? (height === 0 ? undefined : height) : 0 }}
-    >
-      <div ref={setContent}>{children}</div>
+    <div ref={box} className="outline-disclosure">
+      <div ref={content}>{children}</div>
     </div>
   );
 }
@@ -381,13 +426,12 @@ function CardBody({ expanded, children }: { expanded: boolean; children: React.R
 /* ─── Exams ─────────────────────────────────────────────────────────────── */
 
 /**
- * Exams sit in the card's footer beside the actions rather than above the
- * topics. A course usually has one date, and a line of its own above forty
- * rows gave one number the visual weight of the whole course; the countdown in
- * the header is what answers "when" at a glance, and this is where you go to
- * change it.
+ * Exams use the same vertical rhythm as topics. Dates are important course
+ * material, and a row of their own keeps the name, date window and provisional
+ * status readable without competing with the course actions.
  */
-function ExamChips({
+function ExamList({
+  exams,
   course,
   today,
   selectedId,
@@ -395,6 +439,8 @@ function ExamChips({
   onDelete,
   onCreate,
 }: {
+  /** Must be memoized so row transitions only reconcile when exam data changes. */
+  exams: readonly Exam[];
   course: Course;
   today: string;
   selectedId: string | null;
@@ -403,48 +449,38 @@ function ExamChips({
   onCreate: (input: { name: string; startDate: string; endDate?: string }) => void;
 }) {
   const [adding, setAdding] = useState(false);
-  const chips = useListPresence(course.exams, (exam) => exam.id);
+  const rows = useRowTransitions(exams, (exam) => exam.id, TOPIC_ROW_HEIGHT);
+  const select = useStableCallback(onSelect);
+  const remove = useStableCallback(onDelete);
 
   return (
     <>
-      {chips.map(({ key, item: exam, present, appear }) => (
-        <Collapse key={key} present={present} appear={appear} className="shrink-0">
-          <span className="group flex items-center">
-            <button
-              type="button"
-              onClick={() => onSelect(exam)}
-              aria-pressed={exam.id === selectedId}
-              className={clsx(
-                "flex items-center gap-1.5 rounded-chip py-0.5 pr-1.5 pl-2 text-callout",
-                exam.id === selectedId ? "bg-accent-soft" : "hover:bg-fill",
-              )}
-            >
-              <span className="truncate">{exam.name}</span>
-              <span className="tabular-nums text-tertiary">
-                {exam.status === "provisional" && exam.endDate
-                  ? `${exam.startDate} – ${exam.endDate}`
-                  : exam.startDate}
-              </span>
-              {exam.status === "provisional" ? <Badge tone="warning">Provisional</Badge> : null}
-            </button>
-            <IconButton
-              size="sm"
-              label={`Delete ${exam.name}`}
-              icon={<Trash2 />}
-              onClick={() => onDelete(exam)}
-              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+      <ul className="flex flex-col">
+        {rows.map(({ key, item: exam, motion }) => (
+          <li
+            key={key}
+            aria-hidden={motion.visible ? undefined : "true"}
+            inert={motion.visible ? undefined : true}
+            className="row-motion shrink-0 p-[3px]"
+            style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
+          >
+            <MemoExamRow
+              exam={exam}
+              selected={exam.id === selectedId}
+              onSelect={select}
+              onDelete={remove}
             />
-          </span>
-        </Collapse>
-      ))}
+          </li>
+        ))}
 
-      <IconButton
-        size="sm"
-        label={`Add an exam to ${course.name}`}
-        icon={<CalendarPlus />}
-        onClick={() => setAdding(true)}
-        {...hintTarget(clickHint("Add an exam date"))}
-      />
+        <li className="shrink-0 p-[3px]">
+          <AddListRow
+            label="Add exam"
+            icon={<CalendarPlus aria-hidden="true" className="size-3.5 shrink-0" />}
+            onClick={() => setAdding(true)}
+          />
+        </li>
+      </ul>
 
       <ExamSheet
         open={adding}
@@ -459,6 +495,56 @@ function ExamChips({
     </>
   );
 }
+
+function ExamRow({
+  exam,
+  selected,
+  onSelect,
+  onDelete,
+}: {
+  exam: Exam;
+  selected: boolean;
+  onSelect: (exam: Exam) => void;
+  onDelete: (exam: Exam) => void;
+}) {
+  return (
+    <div
+      className={clsx(
+        "group relative flex h-full items-center gap-2 rounded-control px-2",
+        selected ? "bg-accent-soft" : "hover:bg-fill",
+      )}
+      style={{ height: LIST_ROW_CONTENT_HEIGHT }}
+    >
+      <button
+        type="button"
+        aria-pressed={selected}
+        aria-label={`Select ${exam.name}`}
+        onClick={() => onSelect(exam)}
+        className="absolute inset-0 rounded-control focus-visible:outline-2 focus-visible:-outline-offset-2"
+      />
+
+      <div className="pointer-events-none relative flex min-w-0 flex-1 items-center gap-2 text-callout">
+        <span className="min-w-0 truncate">{exam.name}</span>
+        <span className="shrink-0 tabular-nums text-tertiary">
+          {exam.status === "provisional" && exam.endDate
+            ? `${exam.startDate} – ${exam.endDate}`
+            : exam.startDate}
+        </span>
+        {exam.status === "provisional" ? <Badge tone="warning">Provisional</Badge> : null}
+      </div>
+
+      <IconButton
+        size="sm"
+        label={`Delete ${exam.name}`}
+        icon={<Trash2 />}
+        onClick={() => onDelete(exam)}
+        className="relative z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+      />
+    </div>
+  );
+}
+
+const MemoExamRow = memo(ExamRow);
 
 function ExamSheet({
   open,

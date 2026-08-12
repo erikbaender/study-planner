@@ -47,7 +47,6 @@ import { type ViewportStore } from "./chart-context";
 import { createRafCoalescer } from "./raf";
 import { COURSE_FILTER_WILL_CHANGE } from "@/features/workspace/store";
 import { cancelActiveGesture } from "./gestures";
-import { useViewFadeHold } from "@/features/shell/view-fade";
 
 /** How close to an edge of the canvas triggers growing it further; see `contentRange`. */
 const EXTEND_TRIGGER_PX = 1200;
@@ -91,7 +90,6 @@ export function useChartPosition({
 }: ChartPositionOptions): ChartPosition {
   const [zoom, setZoom] = useState<Zoom>("week");
   const zoomRef = useRef<Zoom>("week");
-  const releaseViewFade = useViewFadeHold();
   useLayoutEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
@@ -131,11 +129,10 @@ export function useChartPosition({
     initializingRef.current = false;
     clearInitialRevealRef.current = true;
     // This is a visual settling flag, not application state. Removing it
-    // directly avoids reconciling the entire timeline while the view is being
-    // presented, and releases the view only after its initial position is set.
-    canvasRef.current?.removeAttribute("data-timeline-initializing");
-    releaseViewFade();
-  }, [releaseViewFade]);
+    // directly avoids reconciling the entire timeline on the first pointer
+    // press while the initial chart is fading in.
+    canvasRef.current?.removeAttribute("data-timeline-zooming");
+  }, []);
 
   // The canvas declares its initial hidden state so it is present on the first
   // paint. Once the imperative reveal has happened, remove that declaration
@@ -144,7 +141,7 @@ export function useChartPosition({
   useLayoutEffect(() => {
     if (!clearInitialRevealRef.current) return;
     clearInitialRevealRef.current = false;
-    canvasRef.current?.removeAttribute("data-timeline-initializing");
+    canvasRef.current?.removeAttribute("data-timeline-zooming");
   });
 
   const range = useMemo(() => {
@@ -448,19 +445,11 @@ export function useChartPosition({
   // scrollLeft after the first layout pass. Give that restoration two frames
   // to finish, then make the initial Today position authoritative. Leave a few
   // more frames for a range extension and its layout correction to commit
-  // before releasing the view to fade in; a fixed timeout can release it in
-  // between those two writes and make it jump immediately after presentation.
-  // This pass is intentionally skipped after the user has touched the chart.
+  // before fading in; a fixed timeout can reveal the chart in between those two
+  // writes and make it jump immediately after the fade. This pass is
+  // intentionally skipped after the user has touched the chart.
   useEffect(() => {
-    // Nothing to position, and nothing to wait for: the view shows its empty
-    // state instead of a chart, and that is ready the moment it mounts. Without
-    // this the hold on the view's fade would only be let go by its fallback
-    // timeout, and an empty timeline would take three quarters of a second to
-    // admit it is empty.
-    if (courses.length === 0) {
-      revealInitialChart();
-      return;
-    }
+    if (courses.length === 0) return;
     let secondFrame = 0;
     let revealFrame = 0;
     // Background/collaborative tabs can throttle animation frames. Keep a
@@ -476,8 +465,8 @@ export function useChartPosition({
         primedRef.current = false;
         primeToday();
         // `primeToday` can grow the range. Wait a few frames so that the
-        // resulting layout and scroll correction are committed before releasing
-        // the view to fade into view.
+        // resulting layout and scroll correction are committed before fading
+        // the chart into view.
         let remaining = 4;
         const waitForSettling = () => {
           if (!initializingRef.current || userNavigatedRef.current) return;
@@ -632,7 +621,7 @@ export function useChartPosition({
       visibleFrameRef.current?.cancel();
       cancelActiveGesture();
       if (element) stopScrollAnimation(element);
-      canvas?.removeAttribute("data-timeline-initializing");
+      canvas?.removeAttribute("data-timeline-zooming");
     };
   }, []);
 

@@ -27,6 +27,7 @@
  */
 
 import { clsx } from "clsx";
+import { usePlannerState } from "@/data/use-repository";
 import type { Course, CourseHealth, StudyBlock, Topic } from "@/domain";
 import type { ResolvedSelection } from "@/features/workspace/scope";
 import { CourseInspector } from "./course-inspector";
@@ -41,6 +42,7 @@ export function Inspector({
   onSelectTopic,
   onRevealBlock,
   onDelete,
+  courses: suppliedCourses,
 }: {
   /** Whatever was selected last — it stays here while the panel animates away. */
   selection: NonNullable<ResolvedSelection> | null;
@@ -50,7 +52,16 @@ export function Inspector({
   onSelectTopic: (course: Course, topic: Topic) => void;
   onRevealBlock: (block: StudyBlock) => void;
   onDelete: (selection: NonNullable<ResolvedSelection>) => void;
+  /** Optional injection keeps the panel's rendering tests independent of storage. */
+  courses?: readonly Course[];
 }) {
+  const repositoryState = usePlannerState();
+  const planCourses =
+    repositoryState.status === "ready"
+      ? (repositoryState.snapshot.plans.find((plan) => plan.id === selection?.course.planId)?.courses ?? [])
+      : [];
+  const courses = suppliedCourses ?? planCourses;
+
   return (
     <aside
       aria-label="Inspector"
@@ -76,9 +87,9 @@ export function Inspector({
           ) : selection.kind === "topic" ? (
             <TopicInspector
               course={selection.course}
+              courses={courses.length > 0 ? courses : [selection.course]}
               topic={selection.topic}
               today={today}
-              onSelectCourse={() => onSelectCourse(selection.course)}
               onRevealBlock={onRevealBlock}
               onDelete={() => onDelete(selection)}
             />

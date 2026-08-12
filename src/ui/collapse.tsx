@@ -169,20 +169,25 @@ export function Collapse({
     return appear && !prefersReducedMotion() ? "enter" : "open";
   });
 
+  /**
+   * Measured at the moment a transition needs a number, and at no other time.
+   *
+   * This used to keep a `ResizeObserver` alive for the life of the box, on the
+   * reasoning that reading the height at departure forces a layout in the frame
+   * that can least afford one. That trade was badly wrong. An observer whose
+   * callback sets state turns *every* layout change anywhere above it into a
+   * re-render of this subtree — and the inspector's width animation resizes the
+   * content column on every one of its frames. With a card per course and a box
+   * per exam chip, one selection re-rendered the whole outline fifteen times
+   * over. One forced read per transition is the cheaper side of that trade by
+   * two orders of magnitude, and while the box is open it is at `height: auto`,
+   * where the number is not used for anything at all.
+   */
   useLayoutEffect(() => {
+    if (phase === "open" || phase === "closed") return;
     const element = contentRef.current;
-    if (!element) return;
-    const measure = () => setHeight(element.offsetHeight);
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    // Kept current rather than read at the moment of departure: measuring
-    // inside the effect that starts the exit would force a layout in the frame
-    // that can least afford one, and the box is open at `height: auto` until
-    // then anyway, so this observation costs nothing while nothing is moving.
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+    if (element) setHeight(element.offsetHeight);
+  }, [phase]);
 
   // Adjusted during render rather than in an effect: a box that has just been
   // filtered out must still be at its full height in the commit that removed

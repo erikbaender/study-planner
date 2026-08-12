@@ -16,6 +16,7 @@ import {
   DraftText,
   InlineText,
   InspectorHeader,
+  NameSection,
   Reference,
   ReferenceList,
   Row,
@@ -57,20 +58,24 @@ export function CourseInspector({
     <>
       <InspectorHeader
         kind="Course"
+      />
+
+      <NameSection
+        kind="Course"
         entityId={course.id}
         name={course.name}
-        accent={tint}
-        onCommitName={(name) => name && patch({ name })}
-      >
-        {/* The code sits where a caption would, and is the field for it. */}
+        onCommit={(name) => name && patch({ name })}
+      />
+
+      <Section title="Code">
         <InlineText
           label="Course code"
           value={course.code ?? ""}
           placeholder="Add a course code"
-          className="w-full text-callout"
+          className="w-full text-body"
           onCommit={(code) => patch({ code: code || undefined })}
         />
-      </InspectorHeader>
+      </Section>
 
       <Separator />
 
@@ -155,6 +160,7 @@ export function CourseInspector({
       <Section title="Notes">
         <DraftText
           label="Notes"
+          hideLabel
           value={course.notes}
           multiline
           placeholder="Anything you need to remember about this course"

@@ -2,7 +2,7 @@
 
 import { clsx } from "clsx";
 import { Plus, Trash2 } from "lucide-react";
-import { useRef, useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   addDays,
@@ -31,22 +31,24 @@ import {
 import { CompletionCheckbox, triggerCompletionAnimation } from "@/features/topics/progress-cell";
 import { clampToLimits, limitsFor } from "@/features/timeline/blocks";
 import { shortDate } from "@/features/timeline/geometry";
-import { DraftText, InspectorHeader, ReferenceList, Section } from "./shared";
+import { DraftText, InspectorHeader, NameSection, ReferenceList, Section } from "./shared";
+import { motionDuration } from "@/ui/motion";
+import { useDisclosure } from "@/ui/row-motion";
 
 /* ─── Topic ─────────────────────────────────────────────────────────────── */
 
 export function TopicInspector({
   course,
+  courses,
   topic,
   today,
-  onSelectCourse,
   onRevealBlock,
   onDelete,
 }: {
   course: Course;
+  courses: readonly Course[];
   topic: Topic;
   today: string;
-  onSelectCourse: () => void;
   onRevealBlock: (block: StudyBlock) => void;
   onDelete: () => void;
 }) {
@@ -97,23 +99,33 @@ export function TopicInspector({
 
   return (
     <>
-      <InspectorHeader
+      <InspectorHeader kind="Topic" />
+
+      <NameSection
         kind="Topic"
         entityId={topic.id}
         name={topic.name}
-        accent={tint}
-        onCommitName={(name) => name && patch({ name })}
-      >
-        {/* The course is a reference, not a caption: the panel can describe it
-            next, and getting there should not mean going back to the sidebar. */}
-        <button
-          type="button"
-          onClick={onSelectCourse}
-          className="-mx-1 truncate rounded-chip px-1 transition-colors duration-150 ease-mac hover:bg-fill hover:text-label"
-        >
-          {course.name}
-        </button>
-      </InspectorHeader>
+        onCommit={(name) => name && patch({ name })}
+      />
+
+      <Section title="Course">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="size-2 shrink-0 rounded-full"
+            style={{ background: tint }}
+          />
+          <Select
+            aria-label={`Course for ${topic.name}`}
+            value={course.id}
+            onValueChange={(courseId) => {
+              if (courseId !== course.id) run(repository.moveTopic(topic.id, courseId));
+            }}
+            className="min-w-0 flex-1 text-body"
+            options={courses.map((candidate) => ({ value: candidate.id, label: candidate.name }))}
+          />
+        </div>
+      </Section>
 
       <Separator />
 
@@ -154,28 +166,32 @@ export function TopicInspector({
           />
         </div>
 
-        {/* One line, read as a sentence: how much is done, of how much, of what.
-            The old panel asked the same three things as three labelled fields
-            stacked above a bar that repeated the answer. */}
-        <div className="flex min-w-0 flex-wrap items-center gap-2 px-2 text-body">
-          <span className="w-10 shrink-0 text-right tabular-nums text-secondary">{shown}</span>
-          <span className="shrink-0 text-tertiary">of</span>
-          <Stepper
-            label={`Total ${unitLabel} in ${topic.name}`}
-            min={0}
-            value={topic.totalUnits}
-            onValueChange={(totalUnits) => patch({ totalUnits })}
-          />
-          <Select
-            aria-label={`Unit for ${topic.name}`}
-            value={topic.unit}
-            onValueChange={(unit) => patch({ unit: unit as Unit })}
-            className="h-7 min-w-[8rem] basis-full rounded-chip bg-transparent px-1 text-callout text-secondary hover:bg-fill focus:bg-content focus:text-label"
-            options={UNITS.map((candidate) => ({
-              value: candidate,
-              label: UNIT_LABELS[candidate].plural,
-            }))}
-          />
+        <div className="flex min-w-0 items-center justify-between gap-2 px-2 text-body">
+          <span className="min-w-0 truncate tabular-nums text-secondary">
+            {shown} / {topic.totalUnits} {unitLabel}
+          </span>
+        </div>
+
+        <div className="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2 px-2">
+          <span className="text-callout text-secondary">Total</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <Stepper
+              label={`Total ${unitLabel} in ${topic.name}`}
+              min={0}
+              value={topic.totalUnits}
+              onValueChange={(totalUnits) => patch({ totalUnits })}
+            />
+            <Select
+              aria-label={`Unit for ${topic.name}`}
+              value={topic.unit}
+              onValueChange={(unit) => patch({ unit: unit as Unit })}
+              className="min-w-0 flex-1 text-callout text-secondary"
+              options={UNITS.map((candidate) => ({
+                value: candidate,
+                label: UNIT_LABELS[candidate].plural,
+              }))}
+            />
+          </div>
         </div>
 
         {topic.totalUnits === 0 ? (
@@ -217,8 +233,10 @@ export function TopicInspector({
               />
             ))}
         </ReferenceList>
-        <button
-          type="button"
+        <Button
+          size="sm"
+          variant="plain"
+          leadingIcon={<Plus aria-hidden="true" />}
           onClick={() => {
             const lastBlock = [...topic.blocks]
               .sort((left, right) => left.endDate.localeCompare(right.endDate))
@@ -235,11 +253,10 @@ export function TopicInspector({
                 .then((blockId) => setExpandedBlockId(blockId)),
             );
           }}
-          className="flex w-full items-center gap-2 rounded-control px-2 py-1 text-left text-callout text-tertiary hover:bg-fill hover:text-secondary"
+          className="self-start text-tertiary"
         >
-          <Plus aria-hidden="true" className="size-3.5 shrink-0" />
           Add block
-        </button>
+        </Button>
       </Section>
 
       <Separator />
@@ -250,7 +267,7 @@ export function TopicInspector({
           <SegmentedControl
             size="sm"
             label={`Priority of ${topic.name}`}
-            className="w-full min-w-0"
+            className="w-full min-w-0 [&>button]:flex-1"
             value={topic.priority}
             onValueChange={(priority) => patch({ priority })}
             segments={PRIORITIES.map((priority) => ({
@@ -297,6 +314,7 @@ export function TopicInspector({
       <Section title="Notes">
         <DraftText
           label="Notes"
+          hideLabel
           value={topic.notes}
           multiline
           placeholder="Lecture numbers, which book, what to skip"
@@ -348,6 +366,30 @@ function StudyBlockRow({
   onRemove: () => void;
 }) {
   const editorId = `study-block-editor-${block.id}`;
+  const disclosure = useRef<HTMLDivElement>(null);
+  const disclosureContent = useRef<HTMLDivElement>(null);
+  const disclosureState = useDisclosure(expanded);
+
+  useLayoutEffect(() => {
+    const element = disclosure.current;
+    if (!element || !disclosureState.mounted) return;
+    if (!element.dataset.ready) {
+      element.dataset.ready = "true";
+      element.style.height = disclosureState.expanded ? "auto" : "0px";
+      return;
+    }
+
+    const fullHeight = disclosureContent.current?.offsetHeight ?? 0;
+    element.style.height = disclosureState.expanded ? "0px" : `${fullHeight}px`;
+    void element.offsetHeight;
+    element.style.height = disclosureState.expanded ? `${fullHeight}px` : "0px";
+    if (!disclosureState.expanded) return;
+    const timer = window.setTimeout(() => {
+      element.style.height = "auto";
+    }, motionDuration(document.documentElement) / 2);
+    return () => window.clearTimeout(timer);
+  }, [disclosureState.expanded, disclosureState.mounted]);
+
   const moveStart = (startDate: string) => {
     if (!startDate) return;
     const delta = differenceInDays(block.startDate, startDate);
@@ -407,55 +449,57 @@ function StudyBlockRow({
         </span>
       </button>
 
-      {expanded ? (
-        <div id={editorId} className="mt-1 flex min-w-0 flex-col gap-2 rounded-control bg-fill p-2">
-          <div className="grid min-w-0 grid-cols-2 gap-2">
-            <TextField
-              label="Starts"
-              type="date"
-              value={block.startDate}
-              fieldClassName="min-w-0"
-              className="min-w-0 px-1 text-callout"
-              onChange={(event) => moveStart(event.target.value)}
-            />
-            <TextField
-              label="Ends"
-              type="date"
-              value={block.endDate}
-              fieldClassName="min-w-0"
-              className="min-w-0 px-1 text-callout"
-              onChange={(event) => resizeEnd(event.target.value)}
-            />
-          </div>
-
-          {block.plannedUnits === undefined ? (
-            <div className="flex min-w-0 items-center justify-between gap-2 text-callout">
-              <span className="min-w-0 text-secondary">Planned units: not specified</span>
-              <Button size="sm" variant="plain" onClick={() => updateUnits(1)}>
-                Set units
-              </Button>
-            </div>
-          ) : (
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-              <Stepper
-                label={`Planned units for ${block.startDate}`}
-                value={block.plannedUnits}
-                min={0}
-                onValueChange={updateUnits}
+      {disclosureState.mounted ? (
+        <div ref={disclosure} className="outline-disclosure">
+          <div ref={disclosureContent} id={editorId} className="mt-1 ml-2 flex min-w-0 flex-col gap-2 border-l border-separator pl-2">
+            <div className="grid min-w-0 grid-cols-2 gap-2">
+              <TextField
+                label="Starts"
+                type="date"
+                value={block.startDate}
+                fieldClassName="min-w-0"
+                className="min-w-0 px-1 text-callout"
+                onChange={(event) => moveStart(event.target.value)}
               />
-              <Button size="sm" variant="plain" onClick={() => updateUnits(undefined)}>
-                Clear units
+              <TextField
+                label="Ends"
+                type="date"
+                value={block.endDate}
+                fieldClassName="min-w-0"
+                className="min-w-0 px-1 text-callout"
+                onChange={(event) => resizeEnd(event.target.value)}
+              />
+            </div>
+
+            {block.plannedUnits === undefined ? (
+              <div className="flex min-w-0 items-center justify-between gap-2 text-callout">
+                <span className="min-w-0 text-secondary">Planned units: not specified</span>
+                <Button size="sm" variant="plain" onClick={() => updateUnits(1)}>
+                  Set units
+                </Button>
+              </div>
+            ) : (
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <Stepper
+                  label={`Planned units for ${block.startDate}`}
+                  value={block.plannedUnits}
+                  min={0}
+                  onValueChange={updateUnits}
+                />
+                <Button size="sm" variant="plain" onClick={() => updateUnits(undefined)}>
+                  Clear units
+                </Button>
+              </div>
+            )}
+
+            <div className="flex min-w-0 flex-wrap justify-between gap-1">
+              <Button size="sm" variant="plain" onClick={onReveal}>
+                Show on timeline
+              </Button>
+              <Button size="sm" variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onRemove}>
+                Remove
               </Button>
             </div>
-          )}
-
-          <div className="flex min-w-0 flex-wrap gap-1">
-            <Button size="sm" variant="plain" onClick={onReveal}>
-              Show on timeline
-            </Button>
-            <Button size="sm" variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onRemove}>
-              Remove
-            </Button>
           </div>
         </div>
       ) : null}

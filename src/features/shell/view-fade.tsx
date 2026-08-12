@@ -120,12 +120,32 @@ function ViewFadeGate({
 export function ViewFade<T extends string>({
   view,
   render,
+  /**
+   * Views that arrive without a fade.
+   *
+   * The timeline is one. It reveals itself: the chart paints hidden, positions
+   * onto today, lets its range extension and the scroll correction that follows
+   * settle, and only then fades its canvas in — a sequence tuned against the
+   * jumps it exists to hide. A second fade wrapped around that one does not
+   * compose with it. It ran on its own clock, so the view arrived and the chart
+   * then finished settling in full view, which is the exact jump the chart's own
+   * reveal was written to prevent. Two attempts to make the outer fade wait for
+   * the inner one — a frame count, then a stability check on the viewport —
+   * both still let it through, so the chart keeps the reveal it already had and
+   * the outer fade stays out of its way.
+   */
+  instant,
 }: {
   view: T;
   render: (view: T) => ReactNode;
+  instant?: readonly T[];
 }) {
   const [shown, setShown] = useState(view);
-  const [phase, setPhase] = useState<"waiting" | "out" | "in">("waiting");
+  const arrivesInstantly = (candidate: T) => instant?.includes(candidate) ?? false;
+  // A view that arrives without a fade is also not held back on first paint.
+  const [phase, setPhase] = useState<"waiting" | "out" | "in">(() =>
+    arrivesInstantly(view) ? "in" : "waiting",
+  );
 
   // Adjusted during render so the fade begins in the commit the click caused,
   // rather than a frame after it. Bounded: `phase` only becomes `out` when the
@@ -134,6 +154,9 @@ export function ViewFade<T extends string>({
   // enters the fade at all, rather than waiting out a transition that is not
   // being drawn.
   if (view !== shown && phase !== "out") {
+    // Leaving still fades, even for a view that arrives without one: the
+    // outgoing view is being taken away, and that half has nothing to collide
+    // with. Only the arrival is instant.
     if (prefersReducedMotion()) {
       setShown(view);
       setPhase("in");
@@ -146,9 +169,10 @@ export function ViewFade<T extends string>({
     if (phase !== "out") return;
     const timer = window.setTimeout(() => {
       setShown(view);
-      setPhase(prefersReducedMotion() ? "in" : "waiting");
+      setPhase(prefersReducedMotion() || arrivesInstantly(view) ? "in" : "waiting");
     }, motionDuration(document.documentElement) / 2);
     return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, view]);
 
   const ready = useCallback(() => {
@@ -157,7 +181,14 @@ export function ViewFade<T extends string>({
   const reducedMotion = prefersReducedMotion();
 
   return (
-    <div className="view-fade h-full" data-view-fade={phase === "in" ? "in" : "out"}>
+    <div
+      className="view-fade h-full"
+      // `instant` rather than `in`: the outgoing half leaves this box at zero,
+      // so simply marking it shown would transition it back up — a fade of the
+      // whole view, which is the thing the chart must not be given. `instant`
+      // restores it in one frame, with no transition to interfere.
+      data-view-fade={phase !== "in" ? "out" : arrivesInstantly(shown) ? "instant" : "in"}
+    >
       <ViewFadeGate key={shown} disabled={reducedMotion} onReady={ready}>
         {render(shown)}
       </ViewFadeGate>

@@ -24,7 +24,7 @@
 
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { Plus } from "lucide-react";
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePlannerErrors, usePlannerState, useRepository } from "@/data/use-repository";
 import {
   DEFAULT_PREFERENCES,
@@ -44,6 +44,7 @@ import {
   serializePlans,
 } from "@/lib/import-export";
 import { Button, EmptyState, Spinner } from "@/ui";
+import { motionDuration } from "@/ui/motion";
 import { AppSidebar } from "./app-sidebar";
 import { AppToolbar } from "./app-toolbar";
 import { CommandPalette } from "./command-palette";
@@ -94,6 +95,23 @@ const KEEPS_SELECTION = [
 function useRetained<T>(value: T | null): T | null {
   const [kept, setKept] = useState(value);
   if (value !== null && value !== kept) setKept(value);
+
+  // Dropped again once the panel has finished leaving. Held indefinitely — as
+  // this did at first — the inspector's whole contents stay mounted behind a
+  // zero-width panel for the rest of the session: a few hundred elements of
+  // selects, checkboxes and sliders that every subsequent style recalculation
+  // in the app has to walk, including the ones a drag on the timeline does
+  // sixty times a second. The panel needs its contents for a quarter of a
+  // second, so it keeps them for a quarter of a second.
+  useEffect(() => {
+    if (value !== null || kept === null) return;
+    const timer = window.setTimeout(
+      () => setKept(null),
+      motionDuration(document.documentElement),
+    );
+    return () => window.clearTimeout(timer);
+  }, [value, kept]);
+
   return value ?? kept;
 }
 
@@ -380,6 +398,9 @@ export function AppShell() {
           ) : (
             <ViewFade
               view={workspace.view}
+              // The chart runs its own reveal, and it is better at it than a
+              // fade that cannot see what the chart is still doing.
+              instant={["timeline"]}
               render={(view) =>
                 view === "today" ? (
                   <TodayView

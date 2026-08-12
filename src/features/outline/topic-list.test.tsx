@@ -1,8 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { course as makeCourse, topic as makeTopic } from "@/test/factories";
+import { course as makeCourse, snapshot as makeSnapshot, topic as makeTopic } from "@/test/factories";
 import { useWorkspace } from "@/features/workspace/store";
+import { OutlineView } from "./outline-view";
 import { TOPIC_ROW_HEIGHT, TopicList } from "./topic-list";
 
 const repository = {
@@ -18,8 +19,8 @@ vi.mock("@/data/use-repository", () => ({
 
 const TODAY = "2026-05-01";
 const topics = [
-  makeTopic({ name: "Glycolysis", totalUnits: 100, completedUnits: 40 }),
   makeTopic({ name: "Krebs cycle", totalUnits: 50 }),
+  makeTopic({ name: "Glycolysis", totalUnits: 100, completedUnits: 40 }),
 ];
 const course = makeCourse({ name: "Biochemistry", topics });
 
@@ -60,21 +61,48 @@ describe("TopicList", () => {
 
     await user.click(screen.getByRole("button", { name: "Select Glycolysis" }));
 
-    expect(onSelect).toHaveBeenCalledWith(topics[0]);
+    expect(onSelect).toHaveBeenCalledWith(topics[1]);
   });
 
-  it("selects a topic and deletes it from its context menu", async () => {
+  it("does not select a topic when its context menu opens", async () => {
     const user = userEvent.setup();
     const { onDelete } = renderList();
 
     await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Glycolysis") });
 
-    expect(useWorkspace.getState().selection).toEqual({ kind: "topic", id: topics[0].id });
+    expect(useWorkspace.getState().selection).toBeNull();
+    expect(screen.getByText("Glycolysis").closest(".topic-completion-row")).toHaveAttribute(
+      "data-state",
+      "open",
+    );
     expect(screen.queryByRole("button", { name: "Delete Glycolysis" })).not.toBeInTheDocument();
 
     await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
-    expect(onDelete).toHaveBeenCalledWith(topics[0]);
+    expect(onDelete).toHaveBeenCalledWith(topics[1]);
+  });
+
+  it("renders course topics alphabetically", () => {
+    render(
+      <OutlineView
+        courses={[course]}
+        health={new Map()}
+        today={TODAY}
+        query=""
+        snapshot={makeSnapshot()}
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onSelectExam={vi.fn()}
+        onDeleteTopic={vi.fn()}
+        onDeleteCourse={vi.fn()}
+        onNewCourse={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole("button", { name: /^Select / }).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Select Glycolysis",
+      "Select Krebs cycle",
+    ]);
   });
 
   it("calls onAddRow when the add topic row is clicked", async () => {
@@ -87,7 +115,7 @@ describe("TopicList", () => {
   });
 
   it("marks the selected topic row as pressed so the current selection is visible", () => {
-    renderList({ selectedId: topics[1].id });
+    renderList({ selectedId: topics[0].id });
 
     expect(screen.getByRole("button", { name: "Select Krebs cycle" })).toHaveAttribute(
       "aria-pressed",
