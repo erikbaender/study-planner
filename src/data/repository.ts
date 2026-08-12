@@ -52,7 +52,6 @@ export type ExamInput = {
 
 export type TopicInput = {
   name: string;
-  section?: string;
   unit?: Unit;
   totalUnits?: number;
   priority?: Priority;
@@ -62,7 +61,6 @@ export type TopicInput = {
 
 export type TopicPatch = {
   name: string;
-  section?: string;
   unit: Unit;
   totalUnits: number;
   completedUnits: number;
@@ -137,7 +135,7 @@ export interface PlannerRepository {
   /** Bulk path for the outline paste flow. */
   createTopics(
     courseId: EntityId,
-    topics: Array<{ name: string; section?: string; unit: Unit; totalUnits: number }>,
+    topics: Array<{ name: string; unit: Unit; totalUnits: number }>,
     color: string,
   ): Promise<EntityId[]>;
   updateTopic(topicId: EntityId, patch: TopicPatch): Promise<void>;

@@ -2,19 +2,21 @@
 
 import { Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
-import { type Course, type Exam } from "@/domain";
+import { courseColorValue, type Course, type Exam } from "@/domain";
 import { Badge, Button, Separator, TextField } from "@/ui";
-import { DraftText, Header, Row, Section } from "./shared";
+import { InspectorHeader, Row, Section } from "./shared";
 
 /* ─── Exam ──────────────────────────────────────────────────────────────── */
 
 export function ExamInspector({
   course,
   exam,
+  onSelectCourse,
   onDelete,
 }: {
   course: Course;
   exam: Exam;
+  onSelectCourse: () => void;
   onDelete: () => void;
 }) {
   const repository = useRepository();
@@ -41,15 +43,25 @@ export function ExamInspector({
 
   return (
     <>
-      <Header kind="Exam">
-        <h2 className="truncate text-title3 font-semibold">{exam.name}</h2>
-        <p className="truncate text-callout text-secondary">{course.name}</p>
-      </Header>
+      <InspectorHeader
+        kind="Exam"
+        entityId={exam.id}
+        name={exam.name}
+        accent={courseColorValue(course.color)}
+        onCommitName={(name) => name && patch({ name })}
+      >
+        <button
+          type="button"
+          onClick={onSelectCourse}
+          className="-mx-1 truncate rounded-chip px-1 transition-colors duration-150 ease-mac hover:bg-fill hover:text-label"
+        >
+          {course.name}
+        </button>
+      </InspectorHeader>
 
       <Separator />
 
       <Section>
-        <DraftText label="Name" value={exam.name} onCommit={(name) => name && patch({ name })} />
         <TextField
           label="Date"
           type="date"
@@ -65,9 +77,7 @@ export function ExamInspector({
         />
         <Row label="Certainty">
           {exam.status === "provisional" ? (
-            <Badge tone="warning">
-              Provisional
-            </Badge>
+            <Badge tone="warning">Provisional</Badge>
           ) : (
             <Badge tone="positive">Confirmed</Badge>
           )}

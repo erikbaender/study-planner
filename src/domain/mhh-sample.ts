@@ -255,7 +255,6 @@ export function generateMhhShowcaseData(today: IsoDate): SeedData {
         id: topicId,
         courseId,
         name,
-        section: showcaseSection(topicIndex),
         unit,
         totalUnits,
         completedUnits,
@@ -358,10 +357,6 @@ function showcaseSize(unit: Unit, issueNumber: number): number {
     default:
       return 1;
   }
-}
-
-function showcaseSection(topicIndex: number): string {
-  return `Phase ${Math.floor(topicIndex / 5) + 1}`;
 }
 
 function showcaseBlocks(options: {

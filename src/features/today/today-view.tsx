@@ -139,7 +139,9 @@ export function TodayView({
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-4 p-6" {...hintScope}>
+    // `lg:pr-72` reserves the inspector's width: it is an overlay, so nothing
+    // reflows when it appears, and this is what keeps it from covering anything.
+    <div className="mx-auto flex max-w-4xl flex-col gap-4 p-6 lg:pr-72" {...hintScope}>
       <header className="flex flex-wrap items-baseline gap-3">
         <h2 className="text-title1 font-semibold">{formatToday(today)}</h2>
         <p className="text-body text-secondary">

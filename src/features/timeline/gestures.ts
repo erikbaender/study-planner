@@ -15,7 +15,7 @@ import {
 } from "./readout";
 import { applyDelta, clampDelta, groupRange, type BarTarget, type DragMode } from "./selection";
 import { daysMoved } from "./geometry";
-import { stopScrollAnimation } from "./motion";
+import { stopScrollAnimation } from "@/ui/motion";
 import { setInteractionHints } from "@/features/workspace/hints";
 import { createRafCoalescer } from "./raf";
 

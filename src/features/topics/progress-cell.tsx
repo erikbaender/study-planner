@@ -140,7 +140,10 @@ export function CompletionCheckbox({
   onChange?: (checked: boolean) => void;
 }) {
   return (
-    <label className="relative grid size-5 shrink-0 place-items-center">
+    // `pointer-events-auto` because the outline lays its rows out under a
+    // full-width selection button and turns pointer events off for everything
+    // that is not a control.
+    <label className="pointer-events-auto relative grid size-5 shrink-0 place-items-center">
       <input
         ref={inputRef}
         data-topic-id={topicId}

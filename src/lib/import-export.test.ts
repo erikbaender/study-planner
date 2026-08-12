@@ -39,7 +39,6 @@ const fixture = () =>
                 id: "topic_a",
                 courseId: "course_a",
                 name: "Glycolysis",
-                section: "Metabolism",
                 unit: "pages",
                 totalUnits: 120,
                 completedUnits: 30,
@@ -60,7 +59,6 @@ const fixture = () =>
                 id: "topic_b",
                 courseId: "course_a",
                 name: "Citric acid cycle",
-                section: "Metabolism",
                 unit: "pages",
                 totalUnits: 80,
                 order: 1,
@@ -108,6 +106,7 @@ describe("serializePlans", () => {
 
   it("stamps the current format version", () => {
     expect(serializePlans(fixture()).version).toBe(EXPORT_VERSION);
+    expect(JSON.stringify(serializePlans(fixture()))).not.toContain("section");
   });
 });
 
@@ -115,6 +114,20 @@ describe("parsePlannerJson", () => {
   it("accepts a document this build wrote", () => {
     const contents = JSON.stringify(serializePlans(fixture(), "2026-07-29T10:00:00Z"));
     expect(parsePlannerJson(contents).plans[0].name).toBe("Winter semester");
+  });
+
+  it("accepts and discards a legacy topic section", () => {
+    const document = serializePlans(fixture(), "2026-07-29T10:00:00Z");
+    const legacy = JSON.parse(JSON.stringify(document)) as {
+      plans: Array<{ courses: Array<{ topics: Array<Record<string, unknown>> }> }>;
+    };
+    legacy.plans[0].courses[0].topics[0].section = "Metabolism";
+
+    const parsed = parsePlannerJson(JSON.stringify(legacy));
+    expect(parsed.plans[0].courses[0].topics[0]).not.toHaveProperty("section");
+    expect(toPlans(parsed, sequentialIdFactory()).plans[0].courses[0].topics[0]).not.toHaveProperty(
+      "section",
+    );
   });
 
   it("fills in every optional field with a default", () => {

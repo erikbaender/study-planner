@@ -1,7 +1,7 @@
 /**
- * The timeline's motion, in JavaScript.
+ * The app's motion, in JavaScript.
  *
- * Scrolling is the one thing on this chart that cannot be animated in CSS — a
+ * Scrolling is the one thing in the app that cannot be animated in CSS — a
  * scroll offset is not a style — and `behavior: "smooth"` is the browser's
  * curve over the browser's duration, neither of which is the app's. Everything
  * here reads `--topic-motion-duration` and `--topic-motion-curve` off the

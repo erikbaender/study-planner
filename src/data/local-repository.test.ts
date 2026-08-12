@@ -242,8 +242,8 @@ describe("topics", () => {
     const ids = await repository.createTopics(
       courseId,
       [
-        { name: "Glycolysis", section: "Metabolism", unit: "slides", totalUnits: 42 },
-        { name: "Krebs cycle", section: "Metabolism", unit: "slides", totalUnits: 38 },
+        { name: "Glycolysis", unit: "slides", totalUnits: 42 },
+        { name: "Krebs cycle", unit: "slides", totalUnits: 38 },
       ],
       "coral",
     );

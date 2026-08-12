@@ -5,26 +5,42 @@ import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   courseColorValue,
   courseProgress,
+  topicProgress,
   type Course,
   type CourseHealth,
+  type Topic,
 } from "@/domain";
 import { Badge, Button, ProgressBar, Separator } from "@/ui";
-import { ColorPicker, DraftText, Header, Row, Section } from "./shared";
+import {
+  ColorPicker,
+  DraftText,
+  InlineText,
+  InspectorHeader,
+  Reference,
+  ReferenceList,
+  Row,
+  Section,
+} from "./shared";
 
 /* ─── Course ────────────────────────────────────────────────────────────── */
 
 export function CourseInspector({
   course,
   health,
+  selectedId,
+  onSelectTopic,
   onDelete,
 }: {
   course: Course;
   health: CourseHealth | undefined;
+  selectedId: string | null;
+  onSelectTopic: (topic: Topic) => void;
   onDelete: () => void;
 }) {
   const repository = useRepository();
   const run = usePlannerRun();
   const progress = courseProgress(course);
+  const tint = courseColorValue(course.color);
 
   const patch = (changes: Partial<{ name: string; code?: string; color: string; notes: string }>) =>
     run(
@@ -39,38 +55,27 @@ export function CourseInspector({
 
   return (
     <>
-      <Header kind="Course">
-        <h2 className="flex items-center gap-2 text-title3 font-semibold">
-          <span
-            aria-hidden="true"
-            className="size-2.5 shrink-0 rounded-full"
-            style={{ background: courseColorValue(course.color) }}
-          />
-          <span className="min-w-0 truncate">{course.name}</span>
-        </h2>
-      </Header>
+      <InspectorHeader
+        kind="Course"
+        entityId={course.id}
+        name={course.name}
+        accent={tint}
+        onCommitName={(name) => name && patch({ name })}
+      >
+        {/* The code sits where a caption would, and is the field for it. */}
+        <InlineText
+          label="Course code"
+          value={course.code ?? ""}
+          placeholder="Add a course code"
+          className="w-full text-callout"
+          onCommit={(code) => patch({ code: code || undefined })}
+        />
+      </InspectorHeader>
 
       <Separator />
 
       <Section>
-        <DraftText label="Name" value={course.name} onCommit={(name) => patch({ name })} />
-        <DraftText
-          label="Code"
-          value={course.code ?? ""}
-          placeholder="e.g. BIO-201"
-          onCommit={(code) => patch({ code: code || undefined })}
-        />
-        <ColorPicker value={course.color} onChange={(color) => patch({ color })} />
-      </Section>
-
-      <Separator />
-
-      <Section title="Progress">
-        <ProgressBar
-          ratio={progress.ratio}
-          label={`${course.name} progress`}
-          tint={courseColorValue(course.color)}
-        />
+        <ProgressBar ratio={progress.ratio} label={`${course.name} progress`} tint={tint} />
         <Row label="Done">
           {progress.totalUnits > 0
             ? `${progress.completedUnits} / ${progress.totalUnits} units`
@@ -78,7 +83,6 @@ export function CourseInspector({
               // and reporting that as complete would be a fabrication.
               "No sizes recorded yet"}
         </Row>
-        <Row label="Topics">{course.topics.length}</Row>
         {health?.pace ? (
           <>
             <Row label="Pace">
@@ -104,9 +108,46 @@ export function CourseInspector({
           </>
         ) : (
           <Row label="Pace">
-            <span className="text-secondary">No upcoming exam to measure against</span>
+            <span className="text-tertiary">No upcoming exam to measure against</span>
           </Row>
         )}
+      </Section>
+
+      <Separator />
+
+      <Section title={`Topics · ${course.topics.length}`}>
+        {/* The course's own material, as references rather than as a number.
+            Clicking one takes the panel to it — the same move the outline makes,
+            available from wherever you happen to be. */}
+        <div className="-mx-2 max-h-64 overflow-y-auto">
+          <ReferenceList
+            label={`Topics in ${course.name}`}
+            empty="No topics yet. Add them in the outline, or paste a lecture list."
+          >
+            {course.topics.map((topic) => (
+              <Reference
+                key={topic.id}
+                title={topic.name}
+                accent={courseColorValue(topic.color || course.color)}
+                selected={topic.id === selectedId}
+                meta={
+                  // `null` means the topic has no stated size, and a percentage
+                  // of an unknown total would be an invention.
+                  topicProgress(topic).ratio === null
+                    ? "no size"
+                    : `${Math.round((topicProgress(topic).ratio ?? 0) * 100)}%`
+                }
+                onSelect={() => onSelectTopic(topic)}
+              />
+            ))}
+          </ReferenceList>
+        </div>
+      </Section>
+
+      <Separator />
+
+      <Section title="Colour">
+        <ColorPicker value={course.color} onChange={(color) => patch({ color })} />
       </Section>
 
       <Separator />

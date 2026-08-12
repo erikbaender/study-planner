@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { toggleRevealSelection, useWorkspace, revealSelection } from "./store";
+import {
+  requestRename,
+  revealSelection,
+  toggleRevealSelection,
+  useWorkspace,
+} from "./store";
 
 const initial = useWorkspace.getState();
 
@@ -9,14 +14,12 @@ beforeEach(() => {
 
 describe("the workspace store", () => {
   it("lands on Today with everything in focus and nothing selected", () => {
-    // Today as the landing view is a signed-off decision, not a default that
-    // happened. The inspector starts closed because an inspector that opens
-    // itself takes a third of the window from someone who has asked nothing.
     const state = useWorkspace.getState();
     expect(state.view).toBe("today");
     expect(state.focus).toEqual({ kind: "all" });
     expect(state.selection).toBeNull();
-    expect(state.inspectorOpen).toBe(false);
+    expect(state.revealBlockId).toBeNull();
+    expect(state.renameRequestId).toBeNull();
   });
 
   it("drops focus and selection when the semester changes", () => {
@@ -51,21 +54,27 @@ describe("the workspace store", () => {
     expect(useWorkspace.getState().selection).toEqual({ kind: "topic", id: "topic_1" });
   });
 
-  it("toggles the inspector both ways", () => {
-    useWorkspace.getState().toggleInspector();
-    expect(useWorkspace.getState().inspectorOpen).toBe(true);
-    useWorkspace.getState().toggleInspector();
-    expect(useWorkspace.getState().inspectorOpen).toBe(false);
-  });
-
-  it("opens the inspector as part of revealing something", () => {
-    // Selecting is nearly always also a request to see it, so the two are one
-    // action rather than two calls every caller has to remember to pair.
+  it("selects something when it is revealed", () => {
     revealSelection({ kind: "course", id: "course_1" });
 
     const state = useWorkspace.getState();
     expect(state.selection).toEqual({ kind: "course", id: "course_1" });
-    expect(state.inspectorOpen).toBe(true);
+  });
+
+  it("round-trips a block reveal request", () => {
+    useWorkspace.getState().revealBlock("block_1");
+    expect(useWorkspace.getState().revealBlockId).toBe("block_1");
+
+    useWorkspace.getState().revealBlock(null);
+    expect(useWorkspace.getState().revealBlockId).toBeNull();
+  });
+
+  it("round-trips a rename request", () => {
+    requestRename("topic_1");
+    expect(useWorkspace.getState().renameRequestId).toBe("topic_1");
+
+    useWorkspace.getState().setRenameRequest(null);
+    expect(useWorkspace.getState().renameRequestId).toBeNull();
   });
 
   it("clears the current entity when it is selected again", () => {

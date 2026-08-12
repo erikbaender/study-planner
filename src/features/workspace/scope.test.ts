@@ -191,7 +191,7 @@ describe("upcomingExams", () => {
 describe("matchesQuery", () => {
   it("matches case-insensitively across the fields it is given", () => {
     expect(matchesQuery("gly", "Glycolysis", undefined)).toBe(true);
-    expect(matchesQuery("BLOCK", "Glycolysis", "Block 1")).toBe(true);
+    expect(matchesQuery("BLOCK", "Glycolysis")).toBe(false);
   });
 
   it("matches everything on an empty or whitespace query", () => {

@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   memo,
   useMemo,
@@ -77,6 +78,7 @@ import {
   hintScope,
   useViewHints,
 } from "@/features/workspace/hints";
+import { useWorkspace } from "@/features/workspace/store";
 import { topicsForQuery } from "@/features/workspace/scope";
 import {
   ExamMarkers,
@@ -332,6 +334,28 @@ function TimelineChart({
     [visibleCourseTopics],
   );
 
+  /**
+   * A block followed here from the inspector's reference list.
+   *
+   * The chart owns its own selection — it can hold bars from several topics at
+   * once, which the workspace's single-entity selection cannot express — so the
+   * request arrives as an id in the store rather than as a selection. One frame
+   * of delay, because switching to the timeline mounts this chart and its own
+   * initial scroll has to land before something else moves the viewport.
+   */
+  const revealBlockId = useWorkspace((state) => state.revealBlockId);
+  useEffect(() => {
+    if (!revealBlockId) return;
+    const frame = requestAnimationFrame(() => {
+      const target = registryRef.current.get(revealBlockId);
+      useWorkspace.getState().revealBlock(null);
+      if (!target) return;
+      selection.set([revealBlockId]);
+      reveal({ startDate: target.block.startDate, endDate: target.block.endDate }, "left");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [revealBlockId, reveal, selection]);
+
   if (courses.length === 0) {
     return <NoTimelineCourses onGoToOutline={onGoToOutline} />;
   }
@@ -394,6 +418,10 @@ function TimelineChart({
           userNavigatedRef.current = true;
           revealInitialChart();
         }}
+        // The chart clears its own selection on its own empty canvas; the
+        // shell's empty-space handler must not fire a second time on top of a
+        // box-select that has just finished.
+        data-keeps-selection
         className="timeline-scrollport min-h-0 flex-1 overflow-auto bg-content"
       >
         <div

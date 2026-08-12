@@ -34,7 +34,7 @@ export function TopicRow({
   topic: Topic;
   today: string;
   selected?: boolean;
-  /** Shown before the name — the section in the outline, the course in Today. */
+  /** Optional context shown before the name. */
   prefix?: string;
   courseId: string;
   courseColor: string;

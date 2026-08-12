@@ -194,12 +194,12 @@ export function matchesQuery(query: string, ...fields: Array<string | undefined>
 export function courseMatchesQuery(query: string, course: Course): boolean {
   return (
     matchesQuery(query, course.name, course.code) ||
-    course.topics.some((topic) => matchesQuery(query, topic.name, topic.section))
+    course.topics.some((topic) => matchesQuery(query, topic.name))
   );
 }
 
 /** Keep all topics for a course-name match; otherwise narrow to matching topics. */
 export function topicsForQuery(query: string, course: Course): Topic[] {
   if (matchesQuery(query, course.name, course.code)) return [...course.topics];
-  return course.topics.filter((topic) => matchesQuery(query, topic.name, topic.section));
+  return course.topics.filter((topic) => matchesQuery(query, topic.name));
 }

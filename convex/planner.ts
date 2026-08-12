@@ -450,7 +450,6 @@ export const createTopic = mutation({
   args: {
     courseId: v.id("courses"),
     name: v.string(),
-    section: v.optional(v.string()),
     unit: v.optional(unitValidator),
     totalUnits: v.optional(v.number()),
     priority: v.optional(priorityValidator),
@@ -467,7 +466,6 @@ export const createTopic = mutation({
     return await ctx.db.insert("topics", {
       courseId: args.courseId,
       name: args.name,
-      section: args.section,
       unit: args.unit ?? "slides",
       totalUnits,
       completedUnits: 0,
@@ -490,7 +488,6 @@ export const createTopics = mutation({
     topics: v.array(
       v.object({
         name: v.string(),
-        section: v.optional(v.string()),
         unit: unitValidator,
         totalUnits: v.number(),
       }),
@@ -510,7 +507,6 @@ export const createTopics = mutation({
         await ctx.db.insert("topics", {
           courseId: args.courseId,
           name: topic.name,
-          section: topic.section,
           unit: topic.unit,
           totalUnits: topic.totalUnits,
           completedUnits: 0,
@@ -534,7 +530,6 @@ export const updateTopic = mutation({
   args: {
     topicId: v.id("topics"),
     name: v.string(),
-    section: v.optional(v.string()),
     unit: unitValidator,
     totalUnits: v.number(),
     completedUnits: v.number(),
@@ -549,7 +544,6 @@ export const updateTopic = mutation({
     assertProgress(args.completedUnits, args.totalUnits);
     await ctx.db.patch(args.topicId, {
       name: args.name,
-      section: args.section,
       unit: args.unit,
       totalUnits: args.totalUnits,
       completedUnits: args.completedUnits,
@@ -782,7 +776,6 @@ const importBlock = v.object({
 });
 const importTopic = v.object({
   name: v.string(),
-  section: v.optional(v.string()),
   unit: unitValidator,
   totalUnits: v.number(),
   completedUnits: v.number(),
@@ -934,7 +927,6 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
         const topicId = await ctx.db.insert("topics", {
           courseId,
           name: topicInput.name,
-          section: topicInput.section,
           unit: topicInput.unit,
           totalUnits: topicInput.totalUnits,
           completedUnits: topicInput.completedUnits,

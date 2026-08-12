@@ -67,8 +67,6 @@ export type Topic = {
   id: EntityId;
   courseId: EntityId;
   name: string;
-  /** Optional display grouping ("Block 1", "Lectures 1–6"). Not a hierarchy level. */
-  section?: string;
   unit: Unit;
   /** `0` means the topic's size is untracked; it is then excluded from pace maths. */
   totalUnits: number;

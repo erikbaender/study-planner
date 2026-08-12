@@ -1,22 +1,34 @@
 "use client";
 
 /**
- * Outline — the setup workhorse.
+ * Outline — where the material lives.
  *
- * One disclosure group per course, each holding its exams and an editable table
- * of its topics. Groups start collapsed unless the course is the only one in
- * focus or the one being inspected: with ten courses of forty topics, expanding
- * everything by default would render four hundred rows nobody asked for, and
- * scrolling past nine courses to reach the tenth is not navigation.
+ * One card per course, holding its topics, its exam dates and the two actions
+ * that fill a course with material. This is the view you are in when you are
+ * *managing* topics: adding them, removing them, moving their progress, and
+ * picking one out to change in the inspector. It is deliberately not the view
+ * for arranging time — the timeline does that far better than a list of dates
+ * ever could, and trying to do both here is what turned the old outline into a
+ * spreadsheet.
  *
- * Bulk paste lives in a sheet rather than in a box at the foot of every course.
- * It is the fastest way to enter a semester and it is used perhaps twice a
- * term, and a permanently-open text area that large made the outline look like
- * a form when it is meant to look like material.
+ * Two rules the layout follows, both learned the hard way:
+ *
+ * - **Density is the design.** A semester is seven courses of forty topics. A
+ *   card with four-pixel-heavier padding costs three hundred pixels of screen
+ *   across a term's worth of material, and the outline stops being something
+ *   you can see and becomes something you scroll. Every measurement here is the
+ *   smallest one that still reads.
+ * - **A control does one thing.** The triangle opens the course. The heading
+ *   selects it. Neither does the other's job, and — critically — neither is
+ *   *implied* by anything else: expansion used to follow the selection, so
+ *   opening a course by hand and then selecting a different one silently
+ *   reversed it, which reads as a disclosure that works on some courses and not
+ *   on others. It is now stored, explicit, and answers only to the triangle.
  */
 
-import { useState } from "react";
-import { ChevronRight, ClipboardPaste, PanelRight, Plus, Trash2 } from "lucide-react";
+import { clsx } from "clsx";
+import { useLayoutEffect, useMemo, useState } from "react";
+import { CalendarPlus, ChevronRight, ClipboardPaste, Plus, Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
@@ -35,7 +47,7 @@ import {
 import {
   Badge,
   Button,
-  Card,
+  Collapse,
   ContextMenu,
   CountdownBadge,
   EmptyState,
@@ -45,18 +57,23 @@ import {
   Sheet,
   TextArea,
   TextField,
+  useListPresence,
 } from "@/ui";
-import { TopicTable } from "./topic-table";
+import { useDisclosure } from "@/ui/row-motion";
+import { TopicList } from "./topic-list";
 import { AutoPlanButton } from "@/features/planning/planning-actions";
 import { clickHint, hintScope, hintTarget, useViewHints, type InputHint } from "@/features/workspace/hints";
 import { topicsForQuery } from "@/features/workspace/scope";
+import { requestRename, revealSelection, useWorkspace } from "@/features/workspace/store";
 
 /** What the pointer does here, for the toolbar's hint bar. */
 const OUTLINE_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Select or edit" },
+  { button: "left", label: "Select topic" },
   { button: "left", label: "Set progress", drag: true },
   { button: "right", label: "Actions" },
 ];
+
+const courseKey = (course: Course) => course.id;
 
 export function OutlineView({
   courses,
@@ -86,65 +103,62 @@ export function OutlineView({
   onNewCourse: () => void;
 }) {
   useViewHints(OUTLINE_HINTS);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  // Selecting a course in the sidebar should reveal its material rather than
-  // leave you hunting for a triangle.
-  const isDefaultOpen = (course: Course) => courses.length === 1 || course.id === selectedId;
-
-  if (courses.length === 0) {
-    return (
-      <div className="h-full" {...hintScope}>
-        <EmptyState
-          title="No courses in focus"
-          description="Add a course, or widen the focus in the sidebar to see the ones you have."
-          action={
-            <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
-              New course
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
+  // Courses filtered out by the sidebar or the search field leave the way rows
+  // leave the chart — fading, then collapsing — rather than vanishing between
+  // two frames. `useListPresence` keeps them mounted for exactly that long.
+  const cards = useListPresence(courses, courseKey);
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6" {...hintScope}>
-      {courses.map((course) => (
-        <CourseSection
-          key={course.id}
-          course={course}
-          health={health.get(course.id)}
-          today={today}
-          query={query}
-          snapshot={snapshot}
-          selectedId={selectedId}
-          open={expanded[course.id] ?? isDefaultOpen(course)}
-          onToggle={() =>
-            setExpanded((current) => ({
-              ...current,
-              [course.id]: !(current[course.id] ?? isDefaultOpen(course)),
-            }))
-          }
-          onSelectCourse={() => onSelectCourse(course)}
-          onSelectTopic={(topic) => onSelectTopic(course, topic)}
-          onSelectExam={(exam) => onSelectExam(course, exam)}
-          onDeleteTopic={(topic) => onDeleteTopic(course, topic)}
-          onDeleteCourse={() => onDeleteCourse(course)}
-        />
-      ))}
+    // The reserved gutter on the right is the width of the inspector. The panel
+    // is an overlay — it must not resize the view it is describing, because a
+    // column that reflows the instant you select something moves the very row
+    // you clicked out from under the pointer — so the space it will occupy is
+    // simply never used for content.
+    <div className="h-full lg:pr-72" {...hintScope}>
+      {/* `min-h-full`, so the space below the last card is still the view and a
+          click there clears the selection. */}
+      <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-2 p-5">
+        {cards.map(({ key, item, present, appear }) => (
+          <Collapse key={key} present={present} appear={appear}>
+            <CourseCard
+              course={item}
+              health={health.get(item.id)}
+              today={today}
+              query={query}
+              snapshot={snapshot}
+              selectedId={selectedId}
+              onSelectCourse={() => onSelectCourse(item)}
+              onSelectTopic={(topic) => onSelectTopic(item, topic)}
+              onSelectExam={(exam) => onSelectExam(item, exam)}
+              onDeleteTopic={(topic) => onDeleteTopic(item, topic)}
+              onDeleteCourse={() => onDeleteCourse(item)}
+            />
+          </Collapse>
+        ))}
+
+        <Collapse present={courses.length === 0}>
+          <EmptyState
+            title="No courses in focus"
+            description="Add a course, or widen the focus in the sidebar to see the ones you have."
+            action={
+              <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
+                New course
+              </Button>
+            }
+          />
+        </Collapse>
+      </div>
     </div>
   );
 }
 
-function CourseSection({
+function CourseCard({
   course,
   health,
   today,
   query,
   snapshot,
   selectedId,
-  open,
-  onToggle,
   onSelectCourse,
   onSelectTopic,
   onSelectExam,
@@ -157,8 +171,6 @@ function CourseSection({
   query: string;
   snapshot: PlannerSnapshot;
   selectedId: string | null;
-  open: boolean;
-  onToggle: () => void;
   onSelectCourse: () => void;
   onSelectTopic: (topic: Topic) => void;
   onSelectExam: (exam: Exam) => void;
@@ -168,147 +180,239 @@ function CourseSection({
   const repository = useRepository();
   const run = usePlannerRun();
   const [pasting, setPasting] = useState(false);
+  const collapsed = useWorkspace((state) => state.collapsedCourseIds.includes(course.id));
+  const toggleCollapsed = useWorkspace((state) => state.toggleCourseCollapsed);
   const progress = courseProgress(course);
-  const topics = topicsForQuery(query, course);
+  const selected = course.id === selectedId;
+  const tint = courseColorValue(course.color);
+  // Memoized because `TopicList` animates arrivals and departures, and that
+  // merge is keyed on this array's identity — a fresh one per render would
+  // never settle.
+  const topics = useMemo(() => topicsForQuery(query, course), [query, course]);
+  const disclosure = useDisclosure(!collapsed);
+  const percent = progress.ratio === null ? null : Math.round(progress.ratio * 100);
 
-  const addRow = (section: string | undefined) =>
+  /**
+   * Add a topic, select it, and put the caret in its name.
+   *
+   * A new row is never the thing you wanted — it is a placeholder for the thing
+   * you were about to type. Creating it, opening the inspector on it and
+   * selecting its name is one gesture from the student's side, so it is one
+   * action here rather than three clicks in a row.
+   */
+  const addTopic = () =>
     run(
-      repository.createTopic(course.id, {
-        // Named for what it is rather than left blank: an untitled row in a
-        // table of forty is indistinguishable from a rendering bug, and the
-        // name field is focused for typing over anyway.
-        name: "New topic",
-        section,
-        unit: course.topics.at(-1)?.unit ?? "slides",
-        color: course.color,
-      }),
+      repository
+        .createTopic(course.id, {
+          // Named for what it is rather than left blank: an untitled row in a
+          // list of forty is indistinguishable from a rendering bug.
+          name: "New topic",
+          unit: course.topics.at(-1)?.unit ?? "slides",
+          color: course.color,
+        })
+        .then((topicId) => {
+          revealSelection({ kind: "topic", id: topicId });
+          requestRename(topicId);
+        }),
     );
 
   return (
     <ContextMenu
       items={[
-        { label: "Show in inspector", icon: <PanelRight />, onSelect: onSelectCourse },
-        { label: "Add topic", icon: <Plus />, onSelect: () => addRow(undefined) },
+        { label: "Add topic", icon: <Plus />, onSelect: addTopic },
+        { label: "Paste outline", icon: <ClipboardPaste />, onSelect: () => setPasting(true) },
         { type: "separator" },
         { label: "Delete course", icon: <Trash2 />, danger: true, onSelect: onDeleteCourse },
       ]}
     >
-      <Card className="flex flex-col gap-3">
-      <header className="flex items-center gap-3">
-        {/* The heading is the disclosure control, both ways. It used to open the
-            course and then do nothing on a second click, because the click was
-            wired to selection instead — a triangle that only turns one way.
-            Inspecting the course is available from the right-click menu. */}
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-chip text-left"
-        >
-          <ChevronRight
-            aria-hidden="true"
-            className={`size-3.5 shrink-0 text-secondary transition-transform duration-150 ease-mac ${open ? "rotate-90" : ""}`}
-          />
-          <span
-            aria-hidden="true"
-            className="size-2.5 shrink-0 rounded-full"
-            style={{ background: courseColorValue(course.color) }}
-          />
-          <h2 className="min-w-0 truncate text-title3 font-semibold">{course.name}</h2>
-        </button>
-        <ProgressBar
-          ratio={progress.ratio}
-          label={`${course.name} progress`}
-          tint={courseColorValue(course.color)}
-          className="w-28 shrink-0"
+      <section
+        data-course-id={course.id}
+        className={clsx(
+          "tint relative overflow-hidden rounded-card border bg-content",
+          selected ? "border-accent" : "border-separator",
+        )}
+      >
+        {/* The course's colour as a rail rather than a dot. A dot is a label; a
+            rail down the whole card is what tells you, while you are reading a
+            topic thirty rows down, which course you are still inside. */}
+        <span
+          aria-hidden="true"
+          className="tint absolute inset-y-0 left-0 w-[3px]"
+          style={{ background: tint, opacity: selected ? 1 : 0.65 }}
         />
-        <span className="w-28 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary">
-          {progress.totalUnits > 0
-            ? `${progress.completedUnits} / ${progress.totalUnits}`
-            : "No sizes"}
-        </span>
-        {health?.exam && health.daysUntilExam !== null ? (
-          <CountdownBadge
-            days={health.daysUntilExam}
-            provisional={health.exam.status === "provisional"}
-            atRisk={Boolean(health.pace && !health.pace.onTrack)}
+
+        <div className="relative pl-[3px]" data-keeps-selection>
+          <button
+            type="button"
+            aria-pressed={selected}
+            aria-label={`Select ${course.name}`}
+            onClick={onSelectCourse}
+            className={clsx(
+              "tint absolute inset-0 focus-visible:outline-2 focus-visible:-outline-offset-2",
+              selected ? "bg-accent-soft" : "hover:bg-fill/50",
+            )}
           />
+
+          <header className="pointer-events-none relative flex h-9 items-center gap-2.5 pr-3 pl-2">
+            <button
+              type="button"
+              onClick={() => toggleCollapsed(course.id)}
+              aria-expanded={!collapsed}
+              aria-label={`${collapsed ? "Expand" : "Collapse"} ${course.name}`}
+              className="tint pointer-events-auto grid size-5 shrink-0 place-items-center rounded-chip text-tertiary hover:bg-fill-strong hover:text-secondary"
+            >
+              <ChevronRight
+                aria-hidden="true"
+                className={clsx(
+                  "size-3.5 transition-transform duration-[--topic-motion-duration] ease-[cubic-bezier(0.65,0,0.35,1)]",
+                  !collapsed && "rotate-90",
+                )}
+              />
+            </button>
+
+            <h2 className="min-w-0 flex-1 truncate text-title3 font-semibold">{course.name}</h2>
+
+            {course.code ? (
+              <span className="hidden shrink-0 text-callout text-tertiary tabular-nums sm:inline">
+                {course.code}
+              </span>
+            ) : null}
+
+            <span className="hidden shrink-0 text-callout tabular-nums text-tertiary md:inline">
+              {course.topics.length} topic{course.topics.length === 1 ? "" : "s"}
+            </span>
+
+            <span className="w-8 shrink-0 text-right text-callout tabular-nums text-secondary">
+              {percent === null ? "—" : `${percent}%`}
+            </span>
+
+            <ProgressBar
+              ratio={progress.ratio}
+              label={`${course.name} progress`}
+              tint={tint}
+              size="sm"
+              className="hidden w-20 shrink-0 sm:block"
+            />
+
+            {health?.exam && health.daysUntilExam !== null ? (
+              <CountdownBadge
+                days={health.daysUntilExam}
+                provisional={health.exam.status === "provisional"}
+                atRisk={Boolean(health.pace && !health.pace.onTrack)}
+              />
+            ) : null}
+          </header>
+        </div>
+
+        {disclosure.mounted ? (
+          <CardBody expanded={disclosure.expanded}>
+            <div className="border-t border-separator pl-[3px]">
+              <div className="px-2 py-1">
+                {topics.length > 0 || course.topics.length === 0 ? (
+                  <TopicList
+                    course={course}
+                    topics={topics}
+                    today={today}
+                    selectedId={selectedId}
+                    onSelect={onSelectTopic}
+                    onDelete={onDeleteTopic}
+                    onAddRow={addTopic}
+                  />
+                ) : (
+                  <p className="px-2 py-3 text-callout text-tertiary">
+                    No topic matches “{query.trim()}”.
+                  </p>
+                )}
+              </div>
+
+              <div
+                className="flex flex-wrap items-center gap-1.5 border-t border-separator px-2 py-1.5"
+                data-keeps-selection
+              >
+                <ExamChips
+                  course={course}
+                  today={today}
+                  selectedId={selectedId}
+                  onSelect={onSelectExam}
+                  onDelete={(exam) => run(repository.deleteExam(exam.id))}
+                  onCreate={(input) => run(repository.createExam(course.id, input))}
+                />
+
+                <span className="ml-auto flex items-center gap-1.5">
+                  <Button size="sm" leadingIcon={<ClipboardPaste />} onClick={() => setPasting(true)}>
+                    Paste outline
+                  </Button>
+                  <AutoPlanButton course={course} snapshot={snapshot} today={today} />
+                </span>
+              </div>
+            </div>
+          </CardBody>
         ) : null}
 
-      </header>
-
-      {open ? (
-        <>
-          <ExamRow
-            course={course}
-            today={today}
-            selectedId={selectedId}
-            onSelect={onSelectExam}
-            onDelete={(exam) => run(repository.deleteExam(exam.id))}
-            onCreate={(input) => run(repository.createExam(course.id, input))}
-          />
-
-          {topics.length > 0 ? (
-            <TopicTable
-              course={course}
-              topics={topics}
-              today={today}
-              selectedId={selectedId}
-              onSelect={onSelectTopic}
-              onDelete={onDeleteTopic}
-              onAddRow={addRow}
-            />
-          ) : course.topics.length > 0 ? (
-            <p className="px-2 py-4 text-body text-secondary">
-              No topic matches “{query.trim()}”.
-            </p>
-          ) : (
-            <p className="px-2 py-4 text-body text-secondary">
-              No topics yet. Paste your lecture list — it is far quicker than adding them one at a
-              time.
-            </p>
-          )}
-
-          <div className="flex items-center gap-2 border-t border-separator pt-3">
-            <Button leadingIcon={<Plus />} onClick={() => addRow(course.topics.at(-1)?.section)}>
-              Add topic
-            </Button>
-            <Button
-              variant="accent"
-              leadingIcon={<ClipboardPaste />}
-              onClick={() => setPasting(true)}
-            >
-              Paste outline
-            </Button>
-            <span className="ml-auto">
-              <AutoPlanButton course={course} snapshot={snapshot} today={today} />
-            </span>
-          </div>
-
-          <BulkEntrySheet
-            open={pasting}
-            onOpenChange={setPasting}
-            course={course}
-            onSubmit={(newTopics) => {
-              run(repository.createTopics(course.id, newTopics, course.color));
-              setPasting(false);
-            }}
-          />
-        </>
-      ) : null}
-      </Card>
+        <BulkEntrySheet
+          open={pasting}
+          onOpenChange={setPasting}
+          course={course}
+          onSubmit={(newTopics) => {
+            run(repository.createTopics(course.id, newTopics, course.color));
+            setPasting(false);
+          }}
+        />
+      </section>
     </ContextMenu>
+  );
+}
+
+/**
+ * A course opening and closing.
+ *
+ * The height is measured rather than computed: the rows are a known height, but
+ * the exam line wraps, the action bar does not, and a card that animates to a
+ * height its contents disagree with either clips its last row or leaves a strip
+ * of empty card under it. Measuring is one layout read per change of contents,
+ * against a mistake that is visible on every single open.
+ */
+function CardBody({ expanded, children }: { expanded: boolean; children: React.ReactNode }) {
+  const [height, setHeight] = useState(0);
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (!content) return;
+    const measure = () => setHeight(content.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    // Re-measured as the contents change, so a topic filtered out of an open
+    // course shrinks the card by exactly as much as the row it removed.
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [content]);
+
+  return (
+    <div
+      className="outline-disclosure"
+      // `auto` until the contents have been measured, so a card that is simply
+      // open on arrival is open — it does not grow into place. Committing a
+      // height of zero first and correcting it afterwards is a transition, and
+      // a view that plays one for every card the moment you switch to it is a
+      // splash screen.
+      style={{ height: expanded ? (height === 0 ? undefined : height) : 0 }}
+    >
+      <div ref={setContent}>{children}</div>
+    </div>
   );
 }
 
 /* ─── Exams ─────────────────────────────────────────────────────────────── */
 
 /**
- * Exams sit on one line above the table rather than in a card of their own.
- * A course usually has one, and giving one date its own panel above forty
- * topics gave it the visual weight of the whole course.
+ * Exams sit in the card's footer beside the actions rather than above the
+ * topics. A course usually has one date, and a line of its own above forty
+ * rows gave one number the visual weight of the whole course; the countdown in
+ * the header is what answers "when" at a glance, and this is where you go to
+ * change it.
  */
-function ExamRow({
+function ExamChips({
   course,
   today,
   selectedId,
@@ -324,49 +428,45 @@ function ExamRow({
   onCreate: (input: { name: string; startDate: string; endDate?: string }) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const chips = useListPresence(course.exams, (exam) => exam.id);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {course.exams.length === 0 ? (
-        <p className="text-callout text-secondary">
-          No exam date yet — a provisional window is enough to plan backwards from.
-        </p>
-      ) : (
-        course.exams.map((exam) => (
-          <span key={exam.id} className="group flex items-center gap-1.5">
+    <>
+      {chips.map(({ key, item: exam, present, appear }) => (
+        <Collapse key={key} present={present} appear={appear} className="shrink-0">
+          <span className="group flex items-center">
             <button
               type="button"
               onClick={() => onSelect(exam)}
-              aria-current={exam.id === selectedId ? "true" : undefined}
-              className="flex items-center gap-1.5 rounded-chip px-1 py-0.5 text-callout hover:bg-fill"
+              aria-pressed={exam.id === selectedId}
+              className={clsx(
+                "tint flex items-center gap-1.5 rounded-chip py-0.5 pr-1.5 pl-2 text-callout",
+                exam.id === selectedId ? "bg-accent-soft" : "hover:bg-fill",
+              )}
             >
               <span className="truncate">{exam.name}</span>
-              <span className="tabular-nums text-secondary">
+              <span className="tabular-nums text-tertiary">
                 {exam.status === "provisional" && exam.endDate
                   ? `${exam.startDate} – ${exam.endDate}`
                   : exam.startDate}
               </span>
-              {exam.status === "provisional" ? (
-                <Badge tone="warning">
-                  Provisional
-                </Badge>
-              ) : null}
+              {exam.status === "provisional" ? <Badge tone="warning">Provisional</Badge> : null}
             </button>
             <IconButton
               size="sm"
               label={`Delete ${exam.name}`}
               icon={<Trash2 />}
               onClick={() => onDelete(exam)}
-              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              className="tint opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
             />
           </span>
-        ))
-      )}
+        </Collapse>
+      ))}
 
       <IconButton
         size="sm"
         label={`Add an exam to ${course.name}`}
-        icon={<Plus />}
+        icon={<CalendarPlus />}
         onClick={() => setAdding(true)}
         {...hintTarget(clickHint("Add an exam date"))}
       />
@@ -381,7 +481,7 @@ function ExamRow({
           setAdding(false);
         }}
       />
-    </div>
+    </>
   );
 }
 
@@ -470,9 +570,7 @@ function BulkEntrySheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   course: Course;
-  onSubmit: (
-    topics: Array<{ name: string; section?: string; unit: Unit; totalUnits: number }>,
-  ) => void;
+  onSubmit: (topics: Array<{ name: string; unit: Unit; totalUnits: number }>) => void;
 }) {
   const [text, setText] = useState("");
   const [unit, setUnit] = useState<Unit>(course.topics.at(-1)?.unit ?? "slides");
@@ -490,7 +588,7 @@ function BulkEntrySheet({
       onOpenChange={onOpenChange}
       width="lg"
       title={`Paste an outline into ${course.name}`}
-      description="One topic per line. Indent under a heading to group them, and add “— 42 slides” to record size."
+      description="One topic per line. Add “— 42 slides” to a line to record how big it is."
       footer={
         <>
           {course.topics.length > 0 ? (
@@ -506,7 +604,6 @@ function BulkEntrySheet({
               onSubmit(
                 parsed.topics.map((topic) => ({
                   name: topic.name,
-                  section: topic.section,
                   unit: topic.unit,
                   totalUnits: topic.totalUnits,
                 })),
@@ -524,7 +621,7 @@ function BulkEntrySheet({
           hideLabel
           rows={10}
           autoFocus
-          placeholder={"Block 1\n  Glycolysis — 42 slides\n  Citric acid cycle — 38\n\nBlock 2\n  Lipid metabolism — 61"}
+          placeholder={"Glycolysis — 42 slides\nCitric acid cycle — 38\nLipid metabolism — 61"}
           value={text}
           onChange={(event) => setText(event.target.value)}
           className="font-mono"
@@ -556,13 +653,10 @@ function BulkEntrySheet({
             <ul className="flex max-h-56 flex-col overflow-y-auto rounded-control bg-content-alt p-2">
               {parsed.topics.map((topic, index) => (
                 <li
-                  key={`${topic.section ?? ""}-${topic.name}-${index}`}
+                  key={`${topic.name}-${index}`}
                   className="flex items-baseline gap-2 px-1 py-0.5 text-body"
                 >
-                  <span className="min-w-0 flex-1 truncate">
-                    {topic.section ? <span className="text-tertiary">{topic.section} · </span> : null}
-                    {topic.name}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate">{topic.name}</span>
                   <span className="shrink-0 text-callout tabular-nums text-secondary">
                     {topic.totalUnits > 0
                       ? `${topic.totalUnits} ${UNIT_LABELS[topic.unit].plural}`

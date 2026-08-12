@@ -66,8 +66,6 @@ export default defineSchema({
   topics: defineTable({
     courseId: v.id("courses"),
     name: v.string(),
-    /** Optional display grouping, not a hierarchy level. */
-    section: v.optional(v.string()),
     unit,
     /** `0` means the size is untracked; such topics are excluded from pace maths. */
     totalUnits: v.number(),

@@ -67,7 +67,6 @@ function toTopic(topic: PlanTree["courses"][number]["topics"][number]): Topic {
     id: topic._id,
     courseId: topic.courseId,
     name: topic.name,
-    section: topic.section,
     unit: topic.unit,
     totalUnits: topic.totalUnits,
     completedUnits: topic.completedUnits,

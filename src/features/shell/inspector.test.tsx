@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
@@ -25,6 +25,11 @@ vi.mock("@/data/use-repository", () => ({
 }));
 
 const TODAY = "2026-05-01";
+const inspectorNavigation = {
+  onSelectCourse: vi.fn(),
+  onSelectTopic: vi.fn(),
+  onRevealBlock: vi.fn(),
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -40,15 +45,22 @@ function healthFor(course: Parameters<typeof assessCourse>[0]["course"]): Map<st
 }
 
 describe("Inspector", () => {
-  it("says nothing is selected rather than showing an empty form", () => {
-    render(<Inspector selection={null} health={new Map()} today={TODAY} onDelete={vi.fn()} />);
-    expect(screen.getByText(/Nothing selected/)).toBeInTheDocument();
+  it("renders no inspector content when nothing is selected", () => {
+    render(
+      <Inspector
+        {...inspectorNavigation}
+        selection={null}
+        health={new Map()}
+        today={TODAY}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeEmptyDOMElement();
   });
 
   describe("a topic", () => {
     const topic = makeTopic({
       name: "Glycolysis",
-      section: "Block 1",
       totalUnits: 100,
       completedUnits: 40,
       notes: "Skip the appendix",
@@ -59,6 +71,7 @@ describe("Inspector", () => {
     function renderTopic() {
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={selection}
           health={healthFor(course)}
           today={TODAY}
@@ -111,8 +124,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       renderTopic();
 
-      await user.click(screen.getByRole("combobox", { name: "Priority" }));
-      await user.click(screen.getByRole("option", { name: "High" }));
+      await user.click(screen.getByRole("radio", { name: "High" }));
 
       expect(repository.updateTopic).toHaveBeenCalledWith(
         topic.id,
@@ -124,7 +136,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       renderTopic();
 
-      const field = screen.getByLabelText("Name");
+      const field = screen.getByLabelText("Topic name");
       await user.clear(field);
       await user.type(field, "Glycolysis I");
       expect(repository.updateTopic).not.toHaveBeenCalled();
@@ -141,7 +153,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       renderTopic();
 
-      const field = screen.getByLabelText("Name");
+      const field = screen.getByLabelText("Topic name");
       await user.type(field, " and friends{Escape}");
 
       expect(field).toHaveValue("Glycolysis");
@@ -152,7 +164,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       renderTopic();
 
-      await user.click(screen.getByLabelText("Name"));
+      await user.click(screen.getByLabelText("Topic name"));
       await user.tab();
 
       expect(repository.updateTopic).not.toHaveBeenCalled();
@@ -164,6 +176,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "topic", course: dependentCourse, topic }}
           health={healthFor(dependentCourse)}
           today={TODAY}
@@ -174,6 +187,36 @@ describe("Inspector", () => {
       await user.click(screen.getByRole("checkbox", { name: "Cell biology" }));
       expect(repository.setTopicDependencies).toHaveBeenCalledWith(topic.id, [prerequisite.id]);
     });
+
+    it("reveals a study block when its reference is clicked", async () => {
+      const block = {
+        id: "block_1",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "manual" as const,
+      };
+      const scheduledTopic = makeTopic({ name: "Glycolysis", blocks: [block] });
+      const scheduledCourse = makeCourse({ name: "Biochemistry", topics: [scheduledTopic] });
+      const onRevealBlock = vi.fn();
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          onRevealBlock={onRevealBlock}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          health={healthFor(scheduledCourse)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      const references = screen.getByRole("list", { name: "Study blocks for Glycolysis" });
+      await user.click(within(references).getByRole("button"));
+
+      expect(onRevealBlock).toHaveBeenCalledWith(block);
+    });
   });
 
   describe("a topic with no size", () => {
@@ -183,6 +226,7 @@ describe("Inspector", () => {
     it("offers no slider, because there is no scale to slide along", () => {
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "topic", course, topic }}
           health={healthFor(course)}
           today={TODAY}
@@ -191,10 +235,6 @@ describe("Inspector", () => {
       );
 
       expect(screen.queryByRole("slider")).not.toBeInTheDocument();
-      const bar = screen.getByRole("progressbar", { name: "Reading list progress" });
-      // Indeterminate, not zero: nobody has said how big this is.
-      expect(bar).not.toHaveAttribute("aria-valuenow");
-      expect(bar).toHaveAttribute("aria-valuetext", "Size not set");
     });
   });
 
@@ -208,6 +248,7 @@ describe("Inspector", () => {
     it("shows the pace it can measure", () => {
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "course", course }}
           health={healthFor(course)}
           today={TODAY}
@@ -225,6 +266,7 @@ describe("Inspector", () => {
       const undated = makeCourse({ name: "Elective", topics: [makeTopic({ totalUnits: 10 })] });
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "course", course: undated }}
           health={healthFor(undated)}
           today={TODAY}
@@ -239,6 +281,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "course", course }}
           health={healthFor(course)}
           today={TODAY}
@@ -251,6 +294,26 @@ describe("Inspector", () => {
         course.id,
         expect.objectContaining({ color: "violet", name: "Biochemistry" }),
       );
+    });
+
+    it("selects a topic when its course reference is clicked", async () => {
+      const user = userEvent.setup();
+      const onSelectTopic = vi.fn();
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          onSelectTopic={onSelectTopic}
+          selection={{ kind: "course", course }}
+          health={healthFor(course)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      const references = screen.getByRole("list", { name: "Topics in Biochemistry" });
+      await user.click(within(references).getByRole("button", { name: /^Topic/ }));
+
+      expect(onSelectTopic).toHaveBeenCalledWith(course, course.topics[0]);
     });
   });
 
@@ -266,6 +329,7 @@ describe("Inspector", () => {
 
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "exam", course, exam }}
           health={healthFor(course)}
           today={TODAY}
@@ -291,6 +355,7 @@ describe("Inspector", () => {
 
     render(
       <Inspector
+        {...inspectorNavigation}
         selection={{ kind: "topic", course, topic }}
         health={healthFor(course)}
         today={TODAY}

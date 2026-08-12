@@ -385,6 +385,7 @@ span:has(> .topic-progress-thumb) {
 }
 
 /** Everything that changes colour rather than position: hover, selection, fades. */
+.tint,
 .timeline-tint {
   transition:
     background-color var(--topic-motion-duration) var(--topic-motion-curve),
@@ -527,11 +528,71 @@ span:has(> .topic-progress-thumb) {
  * `overflow: clip`, so a row halfway through its collapse clips its own bars
  * rather than letting them spill into the row below.
  */
+.row-motion,
 .timeline-row-motion {
   overflow: clip;
   transition:
     height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
     opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/**
+ * A course opening in the outline.
+ *
+ * The same motion the chart's lanes use, for the same reason and at the same
+ * length: half the shared duration, because a disclosure is a density change
+ * rather than a move between two places. `clip` keeps a half-collapsed row from
+ * spilling past the card's rounded corner.
+ */
+.outline-disclosure {
+  overflow: clip;
+  transition: height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/**
+ * Something arriving or leaving whose height nobody knows in advance.
+ *
+ * A course card is as tall as the topics inside it, so — unlike a chart row —
+ * its height cannot be a constant. `Collapse` measures it and drives these two
+ * properties in the same two ordered halves the fixed-height rows use: grow
+ * then fade in, fade out then collapse. Sharing the halves is what makes a
+ * course leaving the outline and a topic leaving the timeline read as one
+ * behaviour rather than two implementations of it.
+ */
+.collapse-motion {
+  overflow: clip;
+  transition:
+    height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
+    opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/**
+ * Switching views: out, then in, never a cut.
+ *
+ * The outgoing view is not kept mounted underneath the incoming one. Two
+ * timelines in the tree at once is the most expensive frame the app can
+ * produce, and the second copy would mount from nothing anyway — so the fade
+ * is sequential, and the swap happens in the frame where nothing is visible.
+ * Each half is half the shared duration, so a view change costs what every
+ * other transition in the app costs.
+ */
+.view-fade {
+  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.view-fade[data-view-fade="out"] {
+  opacity: 0;
+}
+
+/**
+ * The inspector's contents, arriving after the panel has room for them.
+ *
+ * The panel itself slides in from the right; its content fades in behind that
+ * slide so a newly selected topic does not arrive mid-flight as a wall of text
+ * travelling sideways.
+ */
+.inspector-content {
+  animation: fade-in var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
 /**
@@ -647,11 +708,19 @@ span:has(> .topic-progress-thumb) {
   .timeline-disclosure,
   .timeline-zoom-layer,
   .timeline-row-motion,
+  .row-motion,
+  .outline-disclosure,
+  .collapse-motion,
+  .view-fade,
+  .tint,
   .timeline-tint,
   .input-hint-fade {
     transition: none;
   }
   .timeline-marker {
+    animation: none;
+  }
+  .inspector-content {
     animation: none;
   }
 }
