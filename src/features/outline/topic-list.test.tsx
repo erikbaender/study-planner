@@ -26,7 +26,7 @@ const course = makeCourse({ name: "Biochemistry", topics });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useWorkspace.getState().select(null);
+  useWorkspace.setState({ collapsedCourseIds: [], selection: null });
 });
 
 function renderList({
@@ -90,6 +90,7 @@ describe("TopicList", () => {
         selectedId={null}
         onSelectTopic={vi.fn()}
         onSelectExam={vi.fn()}
+        onToggleCourse={vi.fn()}
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
@@ -164,5 +165,95 @@ describe("TopicList", () => {
     expect(topicSlot).toHaveStyle({ height: `${TOPIC_ROW_HEIGHT}px` });
     expect(topicSlot).toHaveClass("p-[3px]");
     expect(topicSlot?.querySelector(".topic-completion-row")).toHaveStyle({ height: "28px" });
+  });
+});
+
+describe("OutlineView course selection", () => {
+  const courses = [
+    makeCourse({ id: "course_1", name: "Biochemistry" }),
+    makeCourse({ id: "course_2", name: "Anatomy" }),
+  ];
+
+  function renderOutline() {
+    render(
+      <OutlineView
+        courses={courses}
+        health={new Map()}
+        today={TODAY}
+        query=""
+        snapshot={makeSnapshot()}
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onSelectExam={vi.fn()}
+        onToggleCourse={(selectedCourse, expanded) =>
+          useWorkspace.getState().select(
+            expanded ? { kind: "course", id: selectedCourse.id } : null,
+          )
+        }
+        onDeleteTopic={vi.fn()}
+        onDeleteCourse={vi.fn()}
+        onEditCourse={vi.fn()}
+        onNewCourse={vi.fn()}
+      />,
+    );
+  }
+
+  it("folds other courses on a normal click and preserves them with Shift", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.click(screen.getByRole("button", { name: "Collapse Biochemistry" }));
+
+    expect(screen.getByRole("button", { name: "Collapse Biochemistry" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
+      "data-selection",
+      "primary",
+    );
+
+    await user.keyboard("{Shift>}");
+    await user.click(screen.getByRole("button", { name: "Expand Anatomy" }));
+    await user.keyboard("{/Shift}");
+
+    expect(screen.getByRole("button", { name: "Collapse Anatomy" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
+      "data-selection",
+      "secondary",
+    );
+    expect(screen.getByText("Anatomy").closest("section")).toHaveAttribute(
+      "data-selection",
+      "primary",
+    );
+  });
+
+  it("subtracts a course with Ctrl without disturbing the remaining primary", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.click(screen.getByRole("button", { name: "Collapse Biochemistry" }));
+    await user.keyboard("{Shift>}");
+    await user.click(screen.getByRole("button", { name: "Expand Anatomy" }));
+    await user.keyboard("{/Shift}");
+    await user.keyboard("{Control>}");
+    await user.click(screen.getByRole("button", { name: "Collapse Anatomy" }));
+    await user.keyboard("{/Control}");
+
+    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
+      "data-selection",
+      "primary",
+    );
   });
 });

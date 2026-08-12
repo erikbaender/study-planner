@@ -18,14 +18,25 @@
  *   across a term's worth of material, and the outline stops being something
  *   you can see and becomes something you scroll. Every measurement here is the
  *   smallest one that still reads.
- * - **A control does one thing.** The course header opens and closes the
- *   course. Topic rows select topics, while course selection happens through
- *   the app's explicit selection surfaces so opening a course never doubles as
- *   inspecting it.
+ * - **Opening a course is selecting it.** The header both unfolds the card and
+ *   puts the course in the inspector, because those are one intent: you open a
+ *   course to work on it. Folding it again lets it go, as does a click on empty
+ *   space. The sidebar's course list is a filter, not a selection surface.
  */
 
 import { clsx } from "clsx";
-import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { AlertTriangle, CalendarPlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
@@ -58,6 +69,7 @@ import {
   TextArea,
   TextField,
   useStableCallback,
+  useKeyboardMode,
   useListPresence,
 } from "@/ui";
 import { motionDuration } from "@/ui/motion";
@@ -71,15 +83,29 @@ import {
 import { hintScope, useViewHints, type InputHint } from "@/features/workspace/hints";
 import { overdueBlockCount, topicsForQuery } from "@/features/workspace/scope";
 import { requestRename, revealSelection, useWorkspace } from "@/features/workspace/store";
+import { createSelectionStore, type BarSelection } from "@/features/timeline/chart-context";
 
 /** What the pointer does here, for the toolbar's hint bar. */
 const OUTLINE_HINTS: readonly InputHint[] = [
-  { button: "left", label: "Select topic" },
-  { button: "left", label: "Set progress", drag: true },
+  { button: "left", label: "Select course" },
   { button: "right", label: "Actions" },
 ];
 
+function outlineSelectedHints(keyboardMode: "mac" | "windows"): readonly InputHint[] {
+  return [
+    OUTLINE_HINTS[0],
+    { button: "left", label: "Extend selection", modifier: "Shift" },
+    {
+      button: "left",
+      label: "Subtract selection",
+      modifier: keyboardMode === "mac" ? "⌘" : "Ctrl",
+    },
+    OUTLINE_HINTS[1],
+  ];
+}
+
 const courseKey = (course: Course) => course.id;
+const EMPTY_COURSE_SELECTION: readonly string[] = [];
 
 export function OutlineView({
   courses,
@@ -90,6 +116,7 @@ export function OutlineView({
   selectedId,
   onSelectTopic,
   onSelectExam,
+  onToggleCourse,
   onDeleteTopic,
   onDeleteCourse,
   onEditCourse,
@@ -102,13 +129,97 @@ export function OutlineView({
   query: string;
   selectedId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
+  /** Unfolding a card selects its course; folding it again lets the selection go. */
+  onToggleCourse: (course: Course, expanded: boolean) => void;
   onSelectExam: (course: Course, exam: Exam) => void;
   onDeleteTopic: (course: Course, topic: Topic) => void;
   onDeleteCourse: (course: Course) => void;
   onEditCourse: (courseId: string) => void;
   onNewCourse: () => void;
 }) {
-  useViewHints(OUTLINE_HINTS);
+  const [selection] = useState(createSelectionStore);
+  const keyboardMode = useKeyboardMode();
+  const workspaceSelection = useWorkspace((state) => state.selection);
+  const selectedCourseIds = useSyncExternalStore(
+    selection.subscribe,
+    selection.getSnapshot,
+    () => EMPTY_COURSE_SELECTION,
+  );
+  const selectedHints = useMemo(() => outlineSelectedHints(keyboardMode), [keyboardMode]);
+  useViewHints(selectedCourseIds.length > 0 ? selectedHints : OUTLINE_HINTS);
+
+  const selectCourse = useCallback(
+    (course: Course, event: React.MouseEvent<HTMLButtonElement>) => {
+      const current = selection.getSnapshot();
+      const extend = event.shiftKey;
+      const subtract = event.ctrlKey || event.metaKey;
+      const selected = current.includes(course.id);
+      let next = current;
+
+      if (subtract) {
+        if (!selected) return;
+        next = current.filter((id) => id !== course.id);
+        setCourseOpen(course.id, false);
+      } else if (extend) {
+        next = selected
+          ? current.filter((id) => id !== course.id)
+          : [...current, course.id];
+        setCourseOpen(course.id, !selected);
+      } else if (selected) {
+        next = current.filter((id) => id !== course.id);
+        setCourseOpen(course.id, false);
+      } else {
+        next = [course.id];
+        for (const other of courses) {
+          if (other.id !== course.id) setCourseOpen(other.id, false);
+        }
+        setCourseOpen(course.id, true);
+      }
+
+      selection.set(next);
+      const primaryId = next.at(-1);
+      const primary = courses.find((candidate) => candidate.id === primaryId);
+      if (primary) onToggleCourse(primary, true);
+      else onToggleCourse(course, false);
+    },
+    [courses, onToggleCourse, selection],
+  );
+
+  // Keep a course selected when it was revealed by the sidebar or command
+  // palette before this view mounted. Topic and exam clicks clear this local
+  // course selection through the wrappers below, just as a timeline gutter
+  // selection clears the chart's block selection.
+  useEffect(() => {
+    if (!selectedId || !courses.some((course) => course.id === selectedId)) return;
+    if (!selection.getSnapshot().includes(selectedId)) selection.set([selectedId]);
+  }, [courses, selectedId, selection]);
+
+  useEffect(() => {
+    if (workspaceSelection?.kind === "course") return;
+    if (selection.getSnapshot().length > 0) selection.set([]);
+  }, [selection, workspaceSelection]);
+
+  useEffect(() => {
+    const visible = new Set(courses.map((course) => course.id));
+    const current = selection.getSnapshot();
+    const next = current.filter((id) => visible.has(id));
+    if (next.length !== current.length) selection.set(next);
+  }, [courses, selection]);
+
+  const selectTopic = useCallback(
+    (course: Course, topic: Topic) => {
+      selection.set([]);
+      onSelectTopic(course, topic);
+    },
+    [onSelectTopic, selection],
+  );
+  const selectExam = useCallback(
+    (course: Course, exam: Exam) => {
+      selection.set([]);
+      onSelectExam(course, exam);
+    },
+    [onSelectExam, selection],
+  );
   // Courses filtered out by the sidebar or the search field leave the way rows
   // leave the chart — fading, then collapsing — rather than vanishing between
   // two frames. `useListPresence` keeps them mounted for exactly that long.
@@ -128,8 +239,10 @@ export function OutlineView({
               query={query}
               snapshot={snapshot}
               selectedId={selectedId}
-              onSelectTopic={(topic) => onSelectTopic(item, topic)}
-              onSelectExam={(exam) => onSelectExam(item, exam)}
+              courseSelection={selection.stateOf(item.id)}
+              onSelectTopic={(topic) => selectTopic(item, topic)}
+              onSelectExam={(exam) => selectExam(item, exam)}
+              onSelectCourse={(event) => selectCourse(item, event)}
               onDeleteTopic={(topic) => onDeleteTopic(item, topic)}
               onDeleteCourse={() => onDeleteCourse(item)}
               onEditCourse={() => onEditCourse(item.id)}
@@ -153,6 +266,12 @@ export function OutlineView({
   );
 }
 
+function setCourseOpen(courseId: string, open: boolean) {
+  const workspace = useWorkspace.getState();
+  const collapsed = workspace.collapsedCourseIds.includes(courseId);
+  if (collapsed === open) workspace.toggleCourseCollapsed(courseId);
+}
+
 function CourseCard({
   course,
   health,
@@ -160,8 +279,10 @@ function CourseCard({
   query,
   snapshot,
   selectedId,
+  courseSelection,
   onSelectTopic,
   onSelectExam,
+  onSelectCourse,
   onDeleteTopic,
   onDeleteCourse,
   onEditCourse,
@@ -172,8 +293,10 @@ function CourseCard({
   query: string;
   snapshot: PlannerSnapshot;
   selectedId: string | null;
+  courseSelection: BarSelection;
   onSelectTopic: (topic: Topic) => void;
   onSelectExam: (exam: Exam) => void;
+  onSelectCourse: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onDeleteTopic: (topic: Topic) => void;
   onDeleteCourse: () => void;
   onEditCourse: () => void;
@@ -183,9 +306,8 @@ function CourseCard({
   const [adding, setAdding] = useState<"topic" | "exam" | null>(null);
   const [confirmingCompletion, setConfirmingCompletion] = useState(false);
   const collapsed = useWorkspace((state) => state.collapsedCourseIds.includes(course.id));
-  const toggleCollapsed = useWorkspace((state) => state.toggleCourseCollapsed);
   const progress = courseProgress(course);
-  const selected = course.id === selectedId;
+  const selected = courseSelection !== null;
   const tint = courseColorValue(course.color);
   // Memoized because `TopicList` animates arrivals and departures, and that
   // merge is keyed on this array's identity — a fresh one per render would
@@ -236,7 +358,6 @@ function CourseCard({
    * them. Unsized topics are skipped rather than invented a size for.
    */
   const setCourseCompletion = (done: boolean) => {
-    triggerCourseCompletionAnimation(course.id, done);
     for (const topic of course.topics) {
       if (topic.totalUnits <= 0) continue;
       const target = done ? topic.totalUnits : 0;
@@ -251,6 +372,21 @@ function CourseCard({
     }
   };
 
+  /**
+   * The card flashes when the *course* finishes, and only then.
+   *
+   * It used to flash whenever any topic inside it was ticked off, which said
+   * "done" about a course with thirty topics left in it. Completion is a
+   * property of the course, so the pulse is fired by the property changing —
+   * whichever of the many ways of moving progress caused it.
+   */
+  const wasCompleted = useRef(completed);
+  useEffect(() => {
+    if (wasCompleted.current === completed) return;
+    wasCompleted.current = completed;
+    triggerCourseCompletionAnimation(course.id, completed);
+  }, [completed, course.id]);
+
   return (
     <ContextMenu
       items={[
@@ -264,14 +400,16 @@ function CourseCard({
       <section
         data-course-id={course.id}
         data-course-completed={completed ? "true" : undefined}
-        style={{ "--topic-completion-color": tint } as CSSProperties}
         className={clsx(
           "outline-card course-completion-row relative overflow-hidden rounded-card border bg-content",
           // Selection is a border, never a fill: a completed course already
           // owns its background, and a blue wash over it would say the two
           // states are one. See the topic rows, which do the same.
-          selected ? "border-accent" : "border-separator",
+          "border-separator",
+          selected && "z-10",
         )}
+        data-selection={courseSelection ?? undefined}
+        style={{ "--topic-completion-color": tint } as CSSProperties}
       >
         <div className="relative" data-keeps-selection>
           {/* Laid out exactly like a topic row — name, readout, bar, done — so
@@ -286,10 +424,10 @@ function CourseCard({
           >
             <button
               type="button"
-              onClick={() => toggleCollapsed(course.id)}
+              onClick={onSelectCourse}
               aria-expanded={!collapsed}
               aria-label={`${collapsed ? "Expand" : "Collapse"} ${course.name}`}
-              className="absolute inset-0 focus-visible:outline-2 focus-visible:-outline-offset-2"
+              className="absolute inset-0 focus-visible:outline-none"
             />
 
             <div className={clsx(COLUMNS, "pointer-events-none relative px-2")}>
@@ -369,7 +507,10 @@ function CourseCard({
                   <IconButton
                     size="sm"
                     label={`Add an exam to ${course.name}`}
-                    icon={<CalendarPlus />}
+                    // A plain plus, the same one topics and study blocks get.
+                    // "Add" is the action; what is being added is said by the
+                    // section the button sits in.
+                    icon={<Plus />}
                     onClick={() => setAdding("exam")}
                   />
                 }
@@ -410,7 +551,7 @@ function CourseCard({
               </CardSection>
 
               <div
-                className="flex items-center gap-1.5 border-t border-separator p-2"
+                className="flex items-center justify-end gap-1.5 border-t border-separator p-2"
                 data-keeps-selection
               >
                 {/* AutoPlanButton owns its trigger variant. These selectors keep
@@ -671,39 +812,46 @@ function ExamRow({
   onDelete: (exam: Exam) => void;
 }) {
   return (
-    <div
-      className={clsx(
-        "group relative flex h-full items-center gap-2 rounded-control px-2",
-        selected ? "inset-ring-2 inset-ring-accent" : "hover:bg-fill",
-      )}
-      style={{ height: LIST_ROW_CONTENT_HEIGHT }}
+    // Deleting is a row action, so it is where every other row action in the
+    // app is: the context menu, and the inspector once the exam is selected. A
+    // trash button on the row itself was a third place to say the same thing,
+    // sitting one row away from the topics whose rows do not have one.
+    <ContextMenu
+      items={[{ label: "Delete", icon: <Trash2 />, danger: true, onSelect: () => onDelete(exam) }]}
     >
-      <button
-        type="button"
-        aria-pressed={selected}
-        aria-label={`Select ${exam.name}`}
-        onClick={() => onSelect(exam)}
-        className="absolute inset-0 rounded-control focus-visible:outline-2 focus-visible:-outline-offset-2"
-      />
+      <div
+        onContextMenu={(event) => {
+          // The course card wraps this row in a menu of its own; stop here so an
+          // exam action cannot open the course's menu.
+          event.stopPropagation();
+        }}
+        className={clsx(
+          "relative flex h-full items-center gap-2 rounded-control px-2",
+          selected
+            ? "inset-ring-2 inset-ring-accent"
+            : "hover:bg-fill data-[state=open]:bg-fill",
+        )}
+        style={{ height: LIST_ROW_CONTENT_HEIGHT }}
+      >
+        <button
+          type="button"
+          aria-pressed={selected}
+          aria-label={`Select ${exam.name}`}
+          onClick={() => onSelect(exam)}
+          className="absolute inset-0 rounded-control focus-visible:outline-2 focus-visible:-outline-offset-2"
+        />
 
-      <div className="pointer-events-none relative flex min-w-0 flex-1 items-center gap-2 text-callout">
-        <span className="min-w-0 truncate">{exam.name}</span>
-        <span className="shrink-0 tabular-nums text-tertiary">
-          {exam.status === "provisional" && exam.endDate
-            ? `${exam.startDate} – ${exam.endDate}`
-            : exam.startDate}
-        </span>
-        {exam.status === "provisional" ? <Badge tone="warning">Provisional</Badge> : null}
+        <div className="pointer-events-none relative flex min-w-0 flex-1 items-center gap-2 text-callout">
+          <span className="min-w-0 truncate">{exam.name}</span>
+          <span className="shrink-0 tabular-nums text-tertiary">
+            {exam.status === "provisional" && exam.endDate
+              ? `${exam.startDate} – ${exam.endDate}`
+              : exam.startDate}
+          </span>
+          {exam.status === "provisional" ? <Badge tone="warning">Provisional</Badge> : null}
+        </div>
       </div>
-
-      <IconButton
-        size="sm"
-        label={`Delete ${exam.name}`}
-        icon={<Trash2 />}
-        onClick={() => onDelete(exam)}
-        className="relative z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-      />
-    </div>
+    </ContextMenu>
   );
 }
 

@@ -226,7 +226,15 @@ export function CourseCompletionCheckbox({
   );
 }
 
-/** The course-level pulse, for a completion that did not start on a topic row. */
+/**
+ * The course-level pulse.
+ *
+ * A course flashes when the *course* is finished, never when one of its topics
+ * is. Ticking the thirty-first of forty topics is progress, not completion, and
+ * a card that lit up for it was reporting a state the course was nowhere near.
+ * So this is driven by the card watching its own completeness rather than by
+ * whichever row happened to be clicked.
+ */
 export function triggerCourseCompletionAnimation(courseId: string, animateCompletion = true) {
   const rows = () =>
     [...document.querySelectorAll<HTMLElement>(".course-completion-row")].filter(
@@ -272,14 +280,10 @@ export function triggerCompletionAnimation(
       .filter((checkbox) => checkbox.dataset.topicId === topicId)
       .map((checkbox) => checkbox.closest<HTMLElement>(".topic-completion-row"))
       .filter((candidate): candidate is HTMLElement => candidate !== null);
-  const topicRows = currentRows();
-  const courseId = row.dataset.courseId;
-  const courseRows = courseId
-    ? [...document.querySelectorAll<HTMLElement>(".course-completion-row")].filter(
-        (candidate) => candidate.dataset.courseId === courseId,
-      )
-    : [];
-  for (const currentRow of [...new Set([...topicRows, ...courseRows])]) {
+  // Only the topic's own rows. The card this row sits in has its own pulse,
+  // fired when the course as a whole finishes — see
+  // `triggerCourseCompletionAnimation`.
+  for (const currentRow of currentRows()) {
     // Re-applying the same data attributes does not restart a CSS animation.
     // Clear the previous run and force one layout read before setting the new
     // direction, so repeated completions always produce a visible flash.

@@ -66,13 +66,30 @@ export function NameSection({
   );
 }
 
-export function Section({ title, children }: { title?: string; children: ReactNode }) {
+/**
+ * `action` is what the section can be *given*, and it sits on the label's own
+ * row — the same arrangement the sidebar and the course card use, so adding a
+ * study block looks like adding a topic or an exam rather than like a button
+ * that happens to be the last thing in the section.
+ */
+export function Section({
+  title,
+  action,
+  children,
+}: {
+  title?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-2 p-4">
       {title ? (
-        <h3 className="text-caption font-semibold tracking-wide text-tertiary uppercase">
-          {title}
-        </h3>
+        <header className="flex h-6 items-center gap-1">
+          <h3 className="text-caption font-semibold tracking-wide text-tertiary uppercase">
+            {title}
+          </h3>
+          {action ? <span className="ml-auto">{action}</span> : null}
+        </header>
       ) : null}
       {children}
     </section>

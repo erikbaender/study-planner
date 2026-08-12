@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { coursePalette } from "@/domain";
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
 import { Inspector, isInspectable } from "./inspector";
 
@@ -10,6 +11,7 @@ import { Inspector, isInspectable } from "./inspector";
  * would test Convex rather than the panel.
  */
 const repository = {
+  updateCourse: vi.fn(() => Promise.resolve()),
   updateTopic: vi.fn(() => Promise.resolve()),
   moveTopic: vi.fn(() => Promise.resolve()),
   logStudy: vi.fn(() => Promise.resolve()),
@@ -245,7 +247,11 @@ describe("Inspector", () => {
         />,
       );
 
-      await user.click(screen.getByRole("button", { name: "Add block" }));
+      // The section's own plus, in its label — the same control the outline
+      // adds topics and exams with.
+      await user.click(
+        screen.getByRole("button", { name: `Add a study block to ${scheduledTopic.name}` }),
+      );
 
       expect(repository.createStudyBlock).toHaveBeenCalledWith({
         topicId: scheduledTopic.id,
@@ -338,14 +344,54 @@ describe("Inspector", () => {
   });
 
   describe("a course", () => {
-    it("is not something the inspector describes", () => {
-      // Courses are edited from their own card in the outline. `isInspectable`
-      // is what keeps the panel — and the shell that opens it — from ever being
-      // handed one, so the panel needs no course branch at all.
-      const course = makeCourse({ name: "Biochemistry" });
-      expect(isInspectable({ kind: "course", course })).toBe(false);
+    const course = makeCourse({ name: "Biochemistry", code: "BIO-201", topics: [makeTopic()] });
+
+    it("is something the inspector describes", () => {
+      expect(isInspectable({ kind: "course", course })).toBe(true);
       expect(isInspectable({ kind: "topic", course, topic: makeTopic() })).toBe(true);
       expect(isInspectable(null)).toBe(false);
+    });
+
+    it("offers the creation sheet's fields and nothing about the topics inside it", () => {
+      // The topics are in the card beside the panel, with their own progress
+      // and their own actions. Listing them here too was a second, poorer copy
+      // of the view the panel is standing next to.
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "course", course }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByLabelText("Course name")).toHaveValue("Biochemistry");
+      expect(screen.getByLabelText("Course code")).toHaveValue("BIO-201");
+      expect(screen.getByRole("radiogroup", { name: "Course colour" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Notes")).toBeInTheDocument();
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+      expect(screen.queryByText(course.topics[0].name)).not.toBeInTheDocument();
+    });
+
+    it("resends the course's other fields when one of them is edited", async () => {
+      const user = userEvent.setup();
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "course", course }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("radio", { name: coursePalette[2].name }));
+
+      expect(repository.updateCourse).toHaveBeenCalledWith(course.id, {
+        name: "Biochemistry",
+        code: "BIO-201",
+        color: coursePalette[2].id,
+        notes: course.notes,
+      });
     });
   });
 

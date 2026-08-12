@@ -179,8 +179,6 @@ export function AppShell() {
   // filtered out or deleted closes it again. `inspected` is the selection that
   // was last real, so the panel still has something to describe on the way out
   // — a deselect is a panel leaving, not a panel emptying and then leaving.
-  // A course is not an inspectable object, so selecting one highlights its card
-  // without opening the panel over the topics you are about to work through.
   const inspectable = isInspectable(selection) ? selection : null;
   const inspectorOpen = inspectable !== null;
   const inspected = useRetained(inspectable);
@@ -247,11 +245,42 @@ export function AppShell() {
     workspace.select(null);
   };
 
-  // Selecting is not scoping. Clicking a course in the sidebar inspects it and
-  // opens its section in the outline; clicking it again clears that selection.
-  // It does not hide the other courses — narrowing to one is what the Focus
-  // rows are for.
   const selectCourse = (course: Course) => toggleRevealSelection({ kind: "course", id: course.id });
+
+  /**
+   * Unfolding a course card selects the course; folding it lets it go.
+   *
+   * Opening a course and inspecting it are one intent, so they are one click.
+   * Folding only clears the selection if it is *this* course's — closing one
+   * card should not deselect the topic you are working on in another.
+   */
+  const toggleCourseSelection = (course: Course, expanded: boolean) => {
+    if (expanded) revealSelection({ kind: "course", id: course.id });
+    else if (workspace.selection?.kind === "course" && workspace.selection.id === course.id)
+      workspace.select(null);
+  };
+
+  /**
+   * The sidebar's course list is a filter, not a selection surface.
+   *
+   * Clicking a row there takes you to the course in the outline and opens it —
+   * it does not select it, because the sidebar is where you decide what is in
+   * scope, and a click that both scoped and inspected made the two impossible
+   * to tell apart. Selection happens on the card itself.
+   */
+  const revealCourseInOutline = (course: Course) => {
+    workspace.setView("outline");
+    if (useWorkspace.getState().collapsedCourseIds.includes(course.id)) {
+      workspace.toggleCourseCollapsed(course.id);
+    }
+    // After the view has committed: the card may not be in the document yet.
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`section[data-course-id="${course.id}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  };
+
   const selectTopic = (_course: Course, topic: Topic) =>
     toggleRevealSelection({ kind: "topic", id: topic.id });
   const selectExam = (_course: Course, exam: Exam) =>
@@ -378,7 +407,7 @@ export function AppShell() {
             onDeletePlan={() => setDeletePlanOpen(true)}
             onSetFocus={workspace.setFocus}
             onSetQuery={workspace.setQuery}
-            onSelectCourse={selectCourse}
+            onSelectCourse={revealCourseInOutline}
             onToggleHidden={(course) => workspace.toggleCourseHidden(course.id)}
             onHideAll={() => workspace.hideAllCourses((plan?.courses ?? []).map((c) => c.id))}
             onShowAll={workspace.showAllCourses}
@@ -450,6 +479,7 @@ export function AppShell() {
                     selectedId={workspace.selection?.id ?? null}
                     onSelectTopic={selectTopic}
                     onSelectExam={selectExam}
+                    onToggleCourse={toggleCourseSelection}
                     onDeleteTopic={(_course, topic) =>
                       workspace.setPendingDelete({ kind: "topic", id: topic.id })
                     }
@@ -485,9 +515,11 @@ export function AppShell() {
             onRevealBlock={revealBlock}
             onDelete={(target) =>
               workspace.setPendingDelete(
-                target.kind === "topic"
-                  ? { kind: "topic", id: target.topic.id }
-                  : { kind: "exam", id: target.exam.id },
+                target.kind === "course"
+                  ? { kind: "course", id: target.course.id }
+                  : target.kind === "topic"
+                    ? { kind: "topic", id: target.topic.id }
+                    : { kind: "exam", id: target.exam.id },
               )
             }
           />

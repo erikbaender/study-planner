@@ -232,6 +232,29 @@ span:has(> .topic-progress-thumb) {
   background-image: none;
 }
 
+/* Course selection lives inside the clipped card. An outer outline is painted
+   outside the rounded box and gets clipped into corner fragments; this inset
+   frame keeps the same timeline blue while staying a complete shape. */
+.course-completion-row[data-selection="primary"]::after,
+.course-completion-row[data-selection="secondary"]::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid;
+  border-radius: inherit;
+  content: "";
+  z-index: 20;
+}
+
+.course-completion-row[data-selection="primary"]::after {
+  border-color: var(--mac-accent);
+}
+
+.course-completion-row[data-selection="secondary"]::after {
+  border-color: color-mix(in srgb, var(--mac-accent) 50%, transparent);
+}
+
 .topic-completion-fill,
 .course-completion-fill {
   background-color: var(--topic-completion-color);

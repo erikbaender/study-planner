@@ -9,7 +9,7 @@
  * between it and the next, the same padding on all four sides.
  */
 
-import { CalendarPlus, Crosshair, Trash2 } from "lucide-react";
+import { Crosshair, Plus, Trash2 } from "lucide-react";
 import { useRef, useState, type CSSProperties } from "react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
@@ -29,6 +29,7 @@ import {
   Button,
   Checkbox,
   ContextMenu,
+  IconButton,
   ProgressBar,
   ProgressSlider,
   SegmentedControl,
@@ -226,7 +227,30 @@ export function TopicInspector({
         timeline are actions on an existing row, so they live in its context
         menu, like every other row action in the app.
       */}
-      <Section title="Scheduled">
+      <Section
+        title="Scheduled"
+        action={
+          <IconButton
+            size="sm"
+            label={`Add a study block to ${topic.name}`}
+            icon={<Plus />}
+            onClick={() => {
+              const lastBlock = [...topic.blocks]
+                .sort((left, right) => left.endDate.localeCompare(right.endDate))
+                .at(-1);
+              const startDate = lastBlock ? addDays(lastBlock.endDate, 1) : today;
+              run(
+                repository.createStudyBlock({
+                  topicId: topic.id,
+                  startDate,
+                  endDate: startDate,
+                  source: "manual",
+                }),
+              );
+            }}
+          />
+        }
+      >
         {blocks.length === 0 ? (
           <p className="text-body text-tertiary">Not scheduled yet</p>
         ) : (
@@ -244,28 +268,6 @@ export function TopicInspector({
             ))}
           </ul>
         )}
-
-        <Button
-          size="sm"
-          leadingIcon={<CalendarPlus aria-hidden="true" />}
-          className="self-start"
-          onClick={() => {
-            const lastBlock = [...topic.blocks]
-              .sort((left, right) => left.endDate.localeCompare(right.endDate))
-              .at(-1);
-            const startDate = lastBlock ? addDays(lastBlock.endDate, 1) : today;
-            run(
-              repository.createStudyBlock({
-                topicId: topic.id,
-                startDate,
-                endDate: startDate,
-                source: "manual",
-              }),
-            );
-          }}
-        >
-          Add block
-        </Button>
       </Section>
 
       <Separator />
