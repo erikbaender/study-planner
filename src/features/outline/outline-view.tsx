@@ -148,10 +148,36 @@ export function OutlineView({
   const selectedHints = useMemo(() => outlineSelectedHints(keyboardMode), [keyboardMode]);
   useViewHints(selectedCourseIds.length > 0 ? selectedHints : OUTLINE_HINTS);
 
+  // An outline mount starts as a filing cabinet: every course is folded until
+  // the user chooses one. A course explicitly revealed by navigation is the
+  // exception, because that opening was part of the navigation gesture.
+  const initializedDisclosure = useRef(false);
+  useEffect(() => {
+    if (initializedDisclosure.current || courses.length === 0) return;
+    initializedDisclosure.current = true;
+    for (const course of courses) setCourseOpen(course.id, false);
+    if (workspaceSelection?.kind === "course") setCourseOpen(workspaceSelection.id, true);
+  }, [courses, workspaceSelection]);
+
+  const selectSingleCourse = useCallback(
+    (course: Course) => {
+      for (const other of courses) {
+        if (other.id !== course.id) setCourseOpen(other.id, false);
+      }
+      setCourseOpen(course.id, true);
+      selection.set([course.id]);
+      onToggleCourse(course, true);
+    },
+    [courses, onToggleCourse, selection],
+  );
+
   const selectCourse = useCallback(
     (course: Course, event: React.MouseEvent<HTMLButtonElement>) => {
       const current = selection.getSnapshot();
-      const extend = event.shiftKey;
+      // Shift only extends an existing selection. With no prior selection it
+      // is the same as an ordinary click, so it cannot create a new multi-
+      // selection out of nowhere.
+      const extend = event.shiftKey && current.length > 0;
       const subtract = event.ctrlKey || event.metaKey;
       const selected = current.includes(course.id);
       let next = current;
@@ -165,16 +191,16 @@ export function OutlineView({
           ? current.filter((id) => id !== course.id)
           : [...current, course.id];
         setCourseOpen(course.id, !selected);
-      } else if (selected) {
-        next = current.filter((id) => id !== course.id);
+      } else if (selected && current.length === 1) {
         setCourseOpen(course.id, false);
+        selection.set([]);
+        onToggleCourse(course, false);
       } else {
-        next = [course.id];
-        for (const other of courses) {
-          if (other.id !== course.id) setCourseOpen(other.id, false);
-        }
-        setCourseOpen(course.id, true);
+        selectSingleCourse(course);
+        return;
       }
+
+      if (selected && current.length === 1) return;
 
       selection.set(next);
       const primaryId = next.at(-1);
@@ -182,7 +208,7 @@ export function OutlineView({
       if (primary) onToggleCourse(primary, true);
       else onToggleCourse(course, false);
     },
-    [courses, onToggleCourse, selection],
+    [courses, onToggleCourse, selectSingleCourse, selection],
   );
 
   // Keep a course selected when it was revealed by the sidebar or command
@@ -208,10 +234,16 @@ export function OutlineView({
 
   const selectTopic = useCallback(
     (course: Course, topic: Topic) => {
+      if (selectedId === topic.id) {
+        // A second click on a selected topic moves the primary selection up to
+        // its course instead of leaving the workspace with nothing selected.
+        selectSingleCourse(course);
+        return;
+      }
       selection.set([]);
       onSelectTopic(course, topic);
     },
-    [onSelectTopic, selection],
+    [onSelectTopic, selectSingleCourse, selectedId, selection],
   );
   const selectExam = useCallback(
     (course: Course, exam: Exam) => {
@@ -307,7 +339,6 @@ function CourseCard({
   const [confirmingCompletion, setConfirmingCompletion] = useState(false);
   const collapsed = useWorkspace((state) => state.collapsedCourseIds.includes(course.id));
   const progress = courseProgress(course);
-  const selected = courseSelection !== null;
   const tint = courseColorValue(course.color);
   // Memoized because `TopicList` animates arrivals and departures, and that
   // merge is keyed on this array's identity — a fresh one per render would
@@ -406,7 +437,6 @@ function CourseCard({
           // owns its background, and a blue wash over it would say the two
           // states are one. See the topic rows, which do the same.
           "border-separator",
-          selected && "z-10",
         )}
         data-selection={courseSelection ?? undefined}
         style={{ "--topic-completion-color": tint } as CSSProperties}

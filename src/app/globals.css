@@ -40,6 +40,36 @@
   }
 }
 
+@keyframes course-completion-border {
+  0% {
+    background-color: transparent;
+    border-color: color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+  45% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 18%, transparent);
+    border-color: var(--topic-completion-color);
+  }
+  100% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+    border-color: color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+}
+
+@keyframes course-completion-border-out {
+  0% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+    border-color: color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+  35% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 18%, transparent);
+    border-color: var(--topic-completion-color);
+  }
+  100% {
+    background-color: transparent;
+    border-color: color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+}
+
 @keyframes topic-completion-checkmark {
   0% {
     opacity: 0;
@@ -107,12 +137,15 @@
 }
 
 .course-completion-row[data-completion-animating="true"] {
-  animation: topic-completion-outline var(--topic-motion-duration) var(--topic-motion-curve);
+  animation: course-completion-border var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="off"],
-.course-completion-row[data-completion-direction="off"] {
+.topic-completion-row[data-completion-direction="off"] {
   animation: topic-completion-row-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.course-completion-row[data-completion-direction="off"] {
+  animation: course-completion-border-out var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
 .topic-completion-row[data-completion-direction="on"] .topic-completion-checkmark,
@@ -232,26 +265,20 @@ span:has(> .topic-progress-thumb) {
   background-image: none;
 }
 
-/* Course selection lives inside the clipped card. An outer outline is painted
-   outside the rounded box and gets clipped into corner fragments; this inset
-   frame keeps the same timeline blue while staying a complete shape. */
-.course-completion-row[data-selection="primary"]::after,
-.course-completion-row[data-selection="secondary"]::after {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  box-sizing: border-box;
-  border: 2px solid;
-  border-radius: inherit;
-  content: "";
-  z-index: 20;
+/* Selection and completion use one border. Selection wins again automatically
+   when the completion animation's temporary border color is removed. */
+.course-completion-row[data-selection="primary"],
+.course-completion-row[data-selection="secondary"],
+.course-completion-row[data-completion-animating="true"],
+.course-completion-row[data-completion-direction] {
+  border-width: 2px;
 }
 
-.course-completion-row[data-selection="primary"]::after {
+.course-completion-row[data-selection="primary"] {
   border-color: var(--mac-accent);
 }
 
-.course-completion-row[data-selection="secondary"]::after {
+.course-completion-row[data-selection="secondary"] {
   border-color: color-mix(in srgb, var(--mac-accent) 50%, transparent);
 }
 

@@ -98,6 +98,8 @@ describe("TopicList", () => {
       />,
     );
 
+    screen.getByRole("button", { name: "Expand Biochemistry" }).click();
+
     expect(screen.getAllByRole("button", { name: /^Select / }).map((button) => button.getAttribute("aria-label"))).toEqual([
       "Select Glycolysis",
       "Select Krebs cycle",
@@ -202,7 +204,16 @@ describe("OutlineView course selection", () => {
     const user = userEvent.setup();
     renderOutline();
 
-    await user.click(screen.getByRole("button", { name: "Collapse Biochemistry" }));
+    expect(screen.getByRole("button", { name: "Expand Biochemistry" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
 
     expect(screen.getByRole("button", { name: "Collapse Biochemistry" })).toHaveAttribute(
       "aria-expanded",
@@ -239,7 +250,7 @@ describe("OutlineView course selection", () => {
     const user = userEvent.setup();
     renderOutline();
 
-    await user.click(screen.getByRole("button", { name: "Collapse Biochemistry" }));
+    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
     await user.keyboard("{Shift>}");
     await user.click(screen.getByRole("button", { name: "Expand Anatomy" }));
     await user.keyboard("{/Shift}");
@@ -254,6 +265,45 @@ describe("OutlineView course selection", () => {
     expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
       "data-selection",
       "primary",
+    );
+  });
+
+  it("treats Shift with no prior selection as a normal single selection", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.keyboard("{Shift>}");
+    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
+    await user.keyboard("{/Shift}");
+
+    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
+      "data-selection",
+      "primary",
+    );
+    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
+  it("replaces a multi-selection on a regular click", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
+    await user.keyboard("{Shift>}");
+    await user.click(screen.getByRole("button", { name: "Expand Anatomy" }));
+    await user.keyboard("{/Shift}");
+    await user.click(screen.getByRole("button", { name: "Collapse Biochemistry" }));
+
+    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
+      "data-selection",
+      "primary",
+    );
+    expect(screen.getByText("Anatomy").closest("section")).not.toHaveAttribute("data-selection");
+    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
     );
   });
 });
