@@ -129,20 +129,6 @@ function merge<T>(
   return entries;
 }
 
-/* ─── One item, growing and collapsing ──────────────────────────────────── */
-
-/**
- * The states a box passes through, in order.
- *
- * `enter` and `hold` exist only to give the browser a frame with the start
- * value in it: a height that is set and changed in the same commit is not a
- * transition, it is a cut with extra steps.
- */
-type Phase = "open" | "enter" | "grow" | "hold" | "fade" | "closed";
-
-/** Long enough that a visible tab always wins with a real frame. */
-const FRAME_FALLBACK_MS = 100;
-
 /**
  * Wraps content in a box that animates between nothing and whatever the
  * content measures.
@@ -162,94 +148,87 @@ export function Collapse({
   className?: string;
   children: ReactNode;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(0);
-  const [phase, setPhase] = useState<Phase>(() => {
-    if (!present) return "closed";
-    return appear && !prefersReducedMotion() ? "enter" : "open";
-  });
+  const mountedRef = useRef(false);
+  const previousPresentRef = useRef(present);
 
   /**
-   * Measured at the moment a transition needs a number, and at no other time.
-   *
-   * This used to keep a `ResizeObserver` alive for the life of the box, on the
-   * reasoning that reading the height at departure forces a layout in the frame
-   * that can least afford one. That trade was badly wrong. An observer whose
-   * callback sets state turns *every* layout change anywhere above it into a
-   * re-render of this subtree — and the inspector's width animation resizes the
-   * content column on every one of its frames. With a card per course and a box
-   * per exam chip, one selection re-rendered the whole outline fifteen times
-   * over. One forced read per transition is the cheaper side of that trade by
-   * two orders of magnitude, and while the box is open it is at `height: auto`,
-   * where the number is not used for anything at all.
+   * Filtering can add or remove several variable-height cards at once. The
+   * old phase machine stored every animation step in React state, so each
+   * frame re-rendered the complete outline and made all of the cards measure
+   * again. The list still owns presence, but the short-lived height/opacity
+   * values belong to the element that is actually moving.
    */
   useLayoutEffect(() => {
-    if (phase === "open" || phase === "closed") return;
-    const element = contentRef.current;
-    if (element) setHeight(element.offsetHeight);
-  }, [phase]);
+    const box = boxRef.current;
+    const content = contentRef.current;
+    if (!box || !content) return;
 
-  // Adjusted during render rather than in an effect: a box that has just been
-  // filtered out must still be at its full height in the commit that removed
-  // it, or there is no frame the collapse can start from. Bounded — it runs
-  // once per genuine change of `present`.
-  const [wasPresent, setWasPresent] = useState(present);
-  if (wasPresent !== present) {
-    setWasPresent(present);
-    setPhase(
-      prefersReducedMotion()
-        ? present
-          ? "open"
-          : "closed"
-        : present
-          ? "enter"
-          : "hold",
-    );
-  }
+    let frame = 0;
+    let settle = 0;
+    const duration = motionDuration(box);
+    const instant = prefersReducedMotion();
+    const firstRender = !mountedRef.current;
+    const entering = firstRender ? appear : !previousPresentRef.current && present;
+    const leaving = !firstRender && previousPresentRef.current && !present;
+    mountedRef.current = true;
+    previousPresentRef.current = present;
 
-  useEffect(() => {
-    if (phase === "open" || phase === "closed") return;
+    const clear = () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(settle);
+    };
 
-    if (phase === "enter" || phase === "hold") {
-      const next = phase === "enter" ? "grow" : "fade";
-      // Two frames, for the same reason the fixed-height rows need them: one
-      // for React to commit the start value, one for the browser to take it.
-      let inner = 0;
-      const outer = requestAnimationFrame(() => {
-        inner = requestAnimationFrame(() => setPhase(next));
-      });
-      // A tab that is not on screen is given no animation frames at all, and a
-      // box stuck before its own entrance is a box that never appears — the
-      // whole outline, blank, until something else happens to re-render it. The
-      // clock is a worse start value than a frame and always fires, which is
-      // the right trade for the difference between "slightly less smooth" and
-      // "gone".
-      const fallback = window.setTimeout(() => setPhase(next), FRAME_FALLBACK_MS);
-      return () => {
-        cancelAnimationFrame(outer);
-        cancelAnimationFrame(inner);
-        window.clearTimeout(fallback);
-      };
+    if (instant || (firstRender && !appear)) {
+      box.style.height = present ? "auto" : "0px";
+      box.style.opacity = present ? "1" : "0";
+      return clear;
     }
 
-    const timer = window.setTimeout(
-      () => setPhase(phase === "grow" ? "open" : "closed"),
-      motionDuration(document.documentElement) / 2,
-    );
-    return () => window.clearTimeout(timer);
-  }, [phase]);
+    const fullHeight = content.offsetHeight;
+
+    if (present) {
+      // A returning card may be part-way through its departure. Starting from
+      // its current rendered height keeps a quick filter reversal continuous.
+      const currentHeight = entering ? 0 : Math.max(0, box.getBoundingClientRect().height);
+      box.style.height = `${currentHeight}px`;
+      box.style.opacity = "0";
+      void box.offsetHeight;
+      frame = requestAnimationFrame(() => {
+        box.style.height = `${fullHeight}px`;
+        box.style.opacity = "1";
+        settle = window.setTimeout(() => {
+          box.style.height = "auto";
+        }, duration / 2);
+      });
+    } else if (leaving) {
+      // Capture the full content before collapsing. The next frame starts the
+      // fade, then the second half collapses the space it occupied.
+      box.style.height = `${fullHeight}px`;
+      box.style.opacity = "1";
+      void box.offsetHeight;
+      frame = requestAnimationFrame(() => {
+        box.style.opacity = "0";
+        settle = window.setTimeout(() => {
+          box.style.height = "0px";
+        }, duration / 2);
+      });
+    } else {
+      box.style.height = "0px";
+      box.style.opacity = "0";
+    }
+
+    return clear;
+  }, [appear, present]);
 
   return (
     <div
+      ref={boxRef}
       className={`collapse-motion ${className ?? ""}`}
       aria-hidden={present ? undefined : "true"}
       inert={present ? undefined : true}
-      style={{
-        // `auto` once it is open, so a card that grows a row taller follows its
-        // contents without needing an animation of its own.
-        height: phase === "open" ? undefined : phase === "grow" || phase === "hold" || phase === "fade" ? height : 0,
-        opacity: phase === "open" || phase === "hold" ? 1 : 0,
-      }}
+      style={{ height: present ? undefined : 0, opacity: present ? 1 : 0 }}
     >
       <div ref={contentRef}>{children}</div>
     </div>
