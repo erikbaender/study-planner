@@ -24,34 +24,42 @@
  *   Setting `completedUnits` through `updateTopic` would move the number while
  *   leaving velocity and the pace projection with nothing to measure — the app
  *   would then report a pace derived from work it has no record of.
+ * - **It describes topics.** A course is not an object you inspect: it is the
+ *   card its topics live in, and its own four properties are edited from the
+ *   card's context menu. A panel that described three unrelated kinds of thing
+ *   had to announce which one it was showing, and that announcement was a
+ *   title bar competing with the name field directly beneath it.
  */
 
 import { clsx } from "clsx";
 import { usePlannerState } from "@/data/use-repository";
-import type { Course, CourseHealth, StudyBlock, Topic } from "@/domain";
+import type { Course, StudyBlock } from "@/domain";
 import type { ResolvedSelection } from "@/features/workspace/scope";
-import { CourseInspector } from "./course-inspector";
 import { ExamInspector } from "./exam-inspector";
 import { TopicInspector } from "./topic-inspector";
 
+/** The kinds of selection that open the panel. Courses are deliberately absent. */
+export type InspectableSelection = Exclude<NonNullable<ResolvedSelection>, { kind: "course" }>;
+
+/** Whether a resolved selection is something the inspector can describe. */
+export function isInspectable(
+  selection: ResolvedSelection | null,
+): selection is InspectableSelection {
+  return selection !== null && selection !== undefined && selection.kind !== "course";
+}
+
 export function Inspector({
   selection,
-  health,
   today,
-  onSelectCourse,
-  onSelectTopic,
   onRevealBlock,
   onDelete,
   courses: suppliedCourses,
 }: {
   /** Whatever was selected last — it stays here while the panel animates away. */
-  selection: NonNullable<ResolvedSelection> | null;
-  health: Map<string, CourseHealth>;
+  selection: InspectableSelection | null;
   today: string;
-  onSelectCourse: (course: Course) => void;
-  onSelectTopic: (course: Course, topic: Topic) => void;
   onRevealBlock: (block: StudyBlock) => void;
-  onDelete: (selection: NonNullable<ResolvedSelection>) => void;
+  onDelete: (selection: InspectableSelection) => void;
   /** Optional injection keeps the panel's rendering tests independent of storage. */
   courses?: readonly Course[];
 }) {
@@ -76,15 +84,7 @@ export function Inspector({
         // another fades the new contents in rather than swapping the text under
         // a panel that never moved.
         <div key={`${selection.kind}:${selectionId(selection)}`} className="inspector-content">
-          {selection.kind === "course" ? (
-            <CourseInspector
-              course={selection.course}
-              health={health.get(selection.course.id)}
-              selectedId={null}
-              onSelectTopic={(topic) => onSelectTopic(selection.course, topic)}
-              onDelete={() => onDelete(selection)}
-            />
-          ) : selection.kind === "topic" ? (
+          {selection.kind === "topic" ? (
             <TopicInspector
               course={selection.course}
               courses={courses.length > 0 ? courses : [selection.course]}
@@ -97,7 +97,6 @@ export function Inspector({
             <ExamInspector
               course={selection.course}
               exam={selection.exam}
-              onSelectCourse={() => onSelectCourse(selection.course)}
               onDelete={() => onDelete(selection)}
             />
           )}
@@ -107,10 +106,6 @@ export function Inspector({
   );
 }
 
-function selectionId(selection: NonNullable<ResolvedSelection>): string {
-  return selection.kind === "course"
-    ? selection.course.id
-    : selection.kind === "topic"
-      ? selection.topic.id
-      : selection.exam.id;
+function selectionId(selection: InspectableSelection): string {
+  return selection.kind === "topic" ? selection.topic.id : selection.exam.id;
 }

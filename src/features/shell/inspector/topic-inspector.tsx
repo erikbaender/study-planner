@@ -1,8 +1,16 @@
 "use client";
 
-import { clsx } from "clsx";
-import { Plus, Trash2 } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+/**
+ * The topic inspector — the only inspector there is.
+ *
+ * Courses are edited where they live, in the outline; the panel describes the
+ * selected topic and nothing else, which is why it has no title naming its own
+ * kind. Every group of controls below is a `Section`: one label, one rule
+ * between it and the next, the same padding on all four sides.
+ */
+
+import { CalendarPlus, Crosshair, Trash2 } from "lucide-react";
+import { useRef, useState, type CSSProperties } from "react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   addDays,
@@ -20,6 +28,7 @@ import {
 import {
   Button,
   Checkbox,
+  ContextMenu,
   ProgressBar,
   ProgressSlider,
   SegmentedControl,
@@ -30,10 +39,7 @@ import {
 } from "@/ui";
 import { CompletionCheckbox, triggerCompletionAnimation } from "@/features/topics/progress-cell";
 import { clampToLimits, limitsFor } from "@/features/timeline/blocks";
-import { shortDate } from "@/features/timeline/geometry";
-import { DraftText, InspectorHeader, NameSection, ReferenceList, Section } from "./shared";
-import { motionDuration } from "@/ui/motion";
-import { useDisclosure } from "@/ui/row-motion";
+import { DraftText, NameSection, Section } from "./shared";
 
 /* ─── Topic ─────────────────────────────────────────────────────────────── */
 
@@ -57,7 +63,6 @@ export function TopicInspector({
   const unitLabel = UNIT_LABELS[topic.unit].plural;
   const dependencyCandidates = course.topics.filter((candidate) => candidate.id !== topic.id);
   const [preview, setPreview] = useState<number | null>(null);
-  const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
   const completionCheckboxRef = useRef<HTMLInputElement>(null);
   const shown = preview ?? topic.completedUnits;
   const tint = courseColorValue(course.color);
@@ -97,16 +102,21 @@ export function TopicInspector({
     run(repository.logStudy({ topicId: topic.id, date: today, units: units - from }));
   };
 
+  const blocks = [...topic.blocks].sort(
+    (left, right) =>
+      left.startDate.localeCompare(right.startDate) || left.id.localeCompare(right.id),
+  );
+
   return (
     <>
-      <InspectorHeader kind="Topic" />
-
       <NameSection
         kind="Topic"
         entityId={topic.id}
         name={topic.name}
         onCommit={(name) => name && patch({ name })}
       />
+
+      <Separator />
 
       <Section title="Course">
         <div className="flex min-w-0 items-center gap-2">
@@ -204,56 +214,55 @@ export function TopicInspector({
 
       <Separator />
 
+      {/*
+        A block is two dates. That is the whole of it.
+
+        It used to also carry a planned-units stepper, a "set units"/"clear
+        units" pair and a row of action buttons, which made a scheduled window —
+        the simplest object in the app — the most complicated thing in the
+        panel. Auto-planning still records how much work it meant to fit in a
+        block; that is a number the planner writes and the timeline reads, not a
+        field to be nudged from here. Deleting a block and jumping to it on the
+        timeline are actions on an existing row, so they live in its context
+        menu, like every other row action in the app.
+      */}
       <Section title="Scheduled">
-        {/* A block is still a timeline object, but date and unit nudges are
-            common enough to deserve a small editor beside the topic. The
-            explicit reveal action keeps the chart available for arranging work
-            without making a navigation click unexpectedly leave the panel. */}
-        <ReferenceList label={`Study blocks for ${topic.name}`} empty="Not scheduled yet">
-          {[...topic.blocks]
-            .sort(
-              (left, right) =>
-                left.startDate.localeCompare(right.startDate) || left.id.localeCompare(right.id),
-            )
-            .map((block) => (
+        {blocks.length === 0 ? (
+          <p className="text-body text-tertiary">Not scheduled yet</p>
+        ) : (
+          <ul aria-label={`Study blocks for ${topic.name}`} className="flex flex-col gap-1.5">
+            {blocks.map((block, index) => (
               <StudyBlockRow
                 key={block.id}
                 block={block}
-                accent={tint}
-                expanded={expandedBlockId === block.id}
-                unitLabel={unitLabel}
+                labelled={index === 0}
                 topic={topic}
-                onToggle={() => setExpandedBlockId((current) => (current === block.id ? null : block.id))}
                 onReveal={() => onRevealBlock(block)}
                 onUpdate={(next) => run(repository.updateStudyBlock(block.id, next))}
-                onRemove={() => {
-                  setExpandedBlockId(null);
-                  run(repository.deleteStudyBlock(block.id));
-                }}
+                onRemove={() => run(repository.deleteStudyBlock(block.id))}
               />
             ))}
-        </ReferenceList>
+          </ul>
+        )}
+
         <Button
           size="sm"
-          variant="plain"
-          leadingIcon={<Plus aria-hidden="true" />}
+          leadingIcon={<CalendarPlus aria-hidden="true" />}
+          className="self-start"
           onClick={() => {
             const lastBlock = [...topic.blocks]
               .sort((left, right) => left.endDate.localeCompare(right.endDate))
               .at(-1);
             const startDate = lastBlock ? addDays(lastBlock.endDate, 1) : today;
             run(
-              repository
-                .createStudyBlock({
-                  topicId: topic.id,
-                  startDate,
-                  endDate: startDate,
-                  source: "manual",
-                })
-                .then((blockId) => setExpandedBlockId(blockId)),
+              repository.createStudyBlock({
+                topicId: topic.id,
+                startDate,
+                endDate: startDate,
+                source: "manual",
+              }),
             );
           }}
-          className="self-start text-tertiary"
         >
           Add block
         </Button>
@@ -261,52 +270,50 @@ export function TopicInspector({
 
       <Separator />
 
-      <Section title="Planning">
-        <div className="flex min-w-0 flex-col items-stretch gap-1.5">
-          <span className="text-body text-secondary">Priority</span>
-          <SegmentedControl
-            size="sm"
-            label={`Priority of ${topic.name}`}
-            className="w-full min-w-0 [&>button]:flex-1"
-            value={topic.priority}
-            onValueChange={(priority) => patch({ priority })}
-            segments={PRIORITIES.map((priority) => ({
-              value: priority,
-              label: priority[0].toUpperCase() + priority.slice(1),
-            }))}
-          />
-        </div>
+      <Section title="Priority">
+        <SegmentedControl
+          size="sm"
+          label={`Priority of ${topic.name}`}
+          className="w-full min-w-0 [&>button]:flex-1"
+          value={topic.priority}
+          onValueChange={(priority) => patch({ priority })}
+          segments={PRIORITIES.map((priority) => ({
+            value: priority,
+            label: priority[0].toUpperCase() + priority.slice(1),
+          }))}
+        />
+      </Section>
 
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1 text-callout font-medium text-secondary">Depends on</legend>
-          {dependencyCandidates.length === 0 ? (
-            <span className="text-body text-tertiary">No other topics in this course</span>
-          ) : (
-            <div className="flex max-h-32 min-w-0 flex-col gap-1 overflow-y-auto rounded-control bg-fill p-2">
-              {dependencyCandidates.map((candidate) => {
-                const checked = topic.dependencyIds.includes(candidate.id);
-                return (
-                  <Checkbox
-                    key={candidate.id}
-                    className="min-w-0"
-                    label={<span className="min-w-0 break-words">{candidate.name}</span>}
-                    checked={checked}
-                    onCheckedChange={() =>
-                      run(
-                        repository.setTopicDependencies(
-                          topic.id,
-                          checked
-                            ? topic.dependencyIds.filter((id) => id !== candidate.id)
-                            : [...topic.dependencyIds, candidate.id],
-                        ),
-                      )
-                    }
-                  />
-                );
-              })}
-            </div>
-          )}
-        </fieldset>
+      <Separator />
+
+      <Section title="Dependencies">
+        {dependencyCandidates.length === 0 ? (
+          <span className="text-body text-tertiary">No other topics in this course</span>
+        ) : (
+          <div className="flex max-h-32 min-w-0 flex-col gap-1 overflow-y-auto rounded-control bg-fill p-2">
+            {dependencyCandidates.map((candidate) => {
+              const checked = topic.dependencyIds.includes(candidate.id);
+              return (
+                <Checkbox
+                  key={candidate.id}
+                  className="min-w-0"
+                  label={<span className="min-w-0 break-words">{candidate.name}</span>}
+                  checked={checked}
+                  onCheckedChange={() =>
+                    run(
+                      repository.setTopicDependencies(
+                        topic.id,
+                        checked
+                          ? topic.dependencyIds.filter((id) => id !== candidate.id)
+                          : [...topic.dependencyIds, candidate.id],
+                      ),
+                    )
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
       </Section>
 
       <Separator />
@@ -325,91 +332,54 @@ export function TopicInspector({
       <Separator />
 
       <Section>
-        <Button
-          variant="plain"
-          leadingIcon={<Trash2 />}
-          className={clsx("text-negative")}
-          onClick={onDelete}
-        >
-          Delete topic
+        <Button variant="danger" leadingIcon={<Trash2 />} className="self-start" onClick={onDelete}>
+          Delete
         </Button>
       </Section>
     </>
   );
 }
 
-type BlockPatch = {
-  startDate: string;
-  endDate: string;
-  plannedUnits?: number;
-};
-
+/**
+ * One scheduled window: a start date and an end date, side by side.
+ *
+ * Both fields are live — there is no disclosure to open first, because a row
+ * that only shows a date range you cannot touch is a label pretending to be a
+ * control. `clampToLimits` keeps the repository's ordered-date invariant while
+ * a date field is mid-edit and briefly reporting an earlier day.
+ */
 function StudyBlockRow({
   block,
   topic,
-  unitLabel,
-  accent,
-  expanded,
-  onToggle,
+  labelled,
   onReveal,
   onUpdate,
   onRemove,
 }: {
   block: StudyBlock;
   topic: Topic;
-  unitLabel: string;
-  accent: string;
-  expanded: boolean;
-  onToggle: () => void;
+  /** Only the first row carries visible column labels; the rest inherit them. */
+  labelled: boolean;
   onReveal: () => void;
-  onUpdate: (patch: BlockPatch) => void;
+  onUpdate: (patch: { startDate: string; endDate: string; plannedUnits?: number }) => void;
   onRemove: () => void;
 }) {
-  const editorId = `study-block-editor-${block.id}`;
-  const disclosure = useRef<HTMLDivElement>(null);
-  const disclosureContent = useRef<HTMLDivElement>(null);
-  const disclosureState = useDisclosure(expanded);
-
-  useLayoutEffect(() => {
-    const element = disclosure.current;
-    if (!element || !disclosureState.mounted) return;
-    if (!element.dataset.ready) {
-      element.dataset.ready = "true";
-      element.style.height = disclosureState.expanded ? "auto" : "0px";
-      return;
-    }
-
-    const fullHeight = disclosureContent.current?.offsetHeight ?? 0;
-    element.style.height = disclosureState.expanded ? "0px" : `${fullHeight}px`;
-    void element.offsetHeight;
-    element.style.height = disclosureState.expanded ? `${fullHeight}px` : "0px";
-    if (!disclosureState.expanded) return;
-    const timer = window.setTimeout(() => {
-      element.style.height = "auto";
-    }, motionDuration(document.documentElement) / 2);
-    return () => window.clearTimeout(timer);
-  }, [disclosureState.expanded, disclosureState.mounted]);
-
   const moveStart = (startDate: string) => {
     if (!startDate) return;
     const delta = differenceInDays(block.startDate, startDate);
     const next = clampToLimits(
-      {
-        startDate,
-        endDate: addDays(block.endDate, delta),
-      },
+      { startDate, endDate: addDays(block.endDate, delta) },
       "move",
       limitsFor(block, topic),
     );
     onUpdate({ ...next, plannedUnits: block.plannedUnits });
   };
+
   const resizeEnd = (endDate: string) => {
     if (!endDate) return;
     const next = clampToLimits(
       {
         startDate: block.startDate,
-        // Date fields can briefly report an earlier day while being edited;
-        // clamping here keeps the repository's ordered-date invariant intact.
         endDate: endDate < block.startDate ? block.startDate : endDate,
       },
       "end",
@@ -417,101 +387,35 @@ function StudyBlockRow({
     );
     onUpdate({ ...next, plannedUnits: block.plannedUnits });
   };
-  const updateUnits = (plannedUnits: number | undefined) =>
-    onUpdate({
-      startDate: block.startDate,
-      endDate: block.endDate,
-      plannedUnits,
-    });
 
   return (
-    <li className="min-w-0">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={editorId}
-        aria-label={`Edit study block ${block.startDate} to ${block.endDate}`}
-        onClick={onToggle}
-        className={clsx(
-          "flex w-full min-w-0 items-center gap-2 rounded-control px-2 py-1 text-left",
-          "transition-colors duration-150 ease-mac",
-          expanded ? "bg-accent-soft" : "hover:bg-fill",
-        )}
-      >
-        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ background: accent }} />
-        <span className="min-w-0 flex-1 truncate text-body">
-          {block.startDate === block.endDate
-            ? shortDate(block.startDate)
-            : `${shortDate(block.startDate)} – ${shortDate(block.endDate)}`}
-        </span>
-        <span className="shrink-0 text-callout tabular-nums text-secondary">
-          {blockMeta(block, unitLabel)}
-        </span>
-      </button>
-
-      {disclosureState.mounted ? (
-        <div ref={disclosure} className="outline-disclosure">
-          <div ref={disclosureContent} id={editorId} className="mt-1 ml-2 flex min-w-0 flex-col gap-2 border-l border-separator pl-2">
-            <div className="grid min-w-0 grid-cols-2 gap-2">
-              <TextField
-                label="Starts"
-                type="date"
-                value={block.startDate}
-                fieldClassName="min-w-0"
-                className="min-w-0 px-1 text-callout"
-                onChange={(event) => moveStart(event.target.value)}
-              />
-              <TextField
-                label="Ends"
-                type="date"
-                value={block.endDate}
-                fieldClassName="min-w-0"
-                className="min-w-0 px-1 text-callout"
-                onChange={(event) => resizeEnd(event.target.value)}
-              />
-            </div>
-
-            {block.plannedUnits === undefined ? (
-              <div className="flex min-w-0 items-center justify-between gap-2 text-callout">
-                <span className="min-w-0 text-secondary">Planned units: not specified</span>
-                <Button size="sm" variant="plain" onClick={() => updateUnits(1)}>
-                  Set units
-                </Button>
-              </div>
-            ) : (
-              <div className="flex min-w-0 items-center justify-between gap-2">
-                <Stepper
-                  label={`Planned units for ${block.startDate}`}
-                  value={block.plannedUnits}
-                  min={0}
-                  onValueChange={updateUnits}
-                />
-                <Button size="sm" variant="plain" onClick={() => updateUnits(undefined)}>
-                  Clear units
-                </Button>
-              </div>
-            )}
-
-            <div className="flex min-w-0 flex-wrap justify-between gap-1">
-              <Button size="sm" variant="plain" onClick={onReveal}>
-                Show on timeline
-              </Button>
-              <Button size="sm" variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onRemove}>
-                Remove
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </li>
+    <ContextMenu
+      items={[
+        { label: "Focus in timeline", icon: <Crosshair />, onSelect: onReveal },
+        { type: "separator" },
+        { label: "Delete", icon: <Trash2 />, danger: true, onSelect: onRemove },
+      ]}
+    >
+      <li className="grid min-w-0 grid-cols-2 gap-2 rounded-control">
+        <TextField
+          label="Starts"
+          hideLabel={!labelled}
+          type="date"
+          value={block.startDate}
+          fieldClassName="min-w-0"
+          className="min-w-0 px-1.5 text-callout"
+          onChange={(event) => moveStart(event.target.value)}
+        />
+        <TextField
+          label="Ends"
+          hideLabel={!labelled}
+          type="date"
+          value={block.endDate}
+          fieldClassName="min-w-0"
+          className="min-w-0 px-1.5 text-callout"
+          onChange={(event) => resizeEnd(event.target.value)}
+        />
+      </li>
+    </ContextMenu>
   );
-}
-
-/** How long a block is, and how much of the topic it was meant to cover. */
-function blockMeta(block: StudyBlock, unitLabel: string): string {
-  const days = differenceInDays(block.startDate, block.endDate) + 1;
-  const span = `${days} day${days === 1 ? "" : "s"}`;
-  return block.plannedUnits === undefined
-    ? span
-    : `${span} · ${block.plannedUnits} ${unitLabel}`;
 }

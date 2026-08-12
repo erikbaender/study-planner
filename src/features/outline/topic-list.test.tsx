@@ -33,12 +33,10 @@ function renderList({
   selectedId = null,
   onSelect = vi.fn(),
   onDelete = vi.fn(),
-  onAddRow = vi.fn(),
 }: {
   selectedId?: string | null;
   onSelect?: (topic: typeof topics[number]) => void;
   onDelete?: (topic: typeof topics[number]) => void;
-  onAddRow?: () => void;
 } = {}) {
   render(
     <TopicList
@@ -48,10 +46,9 @@ function renderList({
       selectedId={selectedId}
       onSelect={onSelect}
       onDelete={onDelete}
-      onAddRow={onAddRow}
     />,
   );
-  return { onSelect, onDelete, onAddRow };
+  return { onSelect, onDelete };
 }
 
 describe("TopicList", () => {
@@ -95,6 +92,7 @@ describe("TopicList", () => {
         onSelectExam={vi.fn()}
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
+        onEditCourse={vi.fn()}
         onNewCourse={vi.fn()}
       />,
     );
@@ -103,15 +101,6 @@ describe("TopicList", () => {
       "Select Glycolysis",
       "Select Krebs cycle",
     ]);
-  });
-
-  it("calls onAddRow when the add topic row is clicked", async () => {
-    const user = userEvent.setup();
-    const { onAddRow } = renderList();
-
-    await user.click(screen.getByRole("button", { name: "Add topic" }));
-
-    expect(onAddRow).toHaveBeenCalledOnce();
   });
 
   it("marks the selected topic row as pressed so the current selection is visible", () => {
@@ -127,12 +116,42 @@ describe("TopicList", () => {
     );
   });
 
-  it("renders one row per topic and an add topic row", () => {
+  it("renders one row per topic and nothing else", () => {
+    // Adding a topic is the section header's button, which opens the form. A
+    // second affordance shaped like a row was a different way of adding a
+    // different kind of topic — an unnamed one.
     renderList();
 
-    expect(screen.getAllByRole("listitem")).toHaveLength(topics.length + 1);
+    expect(screen.getAllByRole("listitem")).toHaveLength(topics.length);
     expect(screen.getAllByRole("button", { name: /^Select / })).toHaveLength(topics.length);
-    expect(screen.getByRole("button", { name: "Add topic" })).toBeInTheDocument();
+  });
+
+  it("warns on a topic whose scheduled window has closed with work left", () => {
+    const overdue = makeTopic({
+      name: "Lipids",
+      totalUnits: 20,
+      blocks: [
+        {
+          id: "block_overdue",
+          topicId: "topic_overdue",
+          startDate: "2026-04-20",
+          endDate: "2026-04-25",
+          source: "auto" as const,
+        },
+      ],
+    });
+    render(
+      <TopicList
+        course={makeCourse({ topics: [overdue] })}
+        topics={[overdue]}
+        today={TODAY}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Lipids has overdue work" })).toBeInTheDocument();
   });
 
   it("keeps each transitioning slot fixed while the visible row is inset", () => {

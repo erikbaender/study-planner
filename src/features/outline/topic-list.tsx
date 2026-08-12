@@ -22,12 +22,13 @@
  */
 
 import { clsx } from "clsx";
-import { Plus, Trash2 } from "lucide-react";
-import { memo, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { AlertTriangle, Trash2 } from "lucide-react";
+import { memo, useEffect, useRef, type CSSProperties } from "react";
 import { courseColorValue, type Course, type Topic } from "@/domain";
 import { ContextMenu, useStableCallback } from "@/ui";
 import { useRowTransitions } from "@/ui/row-motion";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
+import { overdueBlockCountForTopic } from "@/features/workspace/scope";
 
 /**
  * The visible row is inset inside this fixed slot, so its completion outline
@@ -47,7 +48,7 @@ export const LIST_ROW_CONTENT_HEIGHT = 28;
  * actually drag, instead of squeezing the bar into a control too small to hit
  * and too small to read.
  */
-const COLUMNS = [
+export const COLUMNS = [
   "grid items-center gap-2",
   "grid-cols-[minmax(4rem,1fr)_minmax(4.5rem,8rem)_1.25rem]",
   "sm:gap-3 sm:grid-cols-[minmax(6rem,1fr)_7rem_minmax(5rem,9rem)_1.25rem]",
@@ -62,7 +63,6 @@ export function TopicList({
   selectedId,
   onSelect,
   onDelete,
-  onAddRow,
 }: {
   course: Course;
   /** Must be memoized: the row transitions below are keyed on its identity. */
@@ -71,7 +71,6 @@ export function TopicList({
   selectedId: string | null;
   onSelect: (topic: Topic) => void;
   onDelete: (topic: Topic) => void;
-  onAddRow: () => void;
 }) {
   const rows = useRowTransitions(topics, topicKey, TOPIC_ROW_HEIGHT);
   // The rows below are memoized, and a handler rebuilt by the card on every
@@ -100,10 +99,6 @@ export function TopicList({
           />
         </li>
       ))}
-
-      <li className="shrink-0 p-[3px]">
-        <AddTopicRow onClick={onAddRow} />
-      </li>
     </ul>
   );
 }
@@ -155,7 +150,10 @@ function TopicRow({
         }}
         className={clsx(
           "topic-completion-row relative h-full rounded-control px-2",
-          selected ? "bg-accent-soft" : "hover:bg-fill data-[state=open]:bg-fill",
+          // A blue *border*, never a fill: a finished topic already owns its
+          // background tint, and a selection wash over it hid the one state
+          // the row exists to show.
+          selected ? "inset-ring-2 inset-ring-accent" : "hover:bg-fill data-[state=open]:bg-fill",
         )}
         style={
           {
@@ -177,7 +175,19 @@ function TopicRow({
         />
 
         <div className={clsx(COLUMNS, "pointer-events-none relative h-full")}>
-          <span className="min-w-0 truncate text-body">{topic.name}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 truncate text-body">{topic.name}</span>
+            {/* A block whose window closed with work left in it. The course
+                header counts these; the row says which topic they belong to. */}
+            {overdueBlockCountForTopic(topic, today) > 0 ? (
+              <AlertTriangle
+                aria-label={`${topic.name} has overdue work`}
+                role="img"
+                className="size-3.5 shrink-0 text-negative"
+                strokeWidth={2}
+              />
+            ) : null}
+          </span>
 
           <TopicProgressCell
             topic={topic}
@@ -189,43 +199,6 @@ function TopicRow({
         </div>
       </div>
     </ContextMenu>
-  );
-}
-
-/**
- * The last row of every course, and the fastest way to add one topic.
- *
- * A button in a toolbar somewhere is a button you have to go and find. A row
- * shaped like the rows above it, at the end of the list, is where the next
- * topic is going to be — so that is where the affordance for making one lives.
- */
-function AddTopicRow({ onClick }: { onClick: () => void }) {
-  return <AddListRow label="Add topic" onClick={onClick} />;
-}
-
-/** A list-shaped creation affordance keeps adjacent topic and exam lists aligned. */
-export function AddListRow({
-  label,
-  icon = <Plus aria-hidden="true" className="size-3.5 shrink-0" />,
-  onClick,
-}: {
-  label: string;
-  icon?: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{ height: LIST_ROW_CONTENT_HEIGHT }}
-      className={clsx(
-        "flex w-full items-center gap-2 rounded-control px-2 text-left",
-        "text-callout text-tertiary hover:bg-fill hover:text-secondary",
-      )}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 

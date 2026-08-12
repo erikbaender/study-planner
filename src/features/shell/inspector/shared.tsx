@@ -10,28 +10,31 @@
  * which of the two copies you were meant to change.
  *
  * The rule the panel follows: **each fact appears exactly once, where it is
- * edited.** The title identifies the kind of object; sections contain the
- * object's editable facts. That keeps the panel legible without making a
- * summary that can drift away from its controls.
+ * edited.** There is no panel title naming the kind of object either: the
+ * inspector only ever describes the thing that is selected, and a line of text
+ * saying "Topic" above a topic is a label for the panel rather than for
+ * anything in it.
+ *
+ * A **section** is the panel's unit of layout, and it is one object: exactly one
+ * label, one block of controls, the same padding on every side, and a rule
+ * between it and the next one. Two labelled groups of controls are two
+ * sections — see the context-menu and inspector rules in `AGENTS.md`.
  */
 
-import { clsx } from "clsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { coursePalette, resolveCourseColorId } from "@/domain";
 import { TextArea, TextField } from "@/ui";
 import { useWorkspace } from "@/features/workspace/store";
 
 /* ─── Shared furniture ──────────────────────────────────────────────────── */
 
-/** The panel label is deliberately separate from the object's editable name. */
-export function InspectorHeader({ kind }: { kind: string }) {
-  return (
-    <header className="px-4 pt-4 pb-1">
-      <p className="text-callout font-semibold text-secondary">{kind}</p>
-    </header>
-  );
-}
-
+/**
+ * The object's name, in an ordinary text field.
+ *
+ * It used to be a borderless input that only looked like a field once you had
+ * found it with the pointer. The panel is an editor; its most-edited control
+ * should look like a control, with the same height and padding as every other
+ * field in the app.
+ */
 export function NameSection({
   kind,
   entityId,
@@ -58,78 +61,14 @@ export function NameSection({
 
   return (
     <Section title="Name">
-      <InlineText
-        inputRef={inputRef}
-        label={`${kind} name`}
-        value={name}
-        onCommit={onCommit}
-        className="text-body"
-      />
+      <DraftText inputRef={inputRef} label={`${kind} name`} hideLabel value={name} onCommit={onCommit} />
     </Section>
-  );
-}
-
-/**
- * A field that reads as text and edits as a field.
- *
- * Commits on blur or Enter, reverts on Escape and keeps focus — AppKit's
- * behaviour, and the reason Escape does not also blur is that blurring would
- * fire the commit this render still holds the typed draft for.
- */
-export function InlineText({
-  label,
-  value,
-  onCommit,
-  placeholder,
-  className,
-  inputRef,
-}: {
-  label: string;
-  value: string;
-  onCommit: (next: string) => void;
-  placeholder?: string;
-  className?: string;
-  inputRef?: React.RefObject<HTMLInputElement | null>;
-}) {
-  const [draft, setDraft] = useState(value);
-  const [settled, setSettled] = useState(value);
-  // Adjusted during render, so a value arriving from elsewhere is never painted
-  // a frame late. Same pattern as `ProgressSlider`.
-  if (settled !== value) {
-    setSettled(value);
-    setDraft(value);
-  }
-
-  return (
-    <input
-      ref={inputRef}
-      aria-label={label}
-      value={draft}
-      placeholder={placeholder}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => draft.trim() !== value && onCommit(draft.trim())}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          setDraft(value);
-        } else if (event.key === "Enter") {
-          event.preventDefault();
-          if (draft.trim() !== value) onCommit(draft.trim());
-        }
-      }}
-      className={clsx(
-        "min-w-0 flex-1 rounded-chip bg-transparent px-1 py-0.5",
-        "transition-colors duration-150 ease-mac",
-        "hover:bg-fill focus:bg-content focus:text-label",
-        "inset-ring-[var(--mac-control-border)] focus:inset-ring",
-        className,
-      )}
-    />
   );
 }
 
 export function Section({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-2 px-4 py-3">
+    <section className="flex flex-col gap-2 p-4">
       {title ? (
         <h3 className="text-caption font-semibold tracking-wide text-tertiary uppercase">
           {title}
@@ -183,47 +122,6 @@ export function ReferenceList({
   );
 }
 
-export function Reference({
-  title,
-  meta,
-  accent,
-  selected,
-  onSelect,
-}: {
-  title: string;
-  meta?: ReactNode;
-  accent?: string;
-  selected?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-pressed={selected}
-        className={clsx(
-          "flex w-full items-center gap-2 rounded-control px-2 py-1 text-left",
-          "transition-colors duration-150 ease-mac",
-          selected ? "bg-accent-soft" : "hover:bg-fill",
-        )}
-      >
-        {accent ? (
-          <span
-            aria-hidden="true"
-            className="size-1.5 shrink-0 rounded-full"
-            style={{ background: accent }}
-          />
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-body">{title}</span>
-        {meta ? (
-          <span className="shrink-0 text-callout tabular-nums text-secondary">{meta}</span>
-        ) : null}
-      </button>
-    </li>
-  );
-}
-
 /* ─── Long text ─────────────────────────────────────────────────────────── */
 
 /**
@@ -242,6 +140,7 @@ export function DraftText({
   placeholder,
   hint,
   hideLabel,
+  inputRef,
 }: {
   label: string;
   value: string;
@@ -250,6 +149,8 @@ export function DraftText({
   placeholder?: string;
   hint?: string;
   hideLabel?: boolean;
+  /** Lets a rename request from elsewhere put the caret in this field. */
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
   const [draft, setDraft] = useState(value);
   const [settled, setSettled] = useState(value);
@@ -285,34 +186,5 @@ export function DraftText({
     },
   };
 
-  return multiline ? <TextArea rows={3} {...props} /> : <TextField {...props} />;
-}
-
-export function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const selectedColorId = resolveCourseColorId(value);
-  return (
-    // A grid rather than a wrap: the palette is ten colours, and five and five
-    // is the arrangement you can read as a palette. Left to wrap, it broke
-    // wherever the panel's width happened to fall and looked like an accident.
-    // The padding is for the selected swatch, which grows past its own box.
-    <div role="radiogroup" aria-label="Course colour" className="grid grid-cols-5 justify-items-start gap-1.5 p-1">
-      {coursePalette.map((color) => (
-        <button
-          key={color.id}
-          type="button"
-          role="radio"
-          aria-checked={color.id === selectedColorId}
-          aria-label={color.name}
-          onClick={() => onChange(color.id)}
-          className={clsx(
-            "size-5 rounded-full transition-transform duration-150 ease-mac",
-            color.id === selectedColorId
-              ? "scale-110 inset-ring-2 inset-ring-[var(--mac-label)]"
-              : "hover:scale-110",
-          )}
-          style={{ background: color.value }}
-        />
-      ))}
-    </div>
-  );
+  return multiline ? <TextArea rows={3} {...props} /> : <TextField ref={inputRef} {...props} />;
 }

@@ -115,20 +115,24 @@
   animation: topic-completion-row-out var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="on"] .topic-completion-checkmark {
+.topic-completion-row[data-completion-direction="on"] .topic-completion-checkmark,
+.course-completion-row[data-completion-direction="on"] .course-completion-checkmark {
   /* Control motion is intentionally shorter than the surrounding row pulse. */
   animation: topic-completion-checkmark var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="off"] .topic-completion-checkmark {
+.topic-completion-row[data-completion-direction="off"] .topic-completion-checkmark,
+.course-completion-row[data-completion-direction="off"] .course-completion-checkmark {
   animation: topic-completion-checkmark-out var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="on"] .topic-completion-fill {
+.topic-completion-row[data-completion-direction="on"] .topic-completion-fill,
+.course-completion-row[data-completion-direction="on"] .course-completion-fill {
   animation: topic-completion-fill var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="off"] .topic-completion-fill {
+.topic-completion-row[data-completion-direction="off"] .topic-completion-fill,
+.course-completion-row[data-completion-direction="off"] .course-completion-fill {
   animation: topic-completion-fill-out var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
@@ -211,6 +215,13 @@ span:has(> .topic-progress-thumb) {
   background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
 }
 
+/* The outline card's completed tint, layered under its own hover the same way
+   a finished topic row is. The card carries the tint; the header does not, so
+   a course reads as done without its forty rows reading as selected. */
+.course-completion-row[data-course-completed="true"] .outline-card-header:hover {
+  background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
+}
+
 /* Inspection selection is blue even for a completed course and while the
    pointer is over it; the completion tint must not win over selection. */
 .course-completion-row[aria-current="true"] {
@@ -221,16 +232,19 @@ span:has(> .topic-progress-thumb) {
   background-image: none;
 }
 
-.topic-completion-fill {
+.topic-completion-fill,
+.course-completion-fill {
   background-color: var(--topic-completion-color);
   transform-origin: center;
 }
 
-.topic-completion-checkbox:focus-visible {
+.topic-completion-checkbox:focus-visible,
+.course-completion-checkbox:focus-visible {
   outline-color: var(--topic-completion-color);
 }
 
-.topic-completion-checkmark {
+.topic-completion-checkmark,
+.course-completion-checkmark {
   color: var(--mac-completion-mark);
 }
 
@@ -762,11 +776,13 @@ span:has(> .topic-progress-thumb) {
   .course-completion-row[data-completion-direction="off"] {
     animation: none;
   }
-  .topic-completion-row[data-completion-direction] .topic-completion-checkmark {
+  .topic-completion-row[data-completion-direction] .topic-completion-checkmark,
+  .course-completion-row[data-completion-direction] .course-completion-checkmark {
     animation: none;
   }
 
-  .topic-completion-row[data-completion-direction] .topic-completion-fill {
+  .topic-completion-row[data-completion-direction] .topic-completion-fill,
+  .course-completion-row[data-completion-direction] .course-completion-fill {
     animation: none;
   }
   .topic-progress-range,

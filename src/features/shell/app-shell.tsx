@@ -48,8 +48,16 @@ import { motionDuration } from "@/ui/motion";
 import { AppSidebar } from "./app-sidebar";
 import { AppToolbar } from "./app-toolbar";
 import { CommandPalette } from "./command-palette";
-import { Inspector } from "./inspector";
-import { ConfirmDeleteSheet, ConfirmPlanDeleteSheet, EditPlanSheet, NewCourseSheet, NewPlanSheet, SampleDataSheet } from "./sheets";
+import { Inspector, isInspectable } from "./inspector";
+import {
+  ConfirmDeleteSheet,
+  ConfirmPlanDeleteSheet,
+  EditCourseSheet,
+  EditPlanSheet,
+  NewCourseSheet,
+  NewPlanSheet,
+  SampleDataSheet,
+} from "./sheets";
 import { ViewFade } from "./view-fade";
 import { OutlineView } from "@/features/outline/outline-view";
 import { TimelineView } from "@/features/timeline/timeline-view";
@@ -171,12 +179,19 @@ export function AppShell() {
   // filtered out or deleted closes it again. `inspected` is the selection that
   // was last real, so the panel still has something to describe on the way out
   // — a deselect is a panel leaving, not a panel emptying and then leaving.
-  const inspectorOpen = selection !== null;
-  const inspected = useRetained(selection);
+  // A course is not an inspectable object, so selecting one highlights its card
+  // without opening the panel over the topics you are about to work through.
+  const inspectable = isInspectable(selection) ? selection : null;
+  const inspectorOpen = inspectable !== null;
+  const inspected = useRetained(inspectable);
   const pendingDelete = useMemo(
     () => resolveSelection(plan, workspace.pendingDelete),
     [plan, workspace.pendingDelete],
   );
+  // Held as an id rather than as the course itself, so an edit made in the
+  // sheet is reflected in its own title rather than by a stale copy.
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const editingCourse = plan?.courses.find((course) => course.id === editingCourseId);
 
   /* ─── Actions ─────────────────────────────────────────────────────────── */
 
@@ -253,11 +268,6 @@ export function AppShell() {
   const revealBlock = (block: StudyBlock) => {
     workspace.setView("timeline");
     workspace.revealBlock(block.id);
-  };
-
-  const revealTopic = (_course: Course, topic: Topic) => {
-    workspace.setView("outline");
-    revealSelection({ kind: "topic", id: topic.id });
   };
 
   /**
@@ -446,6 +456,7 @@ export function AppShell() {
                     onDeleteCourse={(course) =>
                       workspace.setPendingDelete({ kind: "course", id: course.id })
                     }
+                    onEditCourse={(courseId) => setEditingCourseId(courseId)}
                     onNewCourse={() => workspace.setCreating("course")}
                   />
                 )
@@ -470,18 +481,13 @@ export function AppShell() {
         >
           <Inspector
             selection={inspected}
-            health={health}
             today={today}
-            onSelectCourse={selectCourse}
-            onSelectTopic={revealTopic}
             onRevealBlock={revealBlock}
             onDelete={(target) =>
               workspace.setPendingDelete(
-                target.kind === "course"
-                  ? { kind: "course", id: target.course.id }
-                  : target.kind === "topic"
-                    ? { kind: "topic", id: target.topic.id }
-                    : { kind: "exam", id: target.exam.id },
+                target.kind === "topic"
+                  ? { kind: "topic", id: target.topic.id }
+                  : { kind: "exam", id: target.exam.id },
               )
             }
           />
@@ -523,6 +529,15 @@ export function AppShell() {
           const nextPlan = snapshot.plans.find((candidate) => candidate.id !== plan.id);
           run(repository.deletePlan(plan.id).then(() => workspace.setPlan(nextPlan?.id ?? null)));
           workspace.select(null);
+        }}
+      />
+
+      <EditCourseSheet
+        course={editingCourse}
+        open={editingCourse !== undefined}
+        onOpenChange={(open) => setEditingCourseId(open ? editingCourseId : null)}
+        onSave={(input) => {
+          if (editingCourse) run(repository.updateCourse(editingCourse.id, input));
         }}
       />
 
