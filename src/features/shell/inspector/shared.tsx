@@ -163,9 +163,9 @@ export function Section({ title, children }: { title?: string; children: ReactNo
 /** A label/value line. The label column is fixed so a stack of them aligns. */
 export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-baseline gap-2 text-body">
+    <div className="flex min-w-0 items-start gap-2 text-body">
       <span className="w-24 shrink-0 text-secondary">{label}</span>
-      <span className="min-w-0 flex-1 tabular-nums">{children}</span>
+      <span className="min-w-0 flex-1 break-words tabular-nums">{children}</span>
     </div>
   );
 }
@@ -175,12 +175,12 @@ export function Row({ label, children }: { label: string; children: ReactNode })
 /**
  * The other objects this one is made of.
  *
- * A topic's blocks and a course's topics are not properties to be typed into a
- * field; they are things in their own right, with their own place in the app.
- * So they are listed as references: each one says what it is, and clicking it
- * goes there — to the block on the timeline, to the topic in the outline. That
- * is the whole navigation model of the panel, and it is why the inspector never
- * needs to duplicate an editor that already exists somewhere better.
+ * A course's topics are not properties to be typed into a field; they are
+ * things in their own right, with their own place in the app. So they are
+ * listed as references: each one says what it is, and clicking it goes there —
+ * to the topic in the outline. Study blocks are the deliberate exception:
+ * their dates are small, local adjustments, so the topic inspector edits them
+ * in place while still offering the timeline as the richer view.
  */
 export function ReferenceList({
   label,
@@ -308,7 +308,11 @@ export function DraftText({
 export function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const selectedColorId = resolveCourseColorId(value);
   return (
-    <div role="radiogroup" aria-label="Course colour" className="flex flex-wrap gap-1.5">
+    // A grid rather than a wrap: the palette is ten colours, and five and five
+    // is the arrangement you can read as a palette. Left to wrap, it broke
+    // wherever the panel's width happened to fall and looked like an accident.
+    // The padding is for the selected swatch, which grows past its own box.
+    <div role="radiogroup" aria-label="Course colour" className="grid grid-cols-5 justify-items-start gap-1.5 p-1">
       {coursePalette.map((color) => (
         <button
           key={color.id}

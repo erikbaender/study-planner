@@ -417,7 +417,6 @@ export function AppShell() {
                     query={workspace.query}
                     snapshot={snapshot}
                     selectedId={workspace.selection?.id ?? null}
-                    onSelectCourse={selectCourse}
                     onSelectTopic={selectTopic}
                     onSelectExam={selectExam}
                     onDeleteTopic={(_course, topic) =>
@@ -439,12 +438,14 @@ export function AppShell() {
           inert={!inspectorOpen}
           data-panel-side="right"
           data-panel-state={inspectorOpen ? "open" : "closed"}
-          // An overlay at every width, unlike the sidebar. The sidebar is
-          // scaffolding and can take a column of its own; the inspector appears
-          // and disappears as you click around, and a layout that reflowed on
-          // every selection would move the rows being selected. The views leave
-          // a gutter this wide on the right so nothing important sits under it.
-          className="side-panel-shell absolute inset-y-0 right-0 z-30 flex w-72 overflow-hidden material-overlay shadow-popover"
+          // A column of its own once there is room for one, and an overlay only
+          // on the narrow windows where a third column would leave the content
+          // unreadable. An inspector that floats over the view it describes
+          // covers the rows you are working through and has to be dismissed to
+          // read them; beside the view, both are legible at once.
+          className={`side-panel-shell absolute inset-y-0 right-0 z-30 flex w-72 overflow-hidden material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none ${
+            inspectorOpen ? "" : "lg:w-0"
+          }`}
         >
           <Inspector
             selection={inspected}

@@ -321,6 +321,12 @@ span:has(> .topic-progress-thumb) {
   opacity: 0;
 }
 
+/* Keep initial positioning invisible without adding a second fade to the view. */
+.timeline-canvas[data-timeline-initializing="true"] {
+  opacity: 0;
+  transition: none;
+}
+
 /* Do not let the browser preserve a historical horizontal anchor while the
    timeline's full date range is being laid out. Initial positioning owns it. */
 .timeline-scrollport {
@@ -385,7 +391,6 @@ span:has(> .topic-progress-thumb) {
 }
 
 /** Everything that changes colour rather than position: hover, selection, fades. */
-.tint,
 .timeline-tint {
   transition:
     background-color var(--topic-motion-duration) var(--topic-motion-curve),
@@ -705,6 +710,7 @@ span:has(> .topic-progress-thumb) {
 
 @media (prefers-reduced-motion: reduce) {
   .timeline-canvas,
+  .timeline-canvas[data-timeline-initializing="true"],
   .timeline-disclosure,
   .timeline-zoom-layer,
   .timeline-row-motion,
@@ -712,7 +718,6 @@ span:has(> .topic-progress-thumb) {
   .outline-disclosure,
   .collapse-motion,
   .view-fade,
-  .tint,
   .timeline-tint,
   .input-hint-fade {
     transition: none;

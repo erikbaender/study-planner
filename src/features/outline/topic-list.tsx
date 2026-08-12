@@ -22,18 +22,23 @@
  */
 
 import { clsx } from "clsx";
-import { PanelRight, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { memo, useEffect, useRef, type CSSProperties } from "react";
 import { courseColorValue, type Course, type Topic } from "@/domain";
+import { revealSelection } from "@/features/workspace/store";
 import { ContextMenu } from "@/ui";
 import { useRowTransitions } from "@/ui/row-motion";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
 
-/** Fixed, so a row arriving or leaving is a height the list already knows. */
-export const TOPIC_ROW_HEIGHT = 28;
+/**
+ * The visible row is inset inside this fixed slot, so its completion outline
+ * has room to draw without clipping while arrivals and departures animate.
+ */
+export const TOPIC_ROW_HEIGHT = 34;
+const TOPIC_ROW_CONTENT_HEIGHT = 28;
 
 /**
- * Name · readout · progress · done · delete.
+ * Name · readout · progress · done.
  *
  * No colour dot: the card carries the course's colour as a rail down its left
  * edge, and repeating it on every one of forty rows turned a list of topics
@@ -41,13 +46,13 @@ export const TOPIC_ROW_HEIGHT = 28;
  *
  * The readout is dropped on a narrow window rather than shrunk, and the grid
  * loses its column with it: a phone has room for a name and a bar you can
- * actually drag, and squeezing all six columns into 268px left the bar twelve
- * pixels wide — a control too small to hit and too small to read.
+ * actually drag, instead of squeezing the bar into a control too small to hit
+ * and too small to read.
  */
 const COLUMNS = [
   "grid items-center gap-2",
-  "grid-cols-[minmax(4rem,1fr)_minmax(4.5rem,8rem)_1.25rem_1.25rem]",
-  "sm:gap-3 sm:grid-cols-[minmax(6rem,1fr)_7rem_minmax(5rem,9rem)_1.25rem_1.25rem]",
+  "grid-cols-[minmax(4rem,1fr)_minmax(4.5rem,8rem)_1.25rem]",
+  "sm:gap-3 sm:grid-cols-[minmax(6rem,1fr)_7rem_minmax(5rem,9rem)_1.25rem]",
 ].join(" ");
 
 const topicKey = (topic: Topic) => topic.id;
@@ -79,7 +84,7 @@ export function TopicList({
           key={key}
           aria-hidden={motion.visible ? undefined : "true"}
           inert={motion.visible ? undefined : true}
-          className="row-motion shrink-0"
+          className="row-motion shrink-0 p-[3px]"
           style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
         >
           <MemoTopicRow
@@ -93,7 +98,7 @@ export function TopicList({
         </li>
       ))}
 
-      <li className="shrink-0">
+      <li className="shrink-0 p-[3px]">
         <AddTopicRow onClick={onAddRow} />
       </li>
     </ul>
@@ -128,10 +133,8 @@ function TopicRow({
   return (
     <ContextMenu
       items={[
-        { label: "Show in inspector", icon: <PanelRight />, onSelect: () => onSelect(topic) },
-        { type: "separator" },
         {
-          label: `Delete ${topic.name}`,
+          label: "Delete",
           icon: <Trash2 />,
           danger: true,
           onSelect: () => onDelete(topic),
@@ -142,13 +145,19 @@ function TopicRow({
         ref={rowRef}
         data-course-id={course.id}
         data-keeps-selection
+        onContextMenu={(event) => {
+          // The course card is another context-menu trigger around this row;
+          // stop the event there so a topic action cannot select its course.
+          event.stopPropagation();
+          revealSelection({ kind: "topic", id: topic.id });
+        }}
         className={clsx(
-          "topic-completion-row tint group relative rounded-control px-2",
+          "topic-completion-row relative h-full rounded-control px-2",
           selected ? "bg-accent-soft" : "hover:bg-fill",
         )}
         style={
           {
-            height: TOPIC_ROW_HEIGHT,
+            height: TOPIC_ROW_CONTENT_HEIGHT,
             "--topic-completion-color": courseColorValue(course.color),
           } as CSSProperties
         }
@@ -175,18 +184,6 @@ function TopicRow({
             sliderClassName="pointer-events-auto w-full min-w-0"
             readoutClassName="hidden text-right text-callout tabular-nums whitespace-nowrap text-secondary sm:block"
           />
-
-          <button
-            type="button"
-            aria-label={`Delete ${topic.name}`}
-            onClick={() => onDelete(topic)}
-            className={clsx(
-              "tint pointer-events-auto grid size-5 place-items-center rounded-chip text-tertiary",
-              "opacity-0 group-hover:opacity-100 hover:bg-fill-strong hover:text-negative focus-visible:opacity-100",
-            )}
-          >
-            <Trash2 aria-hidden="true" className="size-3.5" />
-          </button>
         </div>
       </div>
     </ContextMenu>
@@ -205,9 +202,9 @@ function AddTopicRow({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      style={{ height: TOPIC_ROW_HEIGHT }}
+      style={{ height: TOPIC_ROW_CONTENT_HEIGHT }}
       className={clsx(
-        "tint flex w-full items-center gap-2 rounded-control px-2 text-left",
+        "flex w-full items-center gap-2 rounded-control px-2 text-left",
         "text-callout text-tertiary hover:bg-fill hover:text-secondary",
       )}
     >

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
@@ -15,6 +15,9 @@ const repository = {
   updateTopic: vi.fn(() => Promise.resolve()),
   logStudy: vi.fn(() => Promise.resolve()),
   setTopicDependencies: vi.fn(() => Promise.resolve()),
+  createStudyBlock: vi.fn(() => Promise.resolve("block_new")),
+  updateStudyBlock: vi.fn(() => Promise.resolve()),
+  deleteStudyBlock: vi.fn(() => Promise.resolve()),
 };
 const run = vi.fn();
 
@@ -213,9 +216,109 @@ describe("Inspector", () => {
       );
 
       const references = screen.getByRole("list", { name: "Study blocks for Glycolysis" });
-      await user.click(within(references).getByRole("button"));
+      await user.click(within(references).getByRole("button", { name: /Edit study block/ }));
+      await user.click(screen.getByRole("button", { name: "Show on timeline" }));
 
       expect(onRevealBlock).toHaveBeenCalledWith(block);
+    });
+
+    it("adds a manual block after the topic's last block", async () => {
+      const lastBlock = {
+        id: "block_last",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "manual" as const,
+      };
+      const scheduledTopic = makeTopic({ blocks: [lastBlock] });
+      const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          health={healthFor(scheduledCourse)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Add block" }));
+
+      expect(repository.createStudyBlock).toHaveBeenCalledWith({
+        topicId: scheduledTopic.id,
+        startDate: "2026-05-07",
+        endDate: "2026-05-07",
+        source: "manual",
+      });
+    });
+
+    it("moves a block when its start changes and resizes it when its end changes", async () => {
+      const block = {
+        id: "block_dates",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "auto" as const,
+        plannedUnits: 12,
+      };
+      const scheduledTopic = makeTopic({ blocks: [block] });
+      const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          health={healthFor(scheduledCourse)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: /Edit study block 2026-05-04/ }));
+      fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-05-10" } });
+      expect(repository.updateStudyBlock).toHaveBeenCalledWith("block_dates", {
+        startDate: "2026-05-10",
+        endDate: "2026-05-12",
+        plannedUnits: 12,
+      });
+
+      fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "2026-05-14" } });
+      expect(repository.updateStudyBlock).toHaveBeenLastCalledWith("block_dates", {
+        startDate: "2026-05-04",
+        endDate: "2026-05-14",
+        plannedUnits: 12,
+      });
+    });
+
+    it("removes a block from its expanded editor", async () => {
+      const block = {
+        id: "block_remove",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "manual" as const,
+      };
+      const scheduledTopic = makeTopic({ blocks: [block] });
+      const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          health={healthFor(scheduledCourse)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: /Edit study block 2026-05-04/ }));
+      await user.click(screen.getByRole("button", { name: "Remove" }));
+
+      expect(repository.deleteStudyBlock).toHaveBeenCalledWith("block_remove");
     });
   });
 

@@ -18,17 +18,14 @@
  *   across a term's worth of material, and the outline stops being something
  *   you can see and becomes something you scroll. Every measurement here is the
  *   smallest one that still reads.
- * - **A control does one thing.** The triangle opens the course. The heading
- *   selects it. Neither does the other's job, and — critically — neither is
- *   *implied* by anything else: expansion used to follow the selection, so
- *   opening a course by hand and then selecting a different one silently
- *   reversed it, which reads as a disclosure that works on some courses and not
- *   on others. It is now stored, explicit, and answers only to the triangle.
+ * - **A control does one thing.** The course header opens and closes the
+ *   course. Topic rows select topics, while a course is selected by its
+ *   context menu so opening a course never doubles as inspecting it.
  */
 
 import { clsx } from "clsx";
 import { useLayoutEffect, useMemo, useState } from "react";
-import { CalendarPlus, ChevronRight, ClipboardPaste, Plus, Trash2 } from "lucide-react";
+import { CalendarPlus, ClipboardPaste, Plus, Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
@@ -82,7 +79,6 @@ export function OutlineView({
   query,
   snapshot,
   selectedId,
-  onSelectCourse,
   onSelectTopic,
   onSelectExam,
   onDeleteTopic,
@@ -95,7 +91,6 @@ export function OutlineView({
   snapshot: PlannerSnapshot;
   query: string;
   selectedId: string | null;
-  onSelectCourse: (course: Course) => void;
   onSelectTopic: (course: Course, topic: Topic) => void;
   onSelectExam: (course: Course, exam: Exam) => void;
   onDeleteTopic: (course: Course, topic: Topic) => void;
@@ -109,12 +104,7 @@ export function OutlineView({
   const cards = useListPresence(courses, courseKey);
 
   return (
-    // The reserved gutter on the right is the width of the inspector. The panel
-    // is an overlay — it must not resize the view it is describing, because a
-    // column that reflows the instant you select something moves the very row
-    // you clicked out from under the pointer — so the space it will occupy is
-    // simply never used for content.
-    <div className="h-full lg:pr-72" {...hintScope}>
+    <div className="h-full" {...hintScope}>
       {/* `min-h-full`, so the space below the last card is still the view and a
           click there clears the selection. */}
       <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-2 p-5">
@@ -127,7 +117,6 @@ export function OutlineView({
               query={query}
               snapshot={snapshot}
               selectedId={selectedId}
-              onSelectCourse={() => onSelectCourse(item)}
               onSelectTopic={(topic) => onSelectTopic(item, topic)}
               onSelectExam={(exam) => onSelectExam(item, exam)}
               onDeleteTopic={(topic) => onDeleteTopic(item, topic)}
@@ -159,7 +148,6 @@ function CourseCard({
   query,
   snapshot,
   selectedId,
-  onSelectCourse,
   onSelectTopic,
   onSelectExam,
   onDeleteTopic,
@@ -171,7 +159,6 @@ function CourseCard({
   query: string;
   snapshot: PlannerSnapshot;
   selectedId: string | null;
-  onSelectCourse: () => void;
   onSelectTopic: (topic: Topic) => void;
   onSelectExam: (exam: Exam) => void;
   onDeleteTopic: (topic: Topic) => void;
@@ -227,8 +214,9 @@ function CourseCard({
     >
       <section
         data-course-id={course.id}
+        onContextMenu={() => revealSelection({ kind: "course", id: course.id })}
         className={clsx(
-          "tint relative overflow-hidden rounded-card border bg-content",
+          "relative overflow-hidden rounded-card border bg-content",
           selected ? "border-accent" : "border-separator",
         )}
       >
@@ -237,39 +225,26 @@ function CourseCard({
             topic thirty rows down, which course you are still inside. */}
         <span
           aria-hidden="true"
-          className="tint absolute inset-y-0 left-0 w-[3px]"
+          className="absolute inset-y-0 left-0 w-[3px]"
           style={{ background: tint, opacity: selected ? 1 : 0.65 }}
         />
 
         <div className="relative pl-[3px]" data-keeps-selection>
           <button
             type="button"
-            aria-pressed={selected}
-            aria-label={`Select ${course.name}`}
-            onClick={onSelectCourse}
+            onClick={() => toggleCollapsed(course.id)}
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? "Expand" : "Collapse"} ${course.name}`}
+            // The header alone carries the selection tint, not the whole card:
+            // a body of forty topic rows washed blue says "these rows are
+            // selected", which is the one thing selecting a course does not
+            // mean.
             className={clsx(
-              "tint absolute inset-0 focus-visible:outline-2 focus-visible:-outline-offset-2",
+              "relative flex h-9 w-full items-center gap-2.5 pr-3 pl-2 text-left",
+              "focus-visible:outline-2 focus-visible:-outline-offset-2",
               selected ? "bg-accent-soft" : "hover:bg-fill/50",
             )}
-          />
-
-          <header className="pointer-events-none relative flex h-9 items-center gap-2.5 pr-3 pl-2">
-            <button
-              type="button"
-              onClick={() => toggleCollapsed(course.id)}
-              aria-expanded={!collapsed}
-              aria-label={`${collapsed ? "Expand" : "Collapse"} ${course.name}`}
-              className="tint pointer-events-auto grid size-5 shrink-0 place-items-center rounded-chip text-tertiary hover:bg-fill-strong hover:text-secondary"
-            >
-              <ChevronRight
-                aria-hidden="true"
-                className={clsx(
-                  "size-3.5 transition-transform duration-[--topic-motion-duration] ease-[cubic-bezier(0.65,0,0.35,1)]",
-                  !collapsed && "rotate-90",
-                )}
-              />
-            </button>
-
+          >
             <h2 className="min-w-0 flex-1 truncate text-title3 font-semibold">{course.name}</h2>
 
             {course.code ? (
@@ -301,7 +276,7 @@ function CourseCard({
                 atRisk={Boolean(health.pace && !health.pace.onTrack)}
               />
             ) : null}
-          </header>
+          </button>
         </div>
 
         {disclosure.mounted ? (
@@ -440,7 +415,7 @@ function ExamChips({
               onClick={() => onSelect(exam)}
               aria-pressed={exam.id === selectedId}
               className={clsx(
-                "tint flex items-center gap-1.5 rounded-chip py-0.5 pr-1.5 pl-2 text-callout",
+                "flex items-center gap-1.5 rounded-chip py-0.5 pr-1.5 pl-2 text-callout",
                 exam.id === selectedId ? "bg-accent-soft" : "hover:bg-fill",
               )}
             >
@@ -457,7 +432,7 @@ function ExamChips({
               label={`Delete ${exam.name}`}
               icon={<Trash2 />}
               onClick={() => onDelete(exam)}
-              className="tint opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
             />
           </span>
         </Collapse>

@@ -2,7 +2,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { course as makeCourse, topic as makeTopic } from "@/test/factories";
-import { TopicList } from "./topic-list";
+import { useWorkspace } from "@/features/workspace/store";
+import { TOPIC_ROW_HEIGHT, TopicList } from "./topic-list";
 
 const repository = {
   updateTopic: vi.fn(() => Promise.resolve()),
@@ -22,7 +23,10 @@ const topics = [
 ];
 const course = makeCourse({ name: "Biochemistry", topics });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  useWorkspace.getState().select(null);
+});
 
 function renderList({
   selectedId = null,
@@ -59,11 +63,16 @@ describe("TopicList", () => {
     expect(onSelect).toHaveBeenCalledWith(topics[0]);
   });
 
-  it("deletes the topic represented by a row when its delete button is clicked", async () => {
+  it("selects a topic and deletes it from its context menu", async () => {
     const user = userEvent.setup();
     const { onDelete } = renderList();
 
-    await user.click(screen.getByRole("button", { name: "Delete Glycolysis" }));
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Glycolysis") });
+
+    expect(useWorkspace.getState().selection).toEqual({ kind: "topic", id: topics[0].id });
+    expect(screen.queryByRole("button", { name: "Delete Glycolysis" })).not.toBeInTheDocument();
+
+    await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     expect(onDelete).toHaveBeenCalledWith(topics[0]);
   });
@@ -96,5 +105,17 @@ describe("TopicList", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(topics.length + 1);
     expect(screen.getAllByRole("button", { name: /^Select / })).toHaveLength(topics.length);
     expect(screen.getByRole("button", { name: "Add topic" })).toBeInTheDocument();
+  });
+
+  it("keeps each transitioning slot fixed while the visible row is inset", () => {
+    renderList();
+
+    const topicSlot = screen
+      .getAllByRole("listitem")
+      .find((item) => item.querySelector(".topic-completion-row"));
+
+    expect(topicSlot).toHaveStyle({ height: `${TOPIC_ROW_HEIGHT}px` });
+    expect(topicSlot).toHaveClass("p-[3px]");
+    expect(topicSlot?.querySelector(".topic-completion-row")).toHaveStyle({ height: "28px" });
   });
 });

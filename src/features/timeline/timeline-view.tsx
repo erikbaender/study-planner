@@ -428,12 +428,12 @@ function TimelineChart({
           ref={canvasRef}
           {...hintScope}
           // Every position below is a `calc()` off this one length, so the
-          // transition on `.timeline-canvas` is the whole zoom animation.
+          // transition on the zoom layers is the whole zoom animation.
           style={
             { width: daysCss(range.days), [DAY_WIDTH_PROPERTY]: `${PX_PER_DAY[zoom]}px` } as React.CSSProperties
           }
           className="timeline-canvas relative"
-          data-timeline-zooming="true"
+          data-timeline-initializing="true"
         >
           <Ruler ticks={ticks} bands={bands} range={range} today={today} zoom={zoom} />
 
