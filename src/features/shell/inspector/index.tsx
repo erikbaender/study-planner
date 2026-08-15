@@ -32,6 +32,8 @@
  */
 
 import { clsx } from "clsx";
+import { useEffect, useState } from "react";
+import { motionDuration, prefersReducedMotion } from "@/ui/motion";
 import { usePlannerState } from "@/data/use-repository";
 import type { Course, StudyBlock } from "@/domain";
 import type { ResolvedSelection } from "@/features/workspace/scope";
@@ -70,6 +72,45 @@ export function Inspector({
       ? (repositoryState.snapshot.plans.find((plan) => plan.id === selection?.course.planId)?.courses ?? [])
       : [];
   const courses = suppliedCourses ?? planCourses;
+  const [shown, setShown] = useState(selection);
+  const [fade, setFade] = useState<"steady" | "out" | "in">("steady");
+  const selectionKey = selection ? `${selection.kind}:${selectionId(selection)}` : null;
+  const shownKey = shown ? `${shown.kind}:${selectionId(shown)}` : null;
+  const reducedMotion = prefersReducedMotion();
+
+  // Keep the old inspector mounted until its complete 500ms fade-out is done.
+  // The next content then gets its own 500ms fade-in: together they make one
+  // uninterrupted, one-second sequence with no two panels fighting for paint.
+  if (shown === null && selection !== null && fade === "steady") {
+    setShown(selection);
+    setFade(reducedMotion ? "steady" : "in");
+  } else if (selectionKey !== shownKey && fade !== "out" && !(shown === null && selection === null)) {
+    if (reducedMotion) {
+      setShown(selection);
+      setFade("steady");
+    } else {
+      setFade("out");
+    }
+  }
+  if (selectionKey === shownKey && selection !== shown && fade === "steady") setShown(selection);
+
+  useEffect(() => {
+    if (fade !== "out") return;
+    const timer = window.setTimeout(() => {
+      setShown(selection);
+      setFade(selection === null ? "steady" : "in");
+    }, motionDuration(document.documentElement, "--inspector-fade-duration") / 2);
+    return () => window.clearTimeout(timer);
+  }, [fade, selection]);
+
+  useEffect(() => {
+    if (fade !== "in") return;
+    const timer = window.setTimeout(
+      () => setFade("steady"),
+      motionDuration(document.documentElement, "--inspector-fade-duration") / 2,
+    );
+    return () => window.clearTimeout(timer);
+  }, [fade]);
 
   return (
     <aside
@@ -80,27 +121,28 @@ export function Inspector({
         "border-l border-separator",
       )}
     >
-      {selection === null ? null : (
-        // Keyed on what is being described, so switching from one topic to
-        // another fades the new contents in rather than swapping the text under
-        // a panel that never moved.
-        <div key={`${selection.kind}:${selectionId(selection)}`} className="inspector-content">
-          {selection.kind === "course" ? (
-            <CourseInspector course={selection.course} onDelete={() => onDelete(selection)} />
-          ) : selection.kind === "topic" ? (
+      {shown === null ? null : (
+        <div
+          key={`${shown.kind}:${selectionId(shown)}`}
+          className="inspector-content"
+          data-inspector-fade={fade === "out" ? "out" : fade === "in" ? "in" : undefined}
+        >
+          {shown.kind === "course" ? (
+            <CourseInspector course={shown.course} onDelete={() => onDelete(shown)} />
+          ) : shown.kind === "topic" ? (
             <TopicInspector
-              course={selection.course}
-              courses={courses.length > 0 ? courses : [selection.course]}
-              topic={selection.topic}
+              course={shown.course}
+              courses={courses.length > 0 ? courses : [shown.course]}
+              topic={shown.topic}
               today={today}
               onRevealBlock={onRevealBlock}
-              onDelete={() => onDelete(selection)}
+              onDelete={() => onDelete(shown)}
             />
           ) : (
             <ExamInspector
-              course={selection.course}
-              exam={selection.exam}
-              onDelete={() => onDelete(selection)}
+              course={shown.course}
+              exam={shown.exam}
+              onDelete={() => onDelete(shown)}
             />
           )}
         </div>

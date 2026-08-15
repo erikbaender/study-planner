@@ -116,6 +116,7 @@ export function OutlineView({
   selectedId,
   onSelectTopic,
   onSelectExam,
+  onDeleteExam,
   onToggleCourse,
   onDeleteTopic,
   onDeleteCourse,
@@ -129,6 +130,7 @@ export function OutlineView({
   query: string;
   selectedId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
+  onDeleteExam: (course: Course, exam: Exam) => void;
   /** Unfolding a card selects its course; folding it again lets the selection go. */
   onToggleCourse: (course: Course, expanded: boolean) => void;
   onSelectExam: (course: Course, exam: Exam) => void;
@@ -252,9 +254,8 @@ export function OutlineView({
     },
     [onSelectExam, selection],
   );
-  // Courses filtered out by the sidebar or the search field leave the way rows
-  // leave the chart — fading, then collapsing — rather than vanishing between
-  // two frames. `useListPresence` keeps them mounted for exactly that long.
+  // Courses filtered out by the sidebar or the search field stay mounted for
+  // the duration of a simple opacity fade, rather than vanishing in a commit.
   const cards = useListPresence(courses, courseKey);
 
   return (
@@ -274,6 +275,7 @@ export function OutlineView({
               courseSelection={selection.stateOf(item.id)}
               onSelectTopic={(topic) => selectTopic(item, topic)}
               onSelectExam={(exam) => selectExam(item, exam)}
+              onDeleteExam={(exam) => onDeleteExam(item, exam)}
               onSelectCourse={(event) => selectCourse(item, event)}
               onDeleteTopic={(topic) => onDeleteTopic(item, topic)}
               onDeleteCourse={() => onDeleteCourse(item)}
@@ -314,6 +316,7 @@ function CourseCard({
   courseSelection,
   onSelectTopic,
   onSelectExam,
+  onDeleteExam,
   onSelectCourse,
   onDeleteTopic,
   onDeleteCourse,
@@ -328,6 +331,7 @@ function CourseCard({
   courseSelection: BarSelection;
   onSelectTopic: (topic: Topic) => void;
   onSelectExam: (exam: Exam) => void;
+  onDeleteExam: (exam: Exam) => void;
   onSelectCourse: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onDeleteTopic: (topic: Topic) => void;
   onDeleteCourse: () => void;
@@ -549,7 +553,7 @@ function CourseCard({
                   exams={exams}
                   selectedId={selectedId}
                   onSelect={onSelectExam}
-                  onDelete={(exam) => run(repository.deleteExam(exam.id))}
+                  onDelete={onDeleteExam}
                 />
               </CardSection>
 

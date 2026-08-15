@@ -4,16 +4,9 @@
  * Arriving and leaving, when nobody knows the height in advance.
  *
  * `useRowTransitions` animates a list whose rows are all the same height, which
- * is what the timeline has. A course card is as tall as the topics inside it,
- * so its height has to be measured — and measured *again* whenever the card
- * changes, because a search that removes half a course's topics changes the
- * height of the thing being animated while it is animating.
- *
- * The two halves are ordered exactly as they are for fixed-height rows: a card
- * arriving grows to its height and then fades in; a card leaving fades out and
- * then collapses. Each half is half the shared duration, so a course filtered
- * out of the outline and a topic filtered out of the chart take the same time
- * and read as the same behaviour.
+ * is what the timeline has. Course cards are variable-height, but their filter
+ * animation is deliberately only an opacity fade: animating several cards'
+ * heights at once forces repeated layout passes and reads as a hitch.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -36,11 +29,12 @@ export type Presence<T> = {
 };
 
 /**
- * The list, plus whatever has just left it.
+ * The list, plus whatever has just left it for the duration of its fade.
  *
  * An element that has been unmounted cannot animate its own departure, so a
  * removed item stays in the returned list — marked `present: false`, carrying
- * the last value it had — for as long as its exit takes, and is dropped after.
+ * the last value it had — for as long as its opacity transition takes, and is
+ * dropped after.
  *
  * Structured exactly like `useRowTransitions`: keyed on the identity of the
  * array so a re-render that changed nothing costs nothing, and adjusted during
@@ -149,73 +143,53 @@ export function Collapse({
   children: ReactNode;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(false);
   const previousPresentRef = useRef(present);
 
   /**
-   * Filtering can add or remove several variable-height cards at once. The
-   * old phase machine stored every animation step in React state, so each
-   * frame re-rendered the complete outline and made all of the cards measure
-   * again. The list still owns presence, but the short-lived height/opacity
-   * values belong to the element that is actually moving.
+   * Filtering can add or remove several variable-height cards at once. Keep
+   * the animation on the element itself so React only reconciles the list
+   * once, while the browser runs the shared opacity transition.
    */
   useLayoutEffect(() => {
     const box = boxRef.current;
-    const content = contentRef.current;
-    if (!box || !content) return;
+    if (!box) return;
 
     let frame = 0;
-    let settle = 0;
-    const duration = motionDuration(box);
     const instant = prefersReducedMotion();
     const firstRender = !mountedRef.current;
-    const entering = firstRender ? appear : !previousPresentRef.current && present;
     const leaving = !firstRender && previousPresentRef.current && !present;
     mountedRef.current = true;
     previousPresentRef.current = present;
 
     const clear = () => {
       cancelAnimationFrame(frame);
-      window.clearTimeout(settle);
     };
 
     if (instant || (firstRender && !appear)) {
-      box.style.height = present ? "auto" : "0px";
       box.style.opacity = present ? "1" : "0";
       return clear;
     }
 
-    const fullHeight = content.offsetHeight;
-
     if (present) {
-      // A returning card may be part-way through its departure. Starting from
-      // its current rendered height keeps a quick filter reversal continuous.
-      const currentHeight = entering ? 0 : Math.max(0, box.getBoundingClientRect().height);
-      box.style.height = `${currentHeight}px`;
+      // A returning card may be part-way through its departure. Let the
+      // transition continue from its current opacity rather than restarting a
+      // height measurement or a React phase machine.
       box.style.opacity = "0";
       void box.offsetHeight;
       frame = requestAnimationFrame(() => {
-        box.style.height = `${fullHeight}px`;
         box.style.opacity = "1";
-        settle = window.setTimeout(() => {
-          box.style.height = "auto";
-        }, duration / 2);
       });
     } else if (leaving) {
-      // Capture the full content before collapsing. The next frame starts the
-      // fade, then the second half collapses the space it occupied.
-      box.style.height = `${fullHeight}px`;
+      // Keep the card in the list's natural flow until presence removes it;
+      // only its pixels fade. This avoids a second layout animation fighting
+      // the filter's list reconciliation.
       box.style.opacity = "1";
       void box.offsetHeight;
       frame = requestAnimationFrame(() => {
         box.style.opacity = "0";
-        settle = window.setTimeout(() => {
-          box.style.height = "0px";
-        }, duration / 2);
       });
     } else {
-      box.style.height = "0px";
       box.style.opacity = "0";
     }
 
@@ -228,9 +202,9 @@ export function Collapse({
       className={`collapse-motion ${className ?? ""}`}
       aria-hidden={present ? undefined : "true"}
       inert={present ? undefined : true}
-      style={{ height: present ? undefined : 0, opacity: present ? 1 : 0 }}
+      style={{ opacity: present ? 1 : 0 }}
     >
-      <div ref={contentRef}>{children}</div>
+      {children}
     </div>
   );
 }

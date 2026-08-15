@@ -21,8 +21,8 @@ function customProperty(element: Element, name: string): string {
   return getComputedStyle(element).getPropertyValue(name).trim();
 }
 
-export function motionDuration(element: Element): number {
-  const value = customProperty(element, "--topic-motion-duration");
+export function motionDuration(element: Element, property = "--topic-motion-duration"): number {
+  const value = customProperty(element, property);
   const milliseconds = value.endsWith("s") && !value.endsWith("ms")
     ? Number.parseFloat(value) * 1000
     : Number.parseFloat(value);

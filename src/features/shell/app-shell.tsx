@@ -24,7 +24,7 @@
 
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { Plus } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { usePlannerErrors, usePlannerState, useRepository } from "@/data/use-repository";
 import {
   DEFAULT_PREFERENCES,
@@ -44,7 +44,6 @@ import {
   serializePlans,
 } from "@/lib/import-export";
 import { Button, EmptyState, Spinner } from "@/ui";
-import { motionDuration } from "@/ui/motion";
 import { AppSidebar } from "./app-sidebar";
 import { AppToolbar } from "./app-toolbar";
 import { CommandPalette } from "./command-palette";
@@ -91,37 +90,6 @@ const KEEPS_SELECTION = [
   '[role="menu"]',
   '[role="dialog"]',
 ].join(", ");
-
-/**
- * The last value that was not null.
- *
- * The inspector animates out over a quarter of a second, and an element that
- * has been handed `null` has nothing left to draw for that quarter second. The
- * selection is memoized upstream, so this adjusts state during render at most
- * once per genuine change.
- */
-function useRetained<T>(value: T | null): T | null {
-  const [kept, setKept] = useState(value);
-  if (value !== null && value !== kept) setKept(value);
-
-  // Dropped again once the panel has finished leaving. Held indefinitely — as
-  // this did at first — the inspector's whole contents stay mounted behind a
-  // zero-width panel for the rest of the session: a few hundred elements of
-  // selects, checkboxes and sliders that every subsequent style recalculation
-  // in the app has to walk, including the ones a drag on the timeline does
-  // sixty times a second. The panel needs its contents for a quarter of a
-  // second, so it keeps them for a quarter of a second.
-  useEffect(() => {
-    if (value !== null || kept === null) return;
-    const timer = window.setTimeout(
-      () => setKept(null),
-      motionDuration(document.documentElement),
-    );
-    return () => window.clearTimeout(timer);
-  }, [value, kept]);
-
-  return value ?? kept;
-}
 
 /** Read once per mount: the planner is day-granular, so a re-render mid-day is not worth it. */
 function useToday() {
@@ -176,12 +144,10 @@ export function AppShell() {
   );
   // The inspector has no switch of its own: a selection that resolves is what
   // opens it, and a stale id left in the ephemeral store after its topic was
-  // filtered out or deleted closes it again. `inspected` is the selection that
-  // was last real, so the panel still has something to describe on the way out
-  // — a deselect is a panel leaving, not a panel emptying and then leaving.
+  // filtered out or deleted closes it again. The inspector owns the brief
+  // retention needed for its sequential content fade.
   const inspectable = isInspectable(selection) ? selection : null;
   const inspectorOpen = inspectable !== null;
-  const inspected = useRetained(inspectable);
   const pendingDelete = useMemo(
     () => resolveSelection(plan, workspace.pendingDelete),
     [plan, workspace.pendingDelete],
@@ -480,6 +446,9 @@ export function AppShell() {
                     onSelectTopic={selectTopic}
                     onSelectExam={selectExam}
                     onToggleCourse={toggleCourseSelection}
+                    onDeleteExam={(_course, exam) =>
+                      workspace.setPendingDelete({ kind: "exam", id: exam.id })
+                    }
                     onDeleteTopic={(_course, topic) =>
                       workspace.setPendingDelete({ kind: "topic", id: topic.id })
                     }
@@ -510,7 +479,7 @@ export function AppShell() {
           }`}
         >
           <Inspector
-            selection={inspected}
+            selection={inspectable}
             today={today}
             onRevealBlock={revealBlock}
             onDelete={(target) =>

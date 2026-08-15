@@ -1,7 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { course as makeCourse, snapshot as makeSnapshot, topic as makeTopic } from "@/test/factories";
+import {
+  course as makeCourse,
+  exam as makeExam,
+  snapshot as makeSnapshot,
+  topic as makeTopic,
+} from "@/test/factories";
 import { useWorkspace } from "@/features/workspace/store";
 import { OutlineView } from "./outline-view";
 import { TOPIC_ROW_HEIGHT, TopicList } from "./topic-list";
@@ -90,6 +95,7 @@ describe("TopicList", () => {
         selectedId={null}
         onSelectTopic={vi.fn()}
         onSelectExam={vi.fn()}
+        onDeleteExam={vi.fn()}
         onToggleCourse={vi.fn()}
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
@@ -187,6 +193,7 @@ describe("OutlineView course selection", () => {
         selectedId={null}
         onSelectTopic={vi.fn()}
         onSelectExam={vi.fn()}
+        onDeleteExam={vi.fn()}
         onToggleCourse={(selectedCourse, expanded) =>
           useWorkspace.getState().select(
             expanded ? { kind: "course", id: selectedCourse.id } : null,
@@ -284,6 +291,38 @@ describe("OutlineView course selection", () => {
       "aria-expanded",
       "false",
     );
+  });
+
+  it("routes exam context-menu deletion through the confirmation callback", async () => {
+    const user = userEvent.setup();
+    const exam = makeExam({ name: "Final exam" });
+    const course = makeCourse({ name: "Biochemistry", exams: [exam] });
+    const onDeleteExam = vi.fn();
+
+    render(
+      <OutlineView
+        courses={[course]}
+        health={new Map()}
+        today={TODAY}
+        query=""
+        snapshot={makeSnapshot()}
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onSelectExam={vi.fn()}
+        onDeleteExam={onDeleteExam}
+        onToggleCourse={vi.fn()}
+        onDeleteTopic={vi.fn()}
+        onDeleteCourse={vi.fn()}
+        onEditCourse={vi.fn()}
+        onNewCourse={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Final exam") });
+    await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+
+    expect(onDeleteExam).toHaveBeenCalledWith(course, exam);
   });
 
   it("replaces a multi-selection on a regular click", async () => {
