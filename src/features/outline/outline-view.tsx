@@ -18,10 +18,15 @@
  *   across a term's worth of material, and the outline stops being something
  *   you can see and becomes something you scroll. Every measurement here is the
  *   smallest one that still reads.
- * - **Opening a course is selecting it.** The header both unfolds the card and
- *   puts the course in the inspector, because those are one intent: you open a
- *   course to work on it. Folding it again lets it go, as does a click on empty
- *   space. The sidebar's course list is a filter, not a selection surface.
+ * - **Opening a course and selecting it are two gestures.** The card's header
+ *   folds and unfolds it: that is a question about how much of the outline you
+ *   want to see at once. The course's *name* is a control of its own — it puts
+ *   the course in the inspector, and a second click lets it go, exactly as a
+ *   topic row does. The two used to be one click, and the price was that you
+ *   could not read a card's topics without taking the inspector off whatever
+ *   you were working on, nor inspect a course without unfolding forty rows. A
+ *   click on empty space still clears the selection, and the sidebar's course
+ *   list is still a filter rather than a selection surface.
  */
 
 import { clsx } from "clsx";
@@ -80,27 +85,33 @@ import {
   CourseCompletionCheckbox,
   triggerCourseCompletionAnimation,
 } from "@/features/topics/progress-cell";
-import { hintScope, useViewHints, type InputHint } from "@/features/workspace/hints";
+import { hintScope, hintTarget, useViewHints, type InputHint } from "@/features/workspace/hints";
 import { overdueBlockCount, topicsForQuery } from "@/features/workspace/scope";
 import { requestRename, revealSelection, useWorkspace } from "@/features/workspace/store";
 import { createSelectionStore, type BarSelection } from "@/features/timeline/chart-context";
 
-/** What the pointer does here, for the toolbar's hint bar. */
+/** What the pointer does over a card, for the toolbar's hint bar. */
 const OUTLINE_HINTS: readonly InputHint[] = [
+  { button: "left", label: "Fold course" },
+  { button: "right", label: "Actions" },
+];
+
+/** The name is its own control, so it says its own verb while pointed at. */
+const COURSE_LABEL_HINTS: readonly InputHint[] = [
   { button: "left", label: "Select course" },
   { button: "right", label: "Actions" },
 ];
 
-function outlineSelectedHints(keyboardMode: "mac" | "windows"): readonly InputHint[] {
+function courseLabelSelectedHints(keyboardMode: "mac" | "windows"): readonly InputHint[] {
   return [
-    OUTLINE_HINTS[0],
+    COURSE_LABEL_HINTS[0],
     { button: "left", label: "Extend selection", modifier: "Shift" },
     {
       button: "left",
       label: "Subtract selection",
       modifier: keyboardMode === "mac" ? "⌘" : "Ctrl",
     },
-    OUTLINE_HINTS[1],
+    COURSE_LABEL_HINTS[1],
   ];
 }
 
@@ -117,7 +128,7 @@ export function OutlineView({
   onSelectTopic,
   onSelectExam,
   onDeleteExam,
-  onToggleCourse,
+  onSelectCourse,
   onDeleteTopic,
   onDeleteCourse,
   onEditCourse,
@@ -131,8 +142,8 @@ export function OutlineView({
   selectedId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
   onDeleteExam: (course: Course, exam: Exam) => void;
-  /** Unfolding a card selects its course; folding it again lets the selection go. */
-  onToggleCourse: (course: Course, expanded: boolean) => void;
+  /** A course's name was clicked: `selected` says whether it is now the inspector's. */
+  onSelectCourse: (course: Course, selected: boolean) => void;
   onSelectExam: (course: Course, exam: Exam) => void;
   onDeleteTopic: (course: Course, topic: Topic) => void;
   onDeleteCourse: (course: Course) => void;
@@ -147,8 +158,13 @@ export function OutlineView({
     selection.getSnapshot,
     () => EMPTY_COURSE_SELECTION,
   );
-  const selectedHints = useMemo(() => outlineSelectedHints(keyboardMode), [keyboardMode]);
-  useViewHints(selectedCourseIds.length > 0 ? selectedHints : OUTLINE_HINTS);
+  // Only the name offers the modifiers, so they are advertised on the name.
+  const labelHints = useMemo(
+    () =>
+      selectedCourseIds.length > 0 ? courseLabelSelectedHints(keyboardMode) : COURSE_LABEL_HINTS,
+    [keyboardMode, selectedCourseIds.length],
+  );
+  useViewHints(OUTLINE_HINTS);
 
   // An outline mount starts as a filing cabinet: every course is folded until
   // the user chooses one. A course explicitly revealed by navigation is the
@@ -163,16 +179,36 @@ export function OutlineView({
 
   const selectSingleCourse = useCallback(
     (course: Course) => {
-      for (const other of courses) {
-        if (other.id !== course.id) setCourseOpen(other.id, false);
-      }
-      setCourseOpen(course.id, true);
       selection.set([course.id]);
-      onToggleCourse(course, true);
+      onSelectCourse(course, true);
     },
-    [courses, onToggleCourse, selection],
+    [onSelectCourse, selection],
   );
 
+  /**
+   * Commit a multi-selection and hand its primary to the inspector.
+   *
+   * The last course added is the one being described; an emptied selection
+   * describes nothing, which is what the `false` says.
+   */
+  const commitSelection = useCallback(
+    (next: readonly string[], fallback: Course) => {
+      selection.set(next);
+      const primaryId = next.at(-1);
+      const primary = courses.find((candidate) => candidate.id === primaryId);
+      if (primary) onSelectCourse(primary, true);
+      else onSelectCourse(fallback, false);
+    },
+    [courses, onSelectCourse, selection],
+  );
+
+  /**
+   * A click on a course's name, and nothing else.
+   *
+   * Folding is the header's job now, so this only ever moves the selection: it
+   * cannot open or close a card, and a card's fold state cannot be read off
+   * what the inspector is showing.
+   */
   const selectCourse = useCallback(
     (course: Course, event: React.MouseEvent<HTMLButtonElement>) => {
       const current = selection.getSnapshot();
@@ -182,35 +218,26 @@ export function OutlineView({
       const extend = event.shiftKey && current.length > 0;
       const subtract = event.ctrlKey || event.metaKey;
       const selected = current.includes(course.id);
-      let next = current;
 
       if (subtract) {
         if (!selected) return;
-        next = current.filter((id) => id !== course.id);
-        setCourseOpen(course.id, false);
+        commitSelection(
+          current.filter((id) => id !== course.id),
+          course,
+        );
       } else if (extend) {
-        next = selected
-          ? current.filter((id) => id !== course.id)
-          : [...current, course.id];
-        setCourseOpen(course.id, !selected);
+        commitSelection(
+          selected ? current.filter((id) => id !== course.id) : [...current, course.id],
+          course,
+        );
       } else if (selected && current.length === 1) {
-        setCourseOpen(course.id, false);
         selection.set([]);
-        onToggleCourse(course, false);
+        onSelectCourse(course, false);
       } else {
         selectSingleCourse(course);
-        return;
       }
-
-      if (selected && current.length === 1) return;
-
-      selection.set(next);
-      const primaryId = next.at(-1);
-      const primary = courses.find((candidate) => candidate.id === primaryId);
-      if (primary) onToggleCourse(primary, true);
-      else onToggleCourse(course, false);
     },
-    [courses, onToggleCourse, selectSingleCourse, selection],
+    [commitSelection, onSelectCourse, selectSingleCourse, selection],
   );
 
   // Keep a course selected when it was revealed by the sidebar or command
@@ -273,6 +300,7 @@ export function OutlineView({
               snapshot={snapshot}
               selectedId={selectedId}
               courseSelection={selection.stateOf(item.id)}
+              labelHints={labelHints}
               onSelectTopic={(topic) => selectTopic(item, topic)}
               onSelectExam={(exam) => selectExam(item, exam)}
               onDeleteExam={(exam) => onDeleteExam(item, exam)}
@@ -314,6 +342,7 @@ function CourseCard({
   snapshot,
   selectedId,
   courseSelection,
+  labelHints,
   onSelectTopic,
   onSelectExam,
   onDeleteExam,
@@ -329,6 +358,8 @@ function CourseCard({
   snapshot: PlannerSnapshot;
   selectedId: string | null;
   courseSelection: BarSelection;
+  /** What the name does, published to the hint bar while it is pointed at. */
+  labelHints: readonly InputHint[];
   onSelectTopic: (topic: Topic) => void;
   onSelectExam: (exam: Exam) => void;
   onDeleteExam: (exam: Exam) => void;
@@ -435,14 +466,7 @@ function CourseCard({
       <section
         data-course-id={course.id}
         data-course-completed={completed ? "true" : undefined}
-        className={clsx(
-          "outline-card course-completion-row relative overflow-hidden rounded-card border bg-content",
-          // Selection is a border, never a fill: a completed course already
-          // owns its background, and a blue wash over it would say the two
-          // states are one. See the topic rows, which do the same.
-          "border-separator",
-        )}
-        data-selection={courseSelection ?? undefined}
+        className="outline-card course-completion-row relative overflow-hidden rounded-card border border-separator bg-content"
         style={{ "--topic-completion-color": tint } as CSSProperties}
       >
         <div className="relative" data-keeps-selection>
@@ -456,9 +480,13 @@ function CourseCard({
               !completed && "hover:bg-fill/50",
             )}
           >
+            {/* The header's whole surface folds the card, laid under the
+                contents so the name and the completion box keep their own
+                clicks. Its hover fill is the affordance; the name draws a
+                second, stronger one over it. */}
             <button
               type="button"
-              onClick={onSelectCourse}
+              onClick={() => useWorkspace.getState().toggleCourseCollapsed(course.id)}
               aria-expanded={!collapsed}
               aria-label={`${collapsed ? "Expand" : "Collapse"} ${course.name}`}
               className="absolute inset-0 focus-visible:outline-none"
@@ -466,12 +494,30 @@ function CourseCard({
 
             <div className={clsx(COLUMNS, "pointer-events-none relative px-2")}>
               <span className="flex min-w-0 items-center gap-2">
-                <span
-                  aria-hidden="true"
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{ background: tint }}
-                />
-                <h2 className="min-w-0 truncate text-title3 font-semibold">{course.name}</h2>
+                {/* The name is the selection control. Its padding is pulled
+                    back on the left and above, so the row starts where it
+                    always did and keeps its height. On the right the padding
+                    is left standing: the selection ring is drawn 4px outside
+                    the name, and cancelling that margin too put the ring on
+                    top of the dot separating the name from the topic count. */}
+                <h2 className="flex min-w-0 text-title3 font-semibold">
+                  <button
+                    type="button"
+                    onClick={onSelectCourse}
+                    data-selection={courseSelection ?? undefined}
+                    aria-pressed={courseSelection !== null}
+                    aria-label={`Select ${course.name}`}
+                    {...hintTarget(labelHints)}
+                    className="outline-course-label pointer-events-auto -my-0.5 -ml-1.5 flex min-w-0 items-center gap-2 rounded-control px-1.5 py-0.5 hover:bg-fill-strong"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ background: tint }}
+                    />
+                    <span className="min-w-0 truncate">{course.name}</span>
+                  </button>
+                </h2>
 
                 {/* Everything that describes the course rather than measures it
                     sits with the name: counts first, then the warnings, then
@@ -819,6 +865,8 @@ function ExamList({
           key={key}
           aria-hidden={motion.visible ? undefined : "true"}
           inert={motion.visible ? undefined : true}
+          // Settled rows draw outside their slot, exactly as topic rows do.
+          data-settled={motion.visible ? "true" : undefined}
           className="row-motion shrink-0 p-[3px]"
           style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
         >
@@ -861,9 +909,10 @@ function ExamRow({
         }}
         className={clsx(
           "relative flex h-full items-center gap-2 rounded-control px-2",
-          selected
-            ? "inset-ring-2 inset-ring-accent"
-            : "hover:bg-fill data-[state=open]:bg-fill",
+          // Hovered whether or not it is selected, and ringed from outside,
+          // exactly like a topic row: see `TopicRow`.
+          "hover:bg-fill data-[state=open]:bg-fill",
+          selected && "outline-2 outline-offset-2 outline-accent",
         )}
         style={{ height: LIST_ROW_CONTENT_HEIGHT }}
       >

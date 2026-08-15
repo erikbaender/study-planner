@@ -86,6 +86,9 @@ export function TopicList({
           key={key}
           aria-hidden={motion.visible ? undefined : "true"}
           inert={motion.visible ? undefined : true}
+          // A settled row draws outside its slot; see `.row-motion` in the
+          // stylesheet. Only a row whose height is moving needs the clip.
+          data-settled={motion.visible ? "true" : undefined}
           className="row-motion shrink-0 p-[3px]"
           style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
         >
@@ -150,10 +153,16 @@ function TopicRow({
         }}
         className={clsx(
           "topic-completion-row relative h-full rounded-control px-2",
-          // A blue *border*, never a fill: a finished topic already owns its
+          // Hover answers "is the pointer on this row", selection answers "is
+          // the inspector describing it". They are separate questions, so a
+          // selected row still lights up under the pointer.
+          "hover:bg-fill data-[state=open]:bg-fill",
+          // A blue *ring*, never a fill: a finished topic already owns its
           // background tint, and a selection wash over it hid the one state
-          // the row exists to show.
-          selected ? "inset-ring-2 inset-ring-accent" : "hover:bg-fill data-[state=open]:bg-fill",
+          // the row exists to show. Drawn outside the row — 2px clear of it,
+          // the same gap a selected course's name leaves — so it takes nothing
+          // from the row's padding and nothing shifts as it is selected.
+          selected && "outline-2 outline-offset-2 outline-accent",
         )}
         style={
           {

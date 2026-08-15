@@ -266,21 +266,37 @@ span:has(> .topic-progress-thumb) {
   background-image: none;
 }
 
-/* Selection and completion use one border. Selection wins again automatically
-   when the completion animation's temporary border color is removed. */
-.course-completion-row[data-selection="primary"],
-.course-completion-row[data-selection="secondary"],
+/* The completion pulse is the only thing that thickens a card's border now:
+   selection moved to the course's name, where it is drawn outside the box. */
 .course-completion-row[data-completion-animating="true"],
 .course-completion-row[data-completion-direction] {
   border-width: 2px;
 }
 
-.course-completion-row[data-selection="primary"] {
-  border-color: var(--mac-accent);
+/**
+ * A selected course, marked on its name.
+ *
+ * An `outline` rather than a border or an inset ring, for the two reasons the
+ * timeline's bars already draw theirs this way: it is painted outside the box,
+ * so it neither eats into the padding the name needs to stay legible nor moves
+ * a single pixel of the row when it appears — and it is one property, so the
+ * primary course and the rest of a multi-selection differ only by colour.
+ *
+ * Neither the ring nor the fill under it fades: selection and hover are states
+ * the pointer is already in by the time you could see them travel, and nothing
+ * else in the app animates them — a row, a bar and a sidebar item all switch.
+ */
+.outline-course-label {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
-.course-completion-row[data-selection="secondary"] {
-  border-color: color-mix(in srgb, var(--mac-accent) 50%, transparent);
+.outline-course-label[data-selection="primary"] {
+  outline-color: var(--mac-accent);
+}
+
+.outline-course-label[data-selection="secondary"] {
+  outline-color: color-mix(in srgb, var(--mac-accent) 50%, transparent);
 }
 
 .topic-completion-fill,
@@ -596,6 +612,19 @@ span:has(> .topic-progress-thumb) {
   transition:
     height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
     opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/**
+ * …but only while the height is actually moving.
+ *
+ * A selected row's ring is drawn 2px clear of the row and is 2px thick, which
+ * is one pixel more than the slot has to spare — clipped, it lost its outer
+ * edge and its corners, which read as a broken border rather than a tight one.
+ * A settled row has nothing to clip: it is exactly its own height, and the
+ * ring is the only thing outside it.
+ */
+.row-motion[data-settled="true"] {
+  overflow: visible;
 }
 
 /**

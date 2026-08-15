@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -96,7 +96,7 @@ describe("TopicList", () => {
         onSelectTopic={vi.fn()}
         onSelectExam={vi.fn()}
         onDeleteExam={vi.fn()}
-        onToggleCourse={vi.fn()}
+        onSelectCourse={vi.fn()}
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
@@ -106,10 +106,11 @@ describe("TopicList", () => {
 
     screen.getByRole("button", { name: "Expand Biochemistry" }).click();
 
-    expect(screen.getAllByRole("button", { name: /^Select / }).map((button) => button.getAttribute("aria-label"))).toEqual([
-      "Select Glycolysis",
-      "Select Krebs cycle",
-    ]);
+    expect(
+      within(screen.getByRole("list"))
+        .getAllByRole("button", { name: /^Select / })
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Select Glycolysis", "Select Krebs cycle"]);
   });
 
   it("marks the selected topic row as pressed so the current selection is visible", () => {
@@ -176,6 +177,7 @@ describe("TopicList", () => {
   });
 });
 
+
 describe("OutlineView course selection", () => {
   const courses = [
     makeCourse({ id: "course_1", name: "Biochemistry" }),
@@ -194,10 +196,10 @@ describe("OutlineView course selection", () => {
         onSelectTopic={vi.fn()}
         onSelectExam={vi.fn()}
         onDeleteExam={vi.fn()}
-        onToggleCourse={(selectedCourse, expanded) =>
-          useWorkspace.getState().select(
-            expanded ? { kind: "course", id: selectedCourse.id } : null,
-          )
+        onSelectCourse={(selectedCourse, selected) =>
+          useWorkspace
+            .getState()
+            .select(selected ? { kind: "course", id: selectedCourse.id } : null)
         }
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
@@ -207,18 +209,11 @@ describe("OutlineView course selection", () => {
     );
   }
 
-  it("folds other courses on a normal click and preserves them with Shift", async () => {
+  const label = (name: string) => screen.getByRole("button", { name: `Select ${name}` });
+
+  it("folds a card without selecting the course", async () => {
     const user = userEvent.setup();
     renderOutline();
-
-    expect(screen.getByRole("button", { name: "Expand Biochemistry" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
 
     await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
 
@@ -226,53 +221,62 @@ describe("OutlineView course selection", () => {
       "aria-expanded",
       "true",
     );
-    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
-      "data-selection",
-      "primary",
-    );
+    expect(useWorkspace.getState().selection).toBeNull();
+    expect(label("Biochemistry")).not.toHaveAttribute("data-selection");
+  });
 
+  it("selects a course from its name without folding anything", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.click(label("Biochemistry"));
+
+    expect(useWorkspace.getState().selection).toEqual({ kind: "course", id: "course_1" });
+    expect(label("Biochemistry")).toHaveAttribute("data-selection", "primary");
+    expect(label("Biochemistry")).toHaveAttribute("aria-pressed", "true");
+    // Both cards are exactly as folded as they were before the click.
+    expect(screen.getByRole("button", { name: "Expand Biochemistry" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toBeInTheDocument();
+  });
+
+  it("lets a course go when its name is clicked a second time", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.click(label("Biochemistry"));
+    await user.click(label("Biochemistry"));
+
+    expect(useWorkspace.getState().selection).toBeNull();
+    expect(label("Biochemistry")).not.toHaveAttribute("data-selection");
+  });
+
+  it("extends the selection with Shift and keeps the last course primary", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.click(label("Biochemistry"));
     await user.keyboard("{Shift>}");
-    await user.click(screen.getByRole("button", { name: "Expand Anatomy" }));
+    await user.click(label("Anatomy"));
     await user.keyboard("{/Shift}");
 
-    expect(screen.getByRole("button", { name: "Collapse Anatomy" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
-      "data-selection",
-      "secondary",
-    );
-    expect(screen.getByText("Anatomy").closest("section")).toHaveAttribute(
-      "data-selection",
-      "primary",
-    );
+    expect(label("Biochemistry")).toHaveAttribute("data-selection", "secondary");
+    expect(label("Anatomy")).toHaveAttribute("data-selection", "primary");
   });
 
   it("subtracts a course with Ctrl without disturbing the remaining primary", async () => {
     const user = userEvent.setup();
     renderOutline();
 
-    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
+    await user.click(label("Biochemistry"));
     await user.keyboard("{Shift>}");
-    await user.click(screen.getByRole("button", { name: "Expand Anatomy" }));
+    await user.click(label("Anatomy"));
     await user.keyboard("{/Shift}");
     await user.keyboard("{Control>}");
-    await user.click(screen.getByRole("button", { name: "Collapse Anatomy" }));
+    await user.click(label("Anatomy"));
     await user.keyboard("{/Control}");
 
-    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
-      "data-selection",
-      "primary",
-    );
+    expect(label("Anatomy")).not.toHaveAttribute("data-selection");
+    expect(label("Biochemistry")).toHaveAttribute("data-selection", "primary");
   });
 
   it("treats Shift with no prior selection as a normal single selection", async () => {
@@ -280,17 +284,25 @@ describe("OutlineView course selection", () => {
     renderOutline();
 
     await user.keyboard("{Shift>}");
-    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
+    await user.click(label("Biochemistry"));
     await user.keyboard("{/Shift}");
 
-    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
-      "data-selection",
-      "primary",
-    );
-    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    expect(label("Biochemistry")).toHaveAttribute("data-selection", "primary");
+    expect(label("Anatomy")).not.toHaveAttribute("data-selection");
+  });
+
+  it("replaces a multi-selection on a regular click", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    await user.click(label("Biochemistry"));
+    await user.keyboard("{Shift>}");
+    await user.click(label("Anatomy"));
+    await user.keyboard("{/Shift}");
+    await user.click(label("Biochemistry"));
+
+    expect(label("Biochemistry")).toHaveAttribute("data-selection", "primary");
+    expect(label("Anatomy")).not.toHaveAttribute("data-selection");
   });
 
   it("routes exam context-menu deletion through the confirmation callback", async () => {
@@ -310,7 +322,7 @@ describe("OutlineView course selection", () => {
         onSelectTopic={vi.fn()}
         onSelectExam={vi.fn()}
         onDeleteExam={onDeleteExam}
-        onToggleCourse={vi.fn()}
+        onSelectCourse={vi.fn()}
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
@@ -323,26 +335,5 @@ describe("OutlineView course selection", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     expect(onDeleteExam).toHaveBeenCalledWith(course, exam);
-  });
-
-  it("replaces a multi-selection on a regular click", async () => {
-    const user = userEvent.setup();
-    renderOutline();
-
-    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
-    await user.keyboard("{Shift>}");
-    await user.click(screen.getByRole("button", { name: "Expand Anatomy" }));
-    await user.keyboard("{/Shift}");
-    await user.click(screen.getByRole("button", { name: "Collapse Biochemistry" }));
-
-    expect(screen.getByText("Biochemistry").closest("section")).toHaveAttribute(
-      "data-selection",
-      "primary",
-    );
-    expect(screen.getByText("Anatomy").closest("section")).not.toHaveAttribute("data-selection");
-    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
   });
 });

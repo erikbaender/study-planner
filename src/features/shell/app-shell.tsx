@@ -214,14 +214,15 @@ export function AppShell() {
   const selectCourse = (course: Course) => toggleRevealSelection({ kind: "course", id: course.id });
 
   /**
-   * Unfolding a course card selects the course; folding it lets it go.
+   * A course's name in the outline was clicked.
    *
-   * Opening a course and inspecting it are one intent, so they are one click.
-   * Folding only clears the selection if it is *this* course's — closing one
-   * card should not deselect the topic you are working on in another.
+   * The card's fold state is the outline's own business — this only follows
+   * what its name says, and clearing only ever applies to *this* course, so
+   * letting one course go cannot deselect the topic you are working on in
+   * another.
    */
-  const toggleCourseSelection = (course: Course, expanded: boolean) => {
-    if (expanded) revealSelection({ kind: "course", id: course.id });
+  const applyCourseSelection = (course: Course, selected: boolean) => {
+    if (selected) revealSelection({ kind: "course", id: course.id });
     else if (workspace.selection?.kind === "course" && workspace.selection.id === course.id)
       workspace.select(null);
   };
@@ -445,7 +446,7 @@ export function AppShell() {
                     selectedId={workspace.selection?.id ?? null}
                     onSelectTopic={selectTopic}
                     onSelectExam={selectExam}
-                    onToggleCourse={toggleCourseSelection}
+                    onSelectCourse={applyCourseSelection}
                     onDeleteExam={(_course, exam) =>
                       workspace.setPendingDelete({ kind: "exam", id: exam.id })
                     }
