@@ -16,9 +16,11 @@
  *   could be open with nothing in it needed an empty state to explain itself,
  *   and an empty state in a third of the window is the app apologising for its
  *   own layout.
- * - **It describes what was selected last, even on the way out.** The shell
- *   keeps handing it the previous selection while the panel slides away, so a
- *   deselect is a panel leaving rather than a panel emptying and then leaving.
+ * - **It describes what was selected last, even on the way out.** The panel
+ *   holds the previous selection while it fades away, so a deselect is a panel
+ *   leaving rather than a panel emptying and then leaving. The fade runs on the
+ *   app's shared duration and is interruptible in both directions: a second
+ *   click during it is answered from wherever the first one had got to.
  * - **Progress is never written here directly.** Dragging the progress bar
  *   files a study-log entry for the difference, exactly as an outline row does.
  *   Setting `completedUnits` through `updateTopic` would move the number while
@@ -32,7 +34,7 @@
  */
 
 import { clsx } from "clsx";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motionDuration, prefersReducedMotion } from "@/ui/motion";
 import { usePlannerState } from "@/data/use-repository";
 import type { Course, StudyBlock } from "@/domain";
@@ -73,42 +75,45 @@ export function Inspector({
       : [];
   const courses = suppliedCourses ?? planCourses;
   const [shown, setShown] = useState(selection);
-  const [fade, setFade] = useState<"steady" | "out" | "in">("steady");
+  const [fade, setFade] = useState<"steady" | "out">("steady");
   const selectionKey = selection ? `${selection.kind}:${selectionId(selection)}` : null;
   const shownKey = shown ? `${shown.kind}:${selectionId(shown)}` : null;
   const reducedMotion = prefersReducedMotion();
+  // What to show when the fade-out ends, read at the moment it ends. A click
+  // during the fade must not restart it: the clock belongs to the content
+  // leaving, not to the selection that replaces it.
+  const latestSelection = useRef(selection);
+  useEffect(() => {
+    latestSelection.current = selection;
+  });
 
-  // Keep the old inspector mounted until its complete 500ms fade-out is done.
-  // The next content then gets its own 500ms fade-in: together they make one
-  // uninterrupted, one-second sequence with no two panels fighting for paint.
-  if (shown === null && selection !== null && fade === "steady") {
-    setShown(selection);
-    setFade(reducedMotion ? "steady" : "in");
-  } else if (selectionKey !== shownKey && fade !== "out" && !(shown === null && selection === null)) {
-    if (reducedMotion) {
-      setShown(selection);
-      setFade("steady");
-    } else {
-      setFade("out");
-    }
+  // Only the leaving half is a phase here. Arriving content mounts transparent
+  // and is faded in by CSS, so the panel has one piece of state rather than a
+  // two-step sequence to be caught halfway through. Adjusted during render, so
+  // the fade begins in the commit the click caused rather than a frame later.
+  if (shown === null) {
+    // Nothing to take away first.
+    if (selection !== null) setShown(selection);
+  } else if (selectionKey === shownKey) {
+    // Reselecting what is already here. If it was on its way out — clicked
+    // away from and back again inside a fade — it turns around from the
+    // opacity it reached instead of finishing a departure nobody asked for.
+    if (fade === "out") setFade("steady");
+    if (selection !== shown) setShown(selection);
+  } else if (fade !== "out") {
+    if (reducedMotion) setShown(selection);
+    else setFade("out");
   }
-  if (selectionKey === shownKey && selection !== shown && fade === "steady") setShown(selection);
+  // A change while `fade` is already `out` needs nothing: the content on screen
+  // is leaving either way, and the swap below picks up whatever is selected by
+  // the time it lands.
 
   useEffect(() => {
     if (fade !== "out") return;
     const timer = window.setTimeout(() => {
-      setShown(selection);
-      setFade(selection === null ? "steady" : "in");
-    }, motionDuration(document.documentElement, "--inspector-fade-duration") / 2);
-    return () => window.clearTimeout(timer);
-  }, [fade, selection]);
-
-  useEffect(() => {
-    if (fade !== "in") return;
-    const timer = window.setTimeout(
-      () => setFade("steady"),
-      motionDuration(document.documentElement, "--inspector-fade-duration") / 2,
-    );
+      setShown(latestSelection.current);
+      setFade("steady");
+    }, motionDuration(document.documentElement) / 2);
     return () => window.clearTimeout(timer);
   }, [fade]);
 
@@ -125,7 +130,7 @@ export function Inspector({
         <div
           key={`${shown.kind}:${selectionId(shown)}`}
           className="inspector-content"
-          data-inspector-fade={fade === "out" ? "out" : fade === "in" ? "in" : undefined}
+          data-inspector-fade={fade === "out" ? "out" : undefined}
         >
           {shown.kind === "course" ? (
             <CourseInspector course={shown.course} onDelete={() => onDelete(shown)} />

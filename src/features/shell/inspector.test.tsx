@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { coursePalette } from "@/domain";
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
 import { Inspector, isInspectable } from "./inspector";
@@ -419,6 +419,131 @@ describe("Inspector", () => {
       // editable rather than merely reported.
       expect(screen.getByLabelText("Window ends")).toHaveValue("2026-06-14");
       expect(screen.getByText(/counts backwards from the/)).toBeInTheDocument();
+    });
+  });
+
+  describe("changing what is selected", () => {
+    // The panel swaps its content the way the views swap theirs: half the
+    // shared motion out, half back in. jsdom has no stylesheet, so
+    // `motionDuration` falls back to the same 240ms the stylesheet declares.
+    const HALF_MOTION_MS = 120;
+    const first = makeTopic({ name: "Glycolysis", totalUnits: 10 });
+    const second = makeTopic({ name: "Krebs cycle", totalUnits: 10 });
+    const third = makeTopic({ name: "Electron transport", totalUnits: 10 });
+    const course = makeCourse({ name: "Biochemistry", topics: [first, second, third] });
+    const select = (topic: typeof first) => ({ kind: "topic", course, topic }) as const;
+
+    const panel = () =>
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(first)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+    const content = () => document.querySelector(".inspector-content");
+    const leaving = () => content()?.getAttribute("data-inspector-fade") === "out";
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("takes the old content away over half the shared motion", () => {
+      const { rerender } = panel();
+
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(second)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      // The click is answered in the commit it caused: the fade is already
+      // running, with the outgoing topic still legible.
+      expect(leaving()).toBe(true);
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Glycolysis");
+
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS));
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Krebs cycle");
+      expect(leaving()).toBe(false);
+    });
+
+    it("does not restart the fade when the selection changes again during it", () => {
+      const { rerender } = panel();
+
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(second)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS / 2));
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(third)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      // The clock belongs to the content leaving. What lands at the end of it
+      // is whatever is selected by then — the third topic, never the second.
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS / 2));
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Electron transport");
+    });
+
+    it("turns a fade around when its own selection comes back", () => {
+      const { rerender } = panel();
+
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(second)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS / 2));
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(first)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      // Clicked away and back inside the fade: the content stops leaving at
+      // once and comes back up from the opacity it had reached, rather than
+      // completing a departure and a return nobody asked for.
+      expect(leaving()).toBe(false);
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Glycolysis");
+
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS));
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Glycolysis");
+      expect(leaving()).toBe(false);
+    });
+
+    it("empties itself only once the last content has gone", () => {
+      const { rerender } = panel();
+
+      rerender(
+        <Inspector {...inspectorNavigation} selection={null} today={TODAY} onDelete={vi.fn()} />,
+      );
+      expect(leaving()).toBe(true);
+
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS));
+      expect(screen.getByRole("complementary", { name: "Inspector" })).toBeEmptyDOMElement();
     });
   });
 

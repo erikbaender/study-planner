@@ -3,7 +3,6 @@
 :root {
   --topic-motion-duration: 240ms;
   --topic-motion-curve: cubic-bezier(0.65, 0, 0.35, 1);
-  --inspector-fade-duration: 1000ms;
   --input-hint-fade-duration: 200ms;
 }
 
@@ -695,29 +694,40 @@ span:has(> .topic-progress-thumb) {
   transition: none;
 }
 
-@keyframes inspector-content-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/** The old inspector content fades out for 500ms before the new content mounts. */
+/**
+ * The inspector's content changing.
+ *
+ * Out, swap, in — the same shape and the same clock as a view change, so
+ * selecting a second topic costs what every other transition in the app costs.
+ * It used to run on a second of its own, which is long enough that the panel
+ * read as thinking about the click rather than answering it: the answer was
+ * already rendered and simply being withheld.
+ *
+ * Both halves are transitions rather than an animation, because a selection can
+ * change in the middle of either one. A transition reverses from the opacity it
+ * has reached, so content interrupted on its way in leaves again from there,
+ * and content interrupted on its way out slides back up from there. A keyframe
+ * animation restarts from its own `from`, which is why an interrupted fade used
+ * to flash the panel back to full opacity before taking it away again.
+ *
+ * `@starting-style` gives arriving content the same transition without a frame
+ * of React state to turn it on: the content mounts transparent and is opaque by
+ * the rules that apply to it a frame later. Where it is not supported the
+ * content simply arrives, which is the old behaviour of every panel in the app.
+ */
 .inspector-content {
   opacity: 1;
-  transition: none;
+  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+@starting-style {
+  .inspector-content {
+    opacity: 0;
+  }
 }
 
 .inspector-content[data-inspector-fade="out"] {
   opacity: 0;
-  transition: opacity calc(var(--inspector-fade-duration) / 2) var(--topic-motion-curve);
-}
-
-.inspector-content[data-inspector-fade="in"] {
-  animation: inspector-content-fade-in calc(var(--inspector-fade-duration) / 2)
-    var(--topic-motion-curve);
 }
 
 /**
@@ -845,7 +855,6 @@ span:has(> .topic-progress-thumb) {
     animation: none;
   }
   .inspector-content {
-    animation: none;
     transition: none;
   }
 }
