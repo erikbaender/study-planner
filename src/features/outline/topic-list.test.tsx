@@ -45,7 +45,8 @@ function renderList({
 } = {}) {
   render(
     <TopicList
-      course={course}
+      courseId={course.id}
+      tint="#8169d1"
       topics={topics}
       today={TODAY}
       selectedId={selectedId}
@@ -84,7 +85,7 @@ describe("TopicList", () => {
     expect(onDelete).toHaveBeenCalledWith(topics[1]);
   });
 
-  it("renders course topics alphabetically", () => {
+  it("renders course topics in repository order", () => {
     render(
       <OutlineView
         courses={[course]}
@@ -104,13 +105,11 @@ describe("TopicList", () => {
       />,
     );
 
-    screen.getByRole("button", { name: "Expand Biochemistry" }).click();
-
     expect(
       within(screen.getByRole("list"))
         .getAllByRole("button", { name: /^Select / })
         .map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["Select Glycolysis", "Select Krebs cycle"]);
+    ).toEqual(["Select Krebs cycle", "Select Glycolysis"]);
   });
 
   it("restacks the cards when the sort control changes the order", async () => {
@@ -192,7 +191,8 @@ describe("TopicList", () => {
     });
     render(
       <TopicList
-        course={makeCourse({ topics: [overdue] })}
+        courseId="course_1"
+        tint="#8169d1"
         topics={[overdue]}
         today={TODAY}
         selectedId={null}
@@ -225,7 +225,7 @@ describe("OutlineView course selection", () => {
   ];
 
   function renderOutline() {
-    render(
+    return render(
       <OutlineView
         courses={courses}
         health={new Map()}
@@ -255,11 +255,11 @@ describe("OutlineView course selection", () => {
     const user = userEvent.setup();
     renderOutline();
 
-    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
+    await user.click(screen.getByRole("button", { name: "Collapse Biochemistry" }));
 
-    expect(screen.getByRole("button", { name: "Collapse Biochemistry" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Expand Biochemistry" })).toHaveAttribute(
       "aria-expanded",
-      "true",
+      "false",
     );
     expect(useWorkspace.getState().selection).toBeNull();
     expect(label("Biochemistry")).not.toHaveAttribute("data-selection");
@@ -275,8 +275,71 @@ describe("OutlineView course selection", () => {
     expect(label("Biochemistry")).toHaveAttribute("data-selection", "primary");
     expect(label("Biochemistry")).toHaveAttribute("aria-pressed", "true");
     // Both cards are exactly as folded as they were before the click.
-    expect(screen.getByRole("button", { name: "Expand Biochemistry" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Biochemistry" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Anatomy" })).toBeInTheDocument();
+  });
+
+  it("preserves a folded course across outline remounts", async () => {
+    const user = userEvent.setup();
+    const first = renderOutline();
+    await user.click(screen.getByRole("button", { name: "Collapse Biochemistry" }));
+    first.unmount();
+
+    renderOutline();
+
+    expect(screen.getByRole("button", { name: "Expand Biochemistry" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Collapse Anatomy" })).toBeInTheDocument();
+  });
+
+  it("consumes a sidebar reveal only after its course card mounts", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    useWorkspace.setState({ view: "today", collapsedCourseIds: ["course_2"] });
+    useWorkspace.getState().revealCourse("course_2");
+
+    renderOutline();
+
+    expect(screen.getByRole("button", { name: "Collapse Anatomy" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    expect(useWorkspace.getState().revealCourseId).toBeNull();
+  });
+
+  it("treats a course as done when all of its sized topics are done", () => {
+    const mixed = makeCourse({
+      id: "course_mixed",
+      name: "Physiology",
+      topics: [
+        makeTopic({ totalUnits: 10, completedUnits: 10 }),
+        makeTopic({ totalUnits: 0, completedUnits: 0 }),
+      ],
+    });
+
+    render(
+      <OutlineView
+        courses={[mixed]}
+        health={new Map()}
+        today={TODAY}
+        query=""
+        snapshot={makeSnapshot()}
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onSelectExam={vi.fn()}
+        onDeleteExam={vi.fn()}
+        onSelectCourse={vi.fn()}
+        onDeleteTopic={vi.fn()}
+        onDeleteCourse={vi.fn()}
+        onEditCourse={vi.fn()}
+        onNewCourse={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: "Mark Physiology as done" })).toBeChecked();
   });
 
   it("lets a course go when its name is clicked a second time", async () => {
@@ -370,7 +433,6 @@ describe("OutlineView course selection", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Expand Biochemistry" }));
     await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Final exam") });
     await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 

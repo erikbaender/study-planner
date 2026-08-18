@@ -236,16 +236,7 @@ export function AppShell() {
    * to tell apart. Selection happens on the card itself.
    */
   const revealCourseInOutline = (course: Course) => {
-    workspace.setView("outline");
-    if (useWorkspace.getState().collapsedCourseIds.includes(course.id)) {
-      workspace.toggleCourseCollapsed(course.id);
-    }
-    // After the view has committed: the card may not be in the document yet.
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`section[data-course-id="${course.id}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-    });
+    workspace.revealCourse(course.id);
   };
 
   const selectTopic = (_course: Course, topic: Topic) =>

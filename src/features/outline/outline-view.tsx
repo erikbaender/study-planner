@@ -171,6 +171,7 @@ export function OutlineView({
   const workspaceSelection = useWorkspace((state) => state.selection);
   const courseSort = useWorkspace((state) => state.courseSort);
   const setCourseSort = useWorkspace((state) => state.setCourseSort);
+  const revealCourseId = useWorkspace((state) => state.revealCourseId);
   // The cards travel to their new places rather than appearing in them; the
   // positions they travel from can only be read before the click re-renders.
   const listRef = useRef<HTMLDivElement>(null);
@@ -186,6 +187,19 @@ export function OutlineView({
     selection.getSnapshot,
     () => EMPTY_COURSE_SELECTION,
   );
+
+  // Sidebar navigation can request this before ViewFade mounts the outline.
+  // Consume the request only once its card exists, so neither the unfold nor
+  // the scroll is lost during the sequential view transition.
+  useLayoutEffect(() => {
+    if (!revealCourseId) return;
+    const card = [
+      ...(listRef.current?.querySelectorAll<HTMLElement>("section[data-course-id]") ?? []),
+    ].find((candidate) => candidate.dataset.courseId === revealCourseId);
+    if (!card) return;
+    card.scrollIntoView({ block: "nearest" });
+    useWorkspace.getState().revealCourse(null);
+  }, [revealCourseId, sortedCourses]);
   // Only the name offers the modifiers, so they are advertised on the name.
   const labelHints = useMemo(
     () =>
@@ -193,17 +207,6 @@ export function OutlineView({
     [keyboardMode, selectedCourseIds.length],
   );
   useViewHints(OUTLINE_HINTS);
-
-  // An outline mount starts as a filing cabinet: every course is folded until
-  // the user chooses one. A course explicitly revealed by navigation is the
-  // exception, because that opening was part of the navigation gesture.
-  const initializedDisclosure = useRef(false);
-  useEffect(() => {
-    if (initializedDisclosure.current || courses.length === 0) return;
-    initializedDisclosure.current = true;
-    for (const course of courses) setCourseOpen(course.id, false);
-    if (workspaceSelection?.kind === "course") setCourseOpen(workspaceSelection.id, true);
-  }, [courses, workspaceSelection]);
 
   const selectSingleCourse = useCallback(
     (course: Course) => {
@@ -380,12 +383,6 @@ export function OutlineView({
   );
 }
 
-function setCourseOpen(courseId: string, open: boolean) {
-  const workspace = useWorkspace.getState();
-  const collapsed = workspace.collapsedCourseIds.includes(courseId);
-  if (collapsed === open) workspace.toggleCourseCollapsed(courseId);
-}
-
 function CourseCard({
   course,
   health,
@@ -431,7 +428,10 @@ function CourseCard({
   // merge is keyed on this array's identity — a fresh one per render would
   // never settle.
   const topics = useMemo(
-    () => topicsForQuery(query, course).sort((left, right) => left.name.localeCompare(right.name, "de")),
+    // Repository order is the paste/import order and is also what the timeline
+    // gutter uses. Keeping it here makes the same course scan the same way in
+    // both views.
+    () => topicsForQuery(query, course),
     [query, course],
   );
   const exams = useMemo(
@@ -668,7 +668,8 @@ function CourseCard({
               >
                 {topics.length > 0 || course.topics.length === 0 ? (
                   <TopicList
-                    course={course}
+                    courseId={course.id}
+                    tint={tint}
                     topics={topics}
                     today={today}
                     selectedId={selectedId}
@@ -732,10 +733,8 @@ function CourseCard({
 
 /** Whether every sized topic in the course is finished, and there is one to finish. */
 function isCourseComplete(course: Course): boolean {
-  return (
-    course.topics.length > 0 &&
-    course.topics.every((topic) => topic.totalUnits > 0 && topic.completedUnits >= topic.totalUnits)
-  );
+  const sized = course.topics.filter((topic) => topic.totalUnits > 0);
+  return sized.length > 0 && sized.every((topic) => topic.completedUnits >= topic.totalUnits);
 }
 
 /**

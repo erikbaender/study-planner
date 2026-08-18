@@ -84,6 +84,8 @@ describe("Field wiring", () => {
     );
 
     await user.click(screen.getByRole("combobox", { name: "Semester" }));
+    expect(screen.getByRole("option", { name: "Summer" }).closest("[data-keeps-selection]"))
+      .toBeInTheDocument();
     await user.click(screen.getByRole("option", { name: "Summer" }));
     expect(onValueChange).toHaveBeenCalledWith("ss");
   });

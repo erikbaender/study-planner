@@ -107,6 +107,45 @@ describe("Inspector", () => {
       });
     });
 
+    it("drops its progress preview when stored progress changes elsewhere", async () => {
+      const user = userEvent.setup();
+      const empty = makeTopic({ ...topic, completedUnits: 0 });
+      const full = makeTopic({ ...topic, completedUnits: 100 });
+      const emptySelection = { kind: "topic", course, topic: empty } as const;
+      const { rerender } = render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={emptySelection}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      const checkbox = screen.getByRole("checkbox", { name: "Mark Glycolysis as done" });
+      await user.click(checkbox);
+      expect(checkbox).toBeChecked();
+
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course, topic: full }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={emptySelection}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      expect(checkbox).not.toBeChecked();
+      expect(screen.getByText("0 / 100 slides")).toBeInTheDocument();
+    });
+
     it("passes completedUnits through untouched when something else is edited", async () => {
       // `updateTopic` takes a whole topic, so every edit resends the field.
       // Resending anything other than the current value would silently
@@ -156,6 +195,28 @@ describe("Inspector", () => {
       await user.click(screen.getByRole("option", { name: "Neurobiology" }));
 
       expect(repository.moveTopic).toHaveBeenCalledWith(topic.id, targetCourse.id);
+    });
+
+    it("lists destination courses alphabetically", async () => {
+      const zoology = makeCourse({ name: "Zoology" });
+      const anatomy = makeCourse({ name: "Anatomy" });
+      const user = userEvent.setup();
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          courses={[zoology, course, anatomy]}
+          selection={selection}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("combobox", { name: "Course for Glycolysis" }));
+      expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+        "Anatomy",
+        "Biochemistry",
+        "Zoology",
+      ]);
     });
 
     it("reverts an edit on Escape", async () => {

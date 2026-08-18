@@ -19,6 +19,7 @@ describe("the workspace store", () => {
     expect(state.focus).toEqual({ kind: "all" });
     expect(state.selection).toBeNull();
     expect(state.revealBlockId).toBeNull();
+    expect(state.revealCourseId).toBeNull();
     expect(state.renameRequestId).toBeNull();
   });
 
@@ -67,6 +68,20 @@ describe("the workspace store", () => {
 
     useWorkspace.getState().revealBlock(null);
     expect(useWorkspace.getState().revealBlockId).toBeNull();
+  });
+
+  it("opens a course and keeps its reveal request until the outline consumes it", () => {
+    useWorkspace.setState({ view: "today", collapsedCourseIds: ["course_1"] });
+
+    useWorkspace.getState().revealCourse("course_1");
+    expect(useWorkspace.getState()).toMatchObject({
+      view: "outline",
+      collapsedCourseIds: [],
+      revealCourseId: "course_1",
+    });
+
+    useWorkspace.getState().revealCourse(null);
+    expect(useWorkspace.getState().revealCourseId).toBeNull();
   });
 
   it("round-trips a rename request", () => {

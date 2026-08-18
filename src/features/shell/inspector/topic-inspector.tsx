@@ -40,6 +40,7 @@ import {
 } from "@/ui";
 import { CompletionCheckbox, triggerCompletionAnimation } from "@/features/topics/progress-cell";
 import { clampToLimits, limitsFor } from "@/features/timeline/blocks";
+import { sortCoursesAlphabetically } from "@/features/workspace/scope";
 import { DraftText, NameSection, Section } from "./shared";
 
 /* ─── Topic ─────────────────────────────────────────────────────────────── */
@@ -64,7 +65,17 @@ export function TopicInspector({
   const unitLabel = UNIT_LABELS[topic.unit].plural;
   const dependencyCandidates = course.topics.filter((candidate) => candidate.id !== topic.id);
   const [preview, setPreview] = useState<number | null>(null);
+  const [settled, setSettled] = useState(topic.completedUnits);
   const completionCheckboxRef = useRef<HTMLInputElement>(null);
+
+  // A preview only bridges the time between an interaction and the repository
+  // publishing its result. Once stored progress changes — whether from this
+  // panel or from an outline row — the repository is authoritative again.
+  if (settled !== topic.completedUnits) {
+    setSettled(topic.completedUnits);
+    setPreview(null);
+  }
+
   const shown = preview ?? topic.completedUnits;
   const tint = courseColorValue(course.color);
 
@@ -133,7 +144,10 @@ export function TopicInspector({
               if (courseId !== course.id) run(repository.moveTopic(topic.id, courseId));
             }}
             className="min-w-0 flex-1 text-body"
-            options={courses.map((candidate) => ({ value: candidate.id, label: candidate.name }))}
+            options={sortCoursesAlphabetically(courses).map((candidate) => ({
+              value: candidate.id,
+              label: candidate.name,
+            }))}
           />
         </div>
       </Section>

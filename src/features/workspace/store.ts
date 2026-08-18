@@ -129,6 +129,8 @@ export type WorkspaceState = {
    * honoured, which also keeps a stale id from re-selecting on every mount.
    */
   revealBlockId: EntityId | null;
+  /** A course the outline should scroll to after it has mounted. */
+  revealCourseId: EntityId | null;
   /**
    * Something just created, whose name the inspector should put the caret in.
    *
@@ -149,6 +151,7 @@ export type WorkspaceState = {
   toggleCourseCollapsed: (courseId: EntityId) => void;
   setCourseSort: (sort: CourseSort) => void;
   revealBlock: (blockId: EntityId | null) => void;
+  revealCourse: (courseId: EntityId | null) => void;
   setRenameRequest: (id: EntityId | null) => void;
   setPaletteOpen: (open: boolean) => void;
   setCreating: (creating: "plan" | "course" | null) => void;
@@ -167,6 +170,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   collapsedCourseIds: [],
   courseSort: "name",
   revealBlockId: null,
+  revealCourseId: null,
   renameRequestId: null,
   paletteOpen: false,
   creating: null,
@@ -182,6 +186,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
       hiddenCourseIds: [],
       collapsedCourseIds: [],
       selection: null,
+      revealCourseId: null,
     }),
   setView: (view) => set({ view }),
   setFocus: (focus) =>
@@ -227,6 +232,16 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
     })),
   setCourseSort: (courseSort) => set({ courseSort }),
   revealBlock: (revealBlockId) => set({ revealBlockId }),
+  revealCourse: (revealCourseId) =>
+    set((state) =>
+      revealCourseId === null
+        ? { revealCourseId: null }
+        : {
+            view: "outline",
+            revealCourseId,
+            collapsedCourseIds: state.collapsedCourseIds.filter((id) => id !== revealCourseId),
+          },
+    ),
   setRenameRequest: (renameRequestId) => set({ renameRequestId }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setCreating: (creating) => set({ creating }),

@@ -24,7 +24,7 @@
 import { clsx } from "clsx";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { memo, useEffect, useRef, type CSSProperties } from "react";
-import { courseColorValue, type Course, type Topic } from "@/domain";
+import { type Topic } from "@/domain";
 import { ContextMenu, useStableCallback } from "@/ui";
 import { useRowTransitions } from "@/ui/row-motion";
 import { TopicProgressCell } from "@/features/topics/progress-cell";
@@ -57,14 +57,16 @@ export const COLUMNS = [
 const topicKey = (topic: Topic) => topic.id;
 
 export function TopicList({
-  course,
+  courseId,
+  tint,
   topics,
   today,
   selectedId,
   onSelect,
   onDelete,
 }: {
-  course: Course;
+  courseId: string;
+  tint: string;
   /** Must be memoized: the row transitions below are keyed on its identity. */
   topics: readonly Topic[];
   today: string;
@@ -93,7 +95,8 @@ export function TopicList({
           style={{ height: motion.height, opacity: motion.visible ? 1 : 0 }}
         >
           <MemoTopicRow
-            course={course}
+            courseId={courseId}
+            tint={tint}
             topic={item}
             today={today}
             selected={item.id === selectedId}
@@ -107,14 +110,16 @@ export function TopicList({
 }
 
 function TopicRow({
-  course,
+  courseId,
+  tint,
   topic,
   today,
   selected,
   onSelect,
   onDelete,
 }: {
-  course: Course;
+  courseId: string;
+  tint: string;
   topic: Topic;
   today: string;
   selected: boolean;
@@ -144,7 +149,7 @@ function TopicRow({
     >
       <div
         ref={rowRef}
-        data-course-id={course.id}
+        data-course-id={courseId}
         data-keeps-selection
         onContextMenu={(event) => {
           // The course card is another context-menu trigger around this row;
@@ -167,7 +172,7 @@ function TopicRow({
         style={
           {
             height: LIST_ROW_CONTENT_HEIGHT,
-            "--topic-completion-color": courseColorValue(course.color),
+            "--topic-completion-color": tint,
           } as CSSProperties
         }
       >
@@ -201,7 +206,7 @@ function TopicRow({
           <TopicProgressCell
             topic={topic}
             today={today}
-            tint={courseColorValue(course.color)}
+            tint={tint}
             sliderClassName="pointer-events-auto w-full min-w-0"
             readoutClassName="hidden text-right text-callout tabular-nums whitespace-nowrap text-secondary sm:block"
           />
