@@ -31,7 +31,7 @@ const course = makeCourse({ name: "Biochemistry", topics });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useWorkspace.setState({ collapsedCourseIds: [], selection: null });
+  useWorkspace.setState({ collapsedCourseIds: [], selection: null, courseSort: "name" });
 });
 
 function renderList({
@@ -111,6 +111,46 @@ describe("TopicList", () => {
         .getAllByRole("button", { name: /^Select / })
         .map((button) => button.getAttribute("aria-label")),
     ).toEqual(["Select Glycolysis", "Select Krebs cycle"]);
+  });
+
+  it("restacks the cards when the sort control changes the order", async () => {
+    const user = userEvent.setup();
+    const anatomy = makeCourse({ name: "Anatomy", exams: [] });
+    const physiology = makeCourse({
+      name: "Physiology",
+      exams: [makeExam({ startDate: "2026-06-01" })],
+    });
+
+    render(
+      <OutlineView
+        courses={[anatomy, physiology]}
+        health={new Map()}
+        today={TODAY}
+        query=""
+        snapshot={makeSnapshot()}
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onSelectExam={vi.fn()}
+        onDeleteExam={vi.fn()}
+        onSelectCourse={vi.fn()}
+        onDeleteTopic={vi.fn()}
+        onDeleteCourse={vi.fn()}
+        onEditCourse={vi.fn()}
+        onNewCourse={vi.fn()}
+      />,
+    );
+
+    const order = () =>
+      Array.from(document.querySelectorAll("section[data-course-id]")).map((card) =>
+        card.getAttribute("data-course-id"),
+      );
+
+    expect(order()).toEqual([anatomy.id, physiology.id]);
+
+    await user.click(screen.getByRole("radio", { name: "Chronological" }));
+
+    // The course with an exam to sit comes first; the one without follows.
+    expect(order()).toEqual([physiology.id, anatomy.id]);
   });
 
   it("marks the selected topic row as pressed so the current selection is visible", () => {

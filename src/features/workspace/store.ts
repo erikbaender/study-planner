@@ -37,6 +37,22 @@ export const VIEW_LABELS: Record<ViewId, string> = {
   outline: "Outline",
 };
 
+/**
+ * The order the outline stacks its course cards in.
+ *
+ * Every other list in the app is alphabetical, because a list you scan for a
+ * name you already know wants one predictable order. The outline is the list
+ * you scan for *what to do next*, and that question is answered by the exam
+ * calendar rather than by the alphabet — so it, and only it, offers the choice.
+ */
+export const COURSE_SORTS = ["name", "exam"] as const;
+export type CourseSort = (typeof COURSE_SORTS)[number];
+
+export const COURSE_SORT_LABELS: Record<CourseSort, string> = {
+  name: "Alphabetical",
+  exam: "Chronological",
+};
+
 /** Fired synchronously before a workspace filter can change rendered course geometry. */
 export const COURSE_FILTER_WILL_CHANGE = "planner:course-filter-will-change";
 
@@ -86,6 +102,12 @@ export type WorkspaceState = {
    * by hand then selecting another reversed it.
    */
   collapsedCourseIds: EntityId[];
+  /**
+   * The outline's course order. View state rather than a preference: it lives
+   * here so switching to the timeline and back does not silently reset it, the
+   * way component state in a view the shell unmounts would.
+   */
+  courseSort: CourseSort;
   paletteOpen: boolean;
   /** Which create sheet is up, if any. */
   creating: "plan" | "course" | null;
@@ -125,6 +147,7 @@ export type WorkspaceState = {
   showAllCourses: () => void;
   select: (selection: Selection) => void;
   toggleCourseCollapsed: (courseId: EntityId) => void;
+  setCourseSort: (sort: CourseSort) => void;
   revealBlock: (blockId: EntityId | null) => void;
   setRenameRequest: (id: EntityId | null) => void;
   setPaletteOpen: (open: boolean) => void;
@@ -142,6 +165,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   hiddenCourseIds: [],
   selection: null,
   collapsedCourseIds: [],
+  courseSort: "name",
   revealBlockId: null,
   renameRequestId: null,
   paletteOpen: false,
@@ -201,6 +225,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
         ? state.collapsedCourseIds.filter((id) => id !== courseId)
         : [...state.collapsedCourseIds, courseId],
     })),
+  setCourseSort: (courseSort) => set({ courseSort }),
   revealBlock: (revealBlockId) => set({ revealBlockId }),
   setRenameRequest: (renameRequestId) => set({ renameRequestId }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),

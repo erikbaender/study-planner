@@ -27,6 +27,12 @@
  *   you were working on, nor inspect a course without unfolding forty rows. A
  *   click on empty space still clears the selection, and the sidebar's course
  *   list is still a filter rather than a selection surface.
+ *
+ * The order the cards are stacked in is the user's, and this is the only view
+ * that offers the choice: everywhere else a course list is scanned for a name
+ * you already know, so alphabetical is the only order that helps. Here the
+ * question is what to work on next, and the exam calendar answers it better
+ * than the alphabet does — see `COURSE_SORTS`.
  */
 
 import { clsx } from "clsx";
@@ -78,7 +84,7 @@ import {
   useListPresence,
 } from "@/ui";
 import { motionDuration } from "@/ui/motion";
-import { useDisclosure, useRowTransitions } from "@/ui/row-motion";
+import { useDisclosure, useReorderMotion, useRowTransitions } from "@/ui/row-motion";
 import { COLUMNS, LIST_ROW_CONTENT_HEIGHT, TOPIC_ROW_HEIGHT, TopicList } from "./topic-list";
 import { AutoPlanButton } from "@/features/planning/planning-actions";
 import {
@@ -86,8 +92,15 @@ import {
   triggerCourseCompletionAnimation,
 } from "@/features/topics/progress-cell";
 import { hintScope, hintTarget, useViewHints, type InputHint } from "@/features/workspace/hints";
-import { overdueBlockCount, topicsForQuery } from "@/features/workspace/scope";
-import { requestRename, revealSelection, useWorkspace } from "@/features/workspace/store";
+import { overdueBlockCount, sortCourses, topicsForQuery } from "@/features/workspace/scope";
+import {
+  COURSE_SORTS,
+  COURSE_SORT_LABELS,
+  requestRename,
+  revealSelection,
+  useWorkspace,
+  type CourseSort,
+} from "@/features/workspace/store";
 import { createSelectionStore, type BarSelection } from "@/features/timeline/chart-context";
 
 /** What the pointer does over a card, for the toolbar's hint bar. */
@@ -116,6 +129,9 @@ function courseLabelSelectedHints(keyboardMode: "mac" | "windows"): readonly Inp
 }
 
 const courseKey = (course: Course) => course.id;
+/** A card box, identified across a reorder by the course it holds. */
+const courseCardKey = (box: HTMLElement) =>
+  box.querySelector("section[data-course-id]")?.getAttribute("data-course-id") ?? undefined;
 const EMPTY_COURSE_SELECTION: readonly string[] = [];
 
 export function OutlineView({
@@ -153,6 +169,18 @@ export function OutlineView({
   const [selection] = useState(createSelectionStore);
   const keyboardMode = useKeyboardMode();
   const workspaceSelection = useWorkspace((state) => state.selection);
+  const courseSort = useWorkspace((state) => state.courseSort);
+  const setCourseSort = useWorkspace((state) => state.setCourseSort);
+  // The cards travel to their new places rather than appearing in them; the
+  // positions they travel from can only be read before the click re-renders.
+  const listRef = useRef<HTMLDivElement>(null);
+  const captureOrder = useReorderMotion(listRef, courseSort, courseCardKey);
+  // The shell hands every view the same alphabetical list; the order the cards
+  // are actually stacked in is the outline's own question.
+  const sortedCourses = useMemo(
+    () => sortCourses(courses, courseSort, today),
+    [courses, courseSort, today],
+  );
   const selectedCourseIds = useSyncExternalStore(
     selection.subscribe,
     selection.getSnapshot,
@@ -283,46 +311,70 @@ export function OutlineView({
   );
   // Courses filtered out by the sidebar or the search field stay mounted for
   // the duration of a simple opacity fade, rather than vanishing in a commit.
-  const cards = useListPresence(courses, courseKey);
+  const cards = useListPresence(sortedCourses, courseKey);
 
   return (
-    <div className="h-full" {...hintScope}>
-      {/* `min-h-full`, so the space below the last card is still the view and a
-          click there clears the selection. */}
-      <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-2 p-5">
-        {cards.map(({ key, item, present, appear }) => (
-          <Collapse key={key} present={present} appear={appear}>
-            <CourseCard
-              course={item}
-              health={health.get(item.id)}
-              today={today}
-              query={query}
-              snapshot={snapshot}
-              selectedId={selectedId}
-              courseSelection={selection.stateOf(item.id)}
-              labelHints={labelHints}
-              onSelectTopic={(topic) => selectTopic(item, topic)}
-              onSelectExam={(exam) => selectExam(item, exam)}
-              onDeleteExam={(exam) => onDeleteExam(item, exam)}
-              onSelectCourse={(event) => selectCourse(item, event)}
-              onDeleteTopic={(topic) => onDeleteTopic(item, topic)}
-              onDeleteCourse={() => onDeleteCourse(item)}
-              onEditCourse={() => onEditCourse(item.id)}
+    <div className="flex h-full flex-col">
+      {/* The view's own chrome, above its scroll and outside its hint scope,
+          exactly as the timeline's zoom control sits above the chart. An
+          outline with nothing in it has no order to choose, so the bar is not
+          there to be chosen from. */}
+      {courses.length > 0 ? (
+        <div className="flex flex-none items-center gap-2 border-b border-separator px-4 py-2">
+          <SegmentedControl<CourseSort>
+            size="sm"
+            label="Sort courses by"
+            value={courseSort}
+            onValueChange={(next) => {
+              captureOrder();
+              setCourseSort(next);
+            }}
+            segments={COURSE_SORTS.map((sort) => ({
+              value: sort,
+              label: COURSE_SORT_LABELS[sort],
+            }))}
+          />
+        </div>
+      ) : null}
+
+      <div className="min-h-0 flex-1 overflow-y-auto" {...hintScope}>
+        {/* `min-h-full`, so the space below the last card is still the view and a
+            click there clears the selection. */}
+        <div ref={listRef} className="mx-auto flex min-h-full max-w-4xl flex-col gap-2 p-5">
+          {cards.map(({ key, item, present, appear }) => (
+            <Collapse key={key} present={present} appear={appear}>
+              <CourseCard
+                course={item}
+                health={health.get(item.id)}
+                today={today}
+                query={query}
+                snapshot={snapshot}
+                selectedId={selectedId}
+                courseSelection={selection.stateOf(item.id)}
+                labelHints={labelHints}
+                onSelectTopic={(topic) => selectTopic(item, topic)}
+                onSelectExam={(exam) => selectExam(item, exam)}
+                onDeleteExam={(exam) => onDeleteExam(item, exam)}
+                onSelectCourse={(event) => selectCourse(item, event)}
+                onDeleteTopic={(topic) => onDeleteTopic(item, topic)}
+                onDeleteCourse={() => onDeleteCourse(item)}
+                onEditCourse={() => onEditCourse(item.id)}
+              />
+            </Collapse>
+          ))}
+
+          <Collapse present={courses.length === 0}>
+            <EmptyState
+              title="No courses in focus"
+              description="Add a course, or widen the focus in the sidebar to see the ones you have."
+              action={
+                <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
+                  New course
+                </Button>
+              }
             />
           </Collapse>
-        ))}
-
-        <Collapse present={courses.length === 0}>
-          <EmptyState
-            title="No courses in focus"
-            description="Add a course, or widen the focus in the sidebar to see the ones you have."
-            action={
-              <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
-                New course
-              </Button>
-            }
-          />
-        </Collapse>
+        </div>
       </div>
     </div>
   );

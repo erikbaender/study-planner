@@ -11,6 +11,7 @@ import {
   matchesQuery,
   topicsForQuery,
   resolveSelection,
+  sortCourses,
   upcomingExams,
 } from "./scope";
 
@@ -124,6 +125,60 @@ describe("coursesInFocus", () => {
 
   it("returns nothing when there is no plan at all", () => {
     expect(coursesInFocus(undefined, { kind: "all" }, health, TODAY)).toEqual([]);
+  });
+});
+
+describe("sortCourses", () => {
+  const courses = [
+    makeCourse({ name: "Physio", exams: [makeExam({ startDate: "2026-09-01" })] }),
+    makeCourse({ name: "Anatomy", exams: [] }),
+    makeCourse({
+      name: "Biochem",
+      exams: [makeExam({ startDate: "2026-12-01" }), makeExam({ startDate: "2026-06-15" })],
+    }),
+  ];
+
+  it("orders by name, case-insensitively", () => {
+    expect(sortCourses(courses, "name", TODAY).map((course) => course.name)).toEqual([
+      "Anatomy",
+      "Biochem",
+      "Physio",
+    ]);
+  });
+
+  it("orders by each course's closest exam, with the unscheduled ones last", () => {
+    expect(sortCourses(courses, "exam", TODAY).map((course) => course.name)).toEqual([
+      "Biochem",
+      "Physio",
+      "Anatomy",
+    ]);
+  });
+
+  it("ignores exams that have already been sat", () => {
+    const past = makeCourse({ name: "Histology", exams: [makeExam({ startDate: "2026-01-10" })] });
+    expect(sortCourses([...courses, past], "exam", TODAY).map((course) => course.name)).toEqual([
+      "Biochem",
+      "Physio",
+      "Anatomy",
+      "Histology",
+    ]);
+  });
+
+  it("falls back to name order for courses whose exams fall on the same day", () => {
+    const sameDay = [
+      makeCourse({ name: "Zoology", exams: [makeExam({ startDate: "2026-06-15" })] }),
+      makeCourse({ name: "Anatomy", exams: [makeExam({ startDate: "2026-06-15" })] }),
+    ];
+    expect(sortCourses(sameDay, "exam", TODAY).map((course) => course.name)).toEqual([
+      "Anatomy",
+      "Zoology",
+    ]);
+  });
+
+  it("leaves the array it is given alone", () => {
+    const original = [...courses];
+    sortCourses(courses, "exam", TODAY);
+    expect(courses).toEqual(original);
   });
 });
 

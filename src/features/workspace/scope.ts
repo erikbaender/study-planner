@@ -17,6 +17,7 @@ import {
   assessCourse,
   daysUntil,
   effectiveDeadline,
+  nextExam,
   topicProgress,
   type Course,
   type CourseHealth,
@@ -26,7 +27,7 @@ import {
   type PlannerSnapshot,
   type Topic,
 } from "@/domain";
-import type { Focus, Selection } from "./store";
+import type { CourseSort, Focus, Selection } from "./store";
 
 /** How near an exam has to be to count as "soon". Two weeks is the horizon at which cramming decisions get made. */
 const EXAM_SOON_DAYS = 14;
@@ -99,9 +100,52 @@ export type Visibility = {
  * courses are presented to the user instead.
  */
 export function sortCoursesAlphabetically(courses: readonly Course[]): Course[] {
-  return [...courses].sort((left, right) =>
-    left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+  return [...courses].sort(compareCoursesByName);
+}
+
+function compareCoursesByName(left: Course, right: Course): number {
+  return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+}
+
+/**
+ * Deadline order: the course whose next exam is soonest, first.
+ *
+ * A course with no exam left to sit is not "far away" — it is not on this axis
+ * at all, so it goes after every course that is, rather than being given an
+ * imaginary date at one end of the range. Past exams do not count: the question
+ * this order answers is what to work on next, and an exam already written is
+ * not an answer to it. Courses that tie, and the ones with nothing upcoming,
+ * fall back to name order so the list is still stable and scannable.
+ */
+export function sortCoursesByNextExam(courses: readonly Course[], today: IsoDate): Course[] {
+  const deadlines = new Map(
+    courses.map((course) => {
+      const next = nextExam(course, today);
+      return [course.id, next ? effectiveDeadline(next) : null] as const;
+    }),
   );
+
+  return [...courses].sort((left, right) => {
+    const leftDate = deadlines.get(left.id) ?? null;
+    const rightDate = deadlines.get(right.id) ?? null;
+    if (leftDate === null || rightDate === null) {
+      if (leftDate === rightDate) return compareCoursesByName(left, right);
+      return leftDate === null ? 1 : -1;
+    }
+    if (leftDate !== rightDate) return leftDate < rightDate ? -1 : 1;
+    return compareCoursesByName(left, right);
+  });
+}
+
+/** The outline's order, chosen by the user; every other list stays alphabetical. */
+export function sortCourses(
+  courses: readonly Course[],
+  sort: CourseSort,
+  today: IsoDate,
+): Course[] {
+  return sort === "exam"
+    ? sortCoursesByNextExam(courses, today)
+    : sortCoursesAlphabetically(courses);
 }
 
 /**

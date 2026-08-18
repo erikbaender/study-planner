@@ -15,8 +15,8 @@
  * fresh array built inline on every render is an infinite loop.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { motionDuration, prefersReducedMotion } from "./motion";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { motionCurveValue, motionDuration, prefersReducedMotion } from "./motion";
 
 /**
  * Open and closed, with the frames in between.
@@ -246,4 +246,102 @@ export function useRowTransitions<T>(
     () => rendered.map(({ key, item, phase }) => ({ key, item, motion: motionOf(phase, rowHeight) })),
     [rendered, rowHeight],
   );
+}
+
+
+/* ─── Rows changing places ──────────────────────────────────────────────────
+ *
+ * Sorting a list is the third thing that can happen to a row, after arriving
+ * and leaving, and it was the one that used to be a cut: every card was
+ * somewhere else in the frame after the click, and nothing said which card had
+ * gone where. A card that travels to its new place answers that by itself, and
+ * it is the same answer the eye already gets from a row growing or fading.
+ *
+ * This is FLIP: read where everything is before the change, let React lay the
+ * list out again, then put every element back where it started with a transform
+ * and animate that transform away. Only the transform moves, so the reorder
+ * costs no layout per frame, and the list is already in its final order for
+ * anything that asks — clicks land on the card under the pointer even mid-
+ * flight.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** The travel in progress per element, so a second sort continues rather than fights it. */
+const travelling = new WeakMap<Element, Animation>();
+
+/**
+ * Animate a list from the order it had to the order it has.
+ *
+ * `token` is whatever decides the order; the effect runs when it changes and
+ * ignores every other reason the list re-rendered, so cards being folded,
+ * filtered, or selected are left to the motion that owns them. `capture` has to
+ * be called from the handler that changes `token`, before React re-renders:
+ * that is the only moment the old positions still exist to be read.
+ */
+export function useReorderMotion(
+  container: RefObject<HTMLElement | null>,
+  token: string,
+  /** Identifies a child across the reorder, e.g. `(box) => box.dataset.id`. */
+  keyOf: (element: HTMLElement) => string | undefined,
+): () => void {
+  const positions = useRef(new Map<string, number>());
+  const previousToken = useRef(token);
+
+  const capture = () => {
+    if (prefersReducedMotion()) return;
+    const captured = new Map<string, number>();
+    for (const box of boxesIn(container.current)) {
+      const key = keyOf(box);
+      // The rect of an element still travelling is where it *looks* to be,
+      // which is where a second sort has to continue from.
+      if (key !== undefined) captured.set(key, box.getBoundingClientRect().top);
+    }
+    positions.current = captured;
+  };
+
+  useLayoutEffect(() => {
+    if (previousToken.current === token) return;
+    previousToken.current = token;
+
+    const before = positions.current;
+    positions.current = new Map();
+    if (before.size === 0 || prefersReducedMotion()) return;
+
+    const duration = motionDuration(document.documentElement);
+    const easing = motionCurveValue(document.documentElement);
+
+    for (const box of boxesIn(container.current)) {
+      const key = keyOf(box);
+      const from = key === undefined ? undefined : before.get(key);
+      if (from === undefined || typeof box.animate !== "function") continue;
+      // Cancelled before measuring: a transform left over from the last sort
+      // would otherwise be read as the position this one starts from.
+      travelling.get(box)?.cancel();
+      travelling.delete(box);
+
+      const delta = from - box.getBoundingClientRect().top;
+      if (Math.abs(delta) < 1) continue;
+
+      const animation = box.animate(
+        [{ transform: `translateY(${delta}px)` }, { transform: "translateY(0px)" }],
+        { duration, easing },
+      );
+      travelling.set(box, animation);
+      animation.finished
+        .then(() => {
+          if (travelling.get(box) === animation) travelling.delete(box);
+        })
+        .catch(() => {});
+    }
+  }, [container, keyOf, token]);
+
+  return capture;
+}
+
+/** The list's own children, which are the boxes that move; their contents ride along. */
+function boxesIn(root: HTMLElement | null): HTMLElement[] {
+  return root ? Array.from(root.children).filter(isElement) : [];
+}
+
+function isElement(node: Element): node is HTMLElement {
+  return node instanceof HTMLElement;
 }
