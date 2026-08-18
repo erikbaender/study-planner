@@ -45,24 +45,50 @@ export function SegmentedControl<T extends string>({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLSpanElement>(null);
+  const placed = useRef(false);
 
   /**
-   * The selection slides.
+   * The selection slides — but only once it has somewhere to slide from.
    *
    * macOS moves the thumb of a segmented control between segments; fading one
    * segment's fill out while another fades in loses the thing the motion is
    * for, which is showing *which way* the value moved. Measured from the live
    * item rather than computed from an index, because the segments are as wide
    * as their labels.
+   *
+   * The *first* placement is not a move and must not look like one. Measuring
+   * the selected segment forces the browser to compute the styles the control
+   * was inserted with — thumb at the left edge, no width — so the placement
+   * that follows reads as a change from those, and every control in a view or
+   * an inspector that had just arrived slid in from its own left edge while the
+   * panel around it was still fading. Applying that first placement with the
+   * transition off makes it the start value instead, which is what "the thumb
+   * is simply there" means in CSS.
    */
   useLayoutEffect(() => {
     const root = rootRef.current;
     const thumb = thumbRef.current;
     const selected = root?.querySelector<HTMLElement>('[data-state="on"]');
     if (!root || !thumb || !selected) return;
-    thumb.style.width = `${selected.offsetWidth}px`;
+
+    const width = selected.offsetWidth;
+    const arriving = !placed.current;
+    if (arriving) thumb.style.transition = "none";
+
+    thumb.style.width = `${width}px`;
     thumb.style.transform = `translateX(${selected.offsetLeft - root.clientLeft}px)`;
     thumb.style.opacity = "1";
+
+    if (arriving) {
+      // Flushed before the transition is handed back, so the position just set
+      // is the one the next change animates away from.
+      void thumb.offsetWidth;
+      thumb.style.transition = "";
+      // A control measured at zero has not been laid out yet — a panel still
+      // opening, a view not yet in the document. That is not a placement to
+      // animate away from, so the next run settles instead of sliding.
+      placed.current = width > 0;
+    }
   }, [value, segments, size]);
 
   const move = (delta: number) => {
