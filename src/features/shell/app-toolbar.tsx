@@ -69,6 +69,7 @@ export function AppToolbar(props: {
     <Toolbar>
       <IconButton
         size="sm"
+        className="max-lg:hidden"
         label={props.sidebarOpen ? "Hide sidebar" : "Show sidebar"}
         aria-pressed={props.sidebarOpen}
         icon={<PanelLeft />}

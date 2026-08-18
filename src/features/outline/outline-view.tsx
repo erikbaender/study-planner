@@ -48,7 +48,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { AlertTriangle, CalendarPlus, Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, CalendarPlus, ClockAlert, Gauge, Pencil, Plus, Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
@@ -69,7 +69,6 @@ import {
   Button,
   Collapse,
   ContextMenu,
-  CountdownBadge,
   EmptyState,
   IconButton,
   ProgressBar,
@@ -447,6 +446,10 @@ function CourseCard({
   const completed = isCourseComplete(course);
   const overdueBlocks = overdueBlockCount(course, today);
   const behindDays = health?.pace && !health.pace.onTrack ? health.pace.daysLate : null;
+  const hasStatus =
+    behindDays !== null ||
+    overdueBlocks > 0 ||
+    Boolean(health?.exam && health.daysUntilExam !== null);
 
   /**
    * Add a topic, select it, and put the caret in its name.
@@ -571,10 +574,9 @@ function CourseCard({
                   </button>
                 </h2>
 
-                {/* Everything that describes the course rather than measures it
-                    sits with the name: counts first, then the warnings, then
-                    the exam. Only the three measurement columns stay on the
-                    right, where the same three sit on every topic row. */}
+                {/* Lightweight metadata can yield to the title. Attention
+                    labels cannot: they live on their own wrapping line below
+                    so a narrow card always preserves the course's identity. */}
                 <span className="hidden shrink-0 items-center gap-2 text-callout tabular-nums text-tertiary md:flex">
                   <span aria-hidden="true">·</span>
                   <span>
@@ -583,28 +585,6 @@ function CourseCard({
                   {course.code ? <span aria-hidden="true">·</span> : null}
                   {course.code ? <span>{course.code}</span> : null}
                 </span>
-
-                {behindDays !== null ? (
-                  <Badge tone="warning">
-                    <AlertTriangle aria-hidden="true" className="size-3" strokeWidth={2} />
-                    {behindDays} day{behindDays === 1 ? "" : "s"} behind
-                  </Badge>
-                ) : null}
-
-                {overdueBlocks > 0 ? (
-                  <Badge tone="negative">
-                    <AlertTriangle aria-hidden="true" className="size-3" strokeWidth={2} />
-                    {overdueBlocks} overdue
-                  </Badge>
-                ) : null}
-
-                {health?.exam && health.daysUntilExam !== null ? (
-                  <CountdownBadge
-                    days={health.daysUntilExam}
-                    provisional={health.exam.status === "provisional"}
-                    atRisk={Boolean(health.pace && !health.pace.onTrack)}
-                  />
-                ) : null}
               </span>
 
               <span className="hidden text-right text-callout tabular-nums whitespace-nowrap text-secondary sm:block">
@@ -627,6 +607,35 @@ function CourseCard({
                 onChange={() => setConfirmingCompletion(true)}
               />
             </div>
+
+            {hasStatus ? (
+              <div
+                aria-label={`${course.name} status`}
+                className="pointer-events-none relative mt-2 flex flex-wrap items-center gap-1.5 px-2"
+              >
+                {behindDays !== null ? (
+                  <Badge tone="warning">
+                    <Gauge aria-hidden="true" className="size-3" strokeWidth={2} />
+                    Pace · {behindDays > 0 ? `${behindDays}d late` : "off track"}
+                  </Badge>
+                ) : null}
+
+                {overdueBlocks > 0 ? (
+                  <Badge tone="negative">
+                    <ClockAlert aria-hidden="true" className="size-3" strokeWidth={2} />
+                    Work · {overdueBlocks} overdue
+                  </Badge>
+                ) : null}
+
+                {health?.exam && health.daysUntilExam !== null ? (
+                  <Badge tone="neutral">
+                    <CalendarClock aria-hidden="true" className="size-3" strokeWidth={2} />
+                    {health.exam.status === "provisional" ? "Exam window" : "Exam"} ·{" "}
+                    {health.daysUntilExam}d
+                  </Badge>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
 

@@ -110,8 +110,8 @@ export function AppShell() {
   /**
    * Both side panels start closed on a narrow window and open on a wide one.
    * A 390px phone has room for exactly one column, and a sidebar that takes
-   * two-thirds of it is not a sidebar. Read once, because a resize mid-session
-   * is a deliberate act and should not throw away what the user has opened.
+   * two-thirds of it is not a sidebar. CSS keeps both panels out of the compact
+   * layout entirely, including when a selection would open the inspector.
    */
   const [sidebarOpen, setSidebarOpen] = useState(
     () => typeof window === "undefined" || window.innerWidth >= 1024,
@@ -148,6 +148,7 @@ export function AppShell() {
   // retention needed for its sequential content fade.
   const inspectable = isInspectable(selection) ? selection : null;
   const inspectorOpen = inspectable !== null;
+
   const pendingDelete = useMemo(
     () => resolveSelection(plan, workspace.pendingDelete),
     [plan, workspace.pendingDelete],
@@ -341,14 +342,12 @@ export function AppShell() {
           inert={!sidebarOpen}
           data-panel-side="left"
           data-panel-state={sidebarOpen ? "open" : "closed"}
-          className={`side-panel-shell absolute inset-y-0 left-0 z-30 flex w-60 overflow-hidden material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none ${
+          className={`side-panel-shell hidden w-60 overflow-hidden lg:static lg:flex ${
             sidebarOpen ? "" : "lg:w-0"
           }`}
         >
-          {/* Overlaid on a narrow window, in the flow on a wide one: at 390px
-              there is no room for two columns, and pushing the content off the
-              screen is worse than covering it. The shell stays mounted so its
-              entrance and exit share the same motion. */}
+          {/* Panels belong to the desktop split view. Compact windows get the
+              content column only, rather than drawers covering that content. */}
           <AppSidebar
             plans={snapshot.plans}
             plan={plan}
@@ -461,12 +460,9 @@ export function AppShell() {
           inert={!inspectorOpen}
           data-panel-side="right"
           data-panel-state={inspectorOpen ? "open" : "closed"}
-          // A column of its own once there is room for one, and an overlay only
-          // on the narrow windows where a third column would leave the content
-          // unreadable. An inspector that floats over the view it describes
-          // covers the rows you are working through and has to be dismissed to
-          // read them; beside the view, both are legible at once.
-          className={`side-panel-shell absolute inset-y-0 right-0 z-30 flex w-72 overflow-hidden material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none ${
+          // The inspector is a desktop column only. On compact windows the
+          // selection remains useful to the view, but no panel covers it.
+          className={`side-panel-shell hidden w-72 overflow-hidden lg:static lg:flex ${
             inspectorOpen ? "" : "lg:w-0"
           }`}
         >

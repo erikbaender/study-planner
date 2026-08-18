@@ -7,6 +7,7 @@ import {
   snapshot as makeSnapshot,
   topic as makeTopic,
 } from "@/test/factories";
+import type { CourseHealth } from "@/domain";
 import { useWorkspace } from "@/features/workspace/store";
 import { OutlineView } from "./outline-view";
 import { TOPIC_ROW_HEIGHT, TopicList } from "./topic-list";
@@ -437,5 +438,71 @@ describe("OutlineView course selection", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     expect(onDeleteExam).toHaveBeenCalledWith(course, exam);
+  });
+
+  it("keeps attention labels in a wrapping status line outside the course name", () => {
+    const atRiskCourse = makeCourse({
+      name: "Biochemistry",
+      exams: [makeExam({ startDate: "2026-05-08" })],
+      topics: [
+        makeTopic({
+          id: "topic_at_risk",
+          totalUnits: 10,
+          blocks: [
+            {
+              id: "block_1",
+              topicId: "topic_at_risk",
+              startDate: "2026-04-30",
+              endDate: "2026-04-30",
+              plannedUnits: 2,
+              source: "auto",
+            },
+          ],
+        }),
+      ],
+    });
+    const courseHealth: CourseHealth = {
+      courseId: atRiskCourse.id,
+      progress: { completedUnits: 0, totalUnits: 10, remainingUnits: 10, ratio: 0 },
+      exam: atRiskCourse.exams[0],
+      daysUntilExam: 7,
+      pace: {
+        remainingUnits: 10,
+        studyDaysLeft: 5,
+        requiredPace: 2,
+        actualVelocity: 1,
+        projectedFinish: "2026-05-11",
+        onTrack: false,
+        daysLate: 3,
+      },
+    };
+
+    render(
+      <OutlineView
+        courses={[atRiskCourse]}
+        health={new Map([[atRiskCourse.id, courseHealth]])}
+        today={TODAY}
+        query=""
+        snapshot={makeSnapshot()}
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onSelectExam={vi.fn()}
+        onDeleteExam={vi.fn()}
+        onSelectCourse={vi.fn()}
+        onDeleteTopic={vi.fn()}
+        onDeleteCourse={vi.fn()}
+        onEditCourse={vi.fn()}
+        onNewCourse={vi.fn()}
+      />,
+    );
+
+    const status = screen.getByLabelText("Biochemistry status");
+    expect(status).toHaveClass("flex-wrap");
+    expect(within(status).getByText("Pace · 3d late")).toHaveClass("text-warning");
+    expect(within(status).getByText("Work · 1 overdue")).toHaveClass("text-negative");
+    expect(within(status).getByText("Exam · 7d")).toHaveClass("text-secondary");
+    expect(screen.getByRole("button", { name: "Select Biochemistry" })).not.toContainElement(
+      status,
+    );
   });
 });
