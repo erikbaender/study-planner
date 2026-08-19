@@ -440,7 +440,7 @@ describe("OutlineView course selection", () => {
     expect(onDeleteExam).toHaveBeenCalledWith(course, exam);
   });
 
-  it("keeps attention labels in a wrapping status line outside the course name", () => {
+  it("keeps attention labels in a wrapping status line and exam timing in metadata", () => {
     const atRiskCourse = makeCourse({
       name: "Biochemistry",
       exams: [makeExam({ startDate: "2026-05-08" })],
@@ -500,7 +500,10 @@ describe("OutlineView course selection", () => {
     expect(status).toHaveClass("flex-wrap");
     expect(within(status).getByText("Pace · 3d late")).toHaveClass("text-warning");
     expect(within(status).getByText("Work · 1 overdue")).toHaveClass("text-negative");
-    expect(within(status).getByText("Exam · 7d")).toHaveClass("text-secondary");
+    expect(within(status).queryByText(/exam/i)).not.toBeInTheDocument();
+    expect(screen.getByText("7d until exam").closest(".text-tertiary")).toHaveTextContent(
+      /1 topic.*·.*7d until exam/,
+    );
     expect(screen.getByRole("button", { name: "Select Biochemistry" })).not.toContainElement(
       status,
     );

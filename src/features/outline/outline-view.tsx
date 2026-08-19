@@ -48,7 +48,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { CalendarClock, CalendarPlus, ClockAlert, Gauge, Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarPlus, ClockAlert, Gauge, Pencil, Plus, Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
@@ -446,10 +446,7 @@ function CourseCard({
   const completed = isCourseComplete(course);
   const overdueBlocks = overdueBlockCount(course, today);
   const behindDays = health?.pace && !health.pace.onTrack ? health.pace.daysLate : null;
-  const hasStatus =
-    behindDays !== null ||
-    overdueBlocks > 0 ||
-    Boolean(health?.exam && health.daysUntilExam !== null);
+  const hasStatus = behindDays !== null || overdueBlocks > 0;
 
   /**
    * Add a topic, select it, and put the caret in its name.
@@ -582,6 +579,12 @@ function CourseCard({
                   <span>
                     {course.topics.length} topic{course.topics.length === 1 ? "" : "s"}
                   </span>
+                  {health?.exam && health.daysUntilExam !== null ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>{health.daysUntilExam}d until exam</span>
+                    </>
+                  ) : null}
                   {course.code ? <span aria-hidden="true">·</span> : null}
                   {course.code ? <span>{course.code}</span> : null}
                 </span>
@@ -624,14 +627,6 @@ function CourseCard({
                   <Badge tone="negative">
                     <ClockAlert aria-hidden="true" className="size-3" strokeWidth={2} />
                     Work · {overdueBlocks} overdue
-                  </Badge>
-                ) : null}
-
-                {health?.exam && health.daysUntilExam !== null ? (
-                  <Badge tone="neutral">
-                    <CalendarClock aria-hidden="true" className="size-3" strokeWidth={2} />
-                    {health.exam.status === "provisional" ? "Exam window" : "Exam"} ·{" "}
-                    {health.daysUntilExam}d
                   </Badge>
                 ) : null}
               </div>
