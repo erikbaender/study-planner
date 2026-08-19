@@ -295,6 +295,28 @@ describe("OutlineView course selection", () => {
     expect(screen.getByRole("button", { name: "Collapse Anatomy" })).toBeInTheDocument();
   });
 
+  it("folds and unfolds every visible course from the outline toolbar", async () => {
+    const user = userEvent.setup();
+    renderOutline();
+
+    const foldAll = screen.getByRole("button", { name: "Fold all courses" });
+    const unfoldAll = screen.getByRole("button", { name: "Unfold all courses" });
+    expect(foldAll).toBeEnabled();
+    expect(unfoldAll).toBeDisabled();
+
+    await user.click(foldAll);
+
+    expect(screen.getByRole("button", { name: "Expand Biochemistry" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toBeInTheDocument();
+    expect(foldAll).toBeDisabled();
+    expect(unfoldAll).toBeEnabled();
+
+    await user.click(unfoldAll);
+
+    expect(screen.getByRole("button", { name: "Collapse Biochemistry" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Anatomy" })).toBeInTheDocument();
+  });
+
   it("consumes a sidebar reveal only after its course card mounts", () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
@@ -440,7 +462,7 @@ describe("OutlineView course selection", () => {
     expect(onDeleteExam).toHaveBeenCalledWith(course, exam);
   });
 
-  it("keeps attention labels in a wrapping status line and exam timing in metadata", () => {
+  it("keeps status labels concise and exam timing in metadata", () => {
     const atRiskCourse = makeCourse({
       name: "Biochemistry",
       exams: [makeExam({ startDate: "2026-05-08" })],
@@ -498,14 +520,63 @@ describe("OutlineView course selection", () => {
 
     const status = screen.getByLabelText("Biochemistry status");
     expect(status).toHaveClass("flex-wrap");
-    expect(within(status).getByText("Pace · 3d late")).toHaveClass("text-warning");
-    expect(within(status).getByText("Work · 1 overdue")).toHaveClass("text-negative");
+    expect(within(status).getByText("3 days behind")).toHaveClass("text-warning");
+    expect(within(status).getByText("1 overdue")).toHaveClass("text-negative");
+    expect(within(status).queryByText(/pace|work/i)).not.toBeInTheDocument();
     expect(within(status).queryByText(/exam/i)).not.toBeInTheDocument();
-    expect(screen.getByText("7d until exam").closest(".text-tertiary")).toHaveTextContent(
-      /1 topic.*·.*7d until exam/,
+    expect(screen.getByText("7 days").closest(".text-tertiary")).toHaveTextContent(
+      /1 topic.*·.*7 days/,
     );
+    expect(screen.getByRole("button", { name: "Select Biochemistry" }).closest(".outline-card-header"))
+      .toHaveClass("p-3");
     expect(screen.getByRole("button", { name: "Select Biochemistry" })).not.toContainElement(
       status,
     );
+  });
+
+  it("labels an off-track course without a projected finish as unknown", () => {
+    const stalledCourse = makeCourse({
+      name: "Pathology",
+      exams: [makeExam({ startDate: "2026-05-08" })],
+      topics: [makeTopic({ totalUnits: 10 })],
+    });
+    const stalledHealth: CourseHealth = {
+      courseId: stalledCourse.id,
+      progress: { completedUnits: 0, totalUnits: 10, remainingUnits: 10, ratio: 0 },
+      exam: stalledCourse.exams[0],
+      daysUntilExam: 7,
+      pace: {
+        remainingUnits: 10,
+        studyDaysLeft: 5,
+        requiredPace: 2,
+        actualVelocity: 0,
+        projectedFinish: null,
+        onTrack: false,
+        daysLate: 0,
+      },
+    };
+
+    render(
+      <OutlineView
+        courses={[stalledCourse]}
+        health={new Map([[stalledCourse.id, stalledHealth]])}
+        today={TODAY}
+        query=""
+        snapshot={makeSnapshot()}
+        selectedId={null}
+        onSelectTopic={vi.fn()}
+        onSelectExam={vi.fn()}
+        onDeleteExam={vi.fn()}
+        onSelectCourse={vi.fn()}
+        onDeleteTopic={vi.fn()}
+        onDeleteCourse={vi.fn()}
+        onEditCourse={vi.fn()}
+        onNewCourse={vi.fn()}
+      />,
+    );
+
+    const status = screen.getByLabelText("Pathology status");
+    expect(within(status).getByText("Finish unknown")).toHaveClass("text-warning");
+    expect(within(status).queryByText("0 days behind")).not.toBeInTheDocument();
   });
 });

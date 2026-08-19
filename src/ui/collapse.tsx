@@ -9,7 +9,7 @@
  * heights at once forces repeated layout passes and reads as a hitch.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { motionDuration, prefersReducedMotion } from "./motion";
 
 /* ─── Which items are on screen, including the ones on their way off ────── */
@@ -142,67 +142,45 @@ export function Collapse({
   className?: string;
   children: ReactNode;
 }) {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const mountedRef = useRef(false);
-  const previousPresentRef = useRef(present);
+  const instant = prefersReducedMotion();
+  const [visible, setVisible] = useState(present && (!appear || instant));
+  const [seenPresent, setSeenPresent] = useState(present);
+
+  // A departure must render its opacity endpoint in the same commit that
+  // changed presence. Arrivals remain transparent until the effect below has
+  // given the browser a frame in which to paint that starting point.
+  if (seenPresent !== present) {
+    setSeenPresent(present);
+    if (!present) setVisible(false);
+    else if (instant) setVisible(true);
+  }
 
   /**
-   * Filtering can add or remove several variable-height cards at once. Keep
-   * the animation on the element itself so React only reconciles the list
-   * once, while the browser runs the shared opacity transition.
+   * Filtering can add several variable-height cards at once. Give an arriving
+   * card two frames at opacity zero before revealing it, mirroring disclosure
+   * motion and preventing React's commit from skipping the fade's first frame.
    */
-  useLayoutEffect(() => {
-    const box = boxRef.current;
-    if (!box) return;
+  useEffect(() => {
+    if (!present || visible || instant) return;
 
-    let frame = 0;
-    const instant = prefersReducedMotion();
-    const firstRender = !mountedRef.current;
-    const leaving = !firstRender && previousPresentRef.current && !present;
-    mountedRef.current = true;
-    previousPresentRef.current = present;
-
-    const clear = () => {
-      cancelAnimationFrame(frame);
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setVisible(true));
+    });
+    const fallback = window.setTimeout(() => setVisible(true), 100);
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+      window.clearTimeout(fallback);
     };
-
-    if (instant || (firstRender && !appear)) {
-      box.style.opacity = present ? "1" : "0";
-      return clear;
-    }
-
-    if (present) {
-      // A returning card may be part-way through its departure. Let the
-      // transition continue from its current opacity rather than restarting a
-      // height measurement or a React phase machine.
-      box.style.opacity = "0";
-      void box.offsetHeight;
-      frame = requestAnimationFrame(() => {
-        box.style.opacity = "1";
-      });
-    } else if (leaving) {
-      // Keep the card in the list's natural flow until presence removes it;
-      // only its pixels fade. This avoids a second layout animation fighting
-      // the filter's list reconciliation.
-      box.style.opacity = "1";
-      void box.offsetHeight;
-      frame = requestAnimationFrame(() => {
-        box.style.opacity = "0";
-      });
-    } else {
-      box.style.opacity = "0";
-    }
-
-    return clear;
-  }, [appear, present]);
+  }, [instant, present, visible]);
 
   return (
     <div
-      ref={boxRef}
-      className={`collapse-motion ${className ?? ""}`}
+      className={`collapse-motion ${visible ? "opacity-100" : "opacity-0"} ${className ?? ""}`}
+      data-visible={visible ? "true" : "false"}
       aria-hidden={present ? undefined : "true"}
       inert={present ? undefined : true}
-      style={{ opacity: present ? 1 : 0 }}
     >
       {children}
     </div>

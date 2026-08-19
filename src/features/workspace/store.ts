@@ -149,6 +149,8 @@ export type WorkspaceState = {
   showAllCourses: () => void;
   select: (selection: Selection) => void;
   toggleCourseCollapsed: (courseId: EntityId) => void;
+  foldCourses: (courseIds: EntityId[]) => void;
+  unfoldCourses: (courseIds: EntityId[]) => void;
   setCourseSort: (sort: CourseSort) => void;
   revealBlock: (blockId: EntityId | null) => void;
   revealCourse: (courseId: EntityId | null) => void;
@@ -230,6 +232,16 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
         ? state.collapsedCourseIds.filter((id) => id !== courseId)
         : [...state.collapsedCourseIds, courseId],
     })),
+  foldCourses: (courseIds) =>
+    set((state) => ({
+      collapsedCourseIds: [...new Set([...state.collapsedCourseIds, ...courseIds])],
+    })),
+  unfoldCourses: (courseIds) => {
+    const opened = new Set(courseIds);
+    set((state) => ({
+      collapsedCourseIds: state.collapsedCourseIds.filter((id) => !opened.has(id)),
+    }));
+  },
   setCourseSort: (courseSort) => set({ courseSort }),
   revealBlock: (revealBlockId) => set({ revealBlockId }),
   revealCourse: (revealCourseId) =>

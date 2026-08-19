@@ -48,7 +48,16 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { CalendarPlus, ClockAlert, Gauge, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  CalendarPlus,
+  ChevronsDown,
+  ChevronsUp,
+  ClockAlert,
+  Gauge,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   courseProgress,
@@ -84,7 +93,7 @@ import {
 } from "@/ui";
 import { motionDuration } from "@/ui/motion";
 import { useDisclosure, useReorderMotion, useRowTransitions } from "@/ui/row-motion";
-import { COLUMNS, LIST_ROW_CONTENT_HEIGHT, TOPIC_ROW_HEIGHT, TopicList } from "./topic-list";
+import { LIST_ROW_CONTENT_HEIGHT, TOPIC_ROW_HEIGHT, TopicList } from "./topic-list";
 import { AutoPlanButton } from "@/features/planning/planning-actions";
 import {
   CourseCompletionCheckbox,
@@ -128,6 +137,11 @@ function courseLabelSelectedHints(keyboardMode: "mac" | "windows"): readonly Inp
 }
 
 const courseKey = (course: Course) => course.id;
+const COURSE_HEADER_COLUMNS = [
+  "grid items-center gap-2",
+  "grid-cols-[minmax(4rem,1fr)_minmax(4.5rem,8rem)_1.25rem]",
+  "sm:gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(5rem,9rem)_1.25rem]",
+].join(" ");
 /** A card box, identified across a reorder by the course it holds. */
 const courseCardKey = (box: HTMLElement) =>
   box.querySelector("section[data-course-id]")?.getAttribute("data-course-id") ?? undefined;
@@ -170,6 +184,9 @@ export function OutlineView({
   const workspaceSelection = useWorkspace((state) => state.selection);
   const courseSort = useWorkspace((state) => state.courseSort);
   const setCourseSort = useWorkspace((state) => state.setCourseSort);
+  const collapsedCourseIds = useWorkspace((state) => state.collapsedCourseIds);
+  const foldCourses = useWorkspace((state) => state.foldCourses);
+  const unfoldCourses = useWorkspace((state) => state.unfoldCourses);
   const revealCourseId = useWorkspace((state) => state.revealCourseId);
   // The cards travel to their new places rather than appearing in them; the
   // positions they travel from can only be read before the click re-renders.
@@ -186,6 +203,9 @@ export function OutlineView({
     selection.getSnapshot,
     () => EMPTY_COURSE_SELECTION,
   );
+  const visibleCourseIds = useMemo(() => courses.map((course) => course.id), [courses]);
+  const everyCourseFolded = visibleCourseIds.every((id) => collapsedCourseIds.includes(id));
+  const everyCourseUnfolded = visibleCourseIds.every((id) => !collapsedCourseIds.includes(id));
 
   // Sidebar navigation can request this before ViewFade mounts the outline.
   // Consume the request only once its card exists, so neither the unfold nor
@@ -336,6 +356,22 @@ export function OutlineView({
               label: COURSE_SORT_LABELS[sort],
             }))}
           />
+          <span className="flex items-center gap-0.5">
+            <IconButton
+              size="sm"
+              label="Fold all courses"
+              icon={<ChevronsUp />}
+              disabled={everyCourseFolded}
+              onClick={() => foldCourses(visibleCourseIds)}
+            />
+            <IconButton
+              size="sm"
+              label="Unfold all courses"
+              icon={<ChevronsDown />}
+              disabled={everyCourseUnfolded}
+              onClick={() => unfoldCourses(visibleCourseIds)}
+            />
+          </span>
         </div>
       ) : null}
 
@@ -445,8 +481,15 @@ function CourseCard({
   const percent = progress.ratio === null ? null : Math.round(progress.ratio * 100);
   const completed = isCourseComplete(course);
   const overdueBlocks = overdueBlockCount(course, today);
-  const behindDays = health?.pace && !health.pace.onTrack ? health.pace.daysLate : null;
-  const hasStatus = behindDays !== null || overdueBlocks > 0;
+  const paceStatus =
+    health?.pace && !health.pace.onTrack
+      ? health.pace.daysLate > 0
+        ? `${health.pace.daysLate} days behind`
+        : health.pace.projectedFinish === null
+          ? "Finish unknown"
+          : "Capacity shortfall"
+      : null;
+  const hasStatus = paceStatus !== null || overdueBlocks > 0;
 
   /**
    * Add a topic, select it, and put the caret in its name.
@@ -522,13 +565,12 @@ function CourseCard({
         style={{ "--topic-completion-color": tint } as CSSProperties}
       >
         <div className="relative" data-keeps-selection>
-          {/* Laid out exactly like a topic row — name, readout, bar, done — so
-              the course reads as the sum of the rows beneath it rather than as
-              a different kind of thing. The horizontal inset matches a row's:
-              the list's own padding plus the slot each row is inset by. */}
+          {/* The course uses the topic row's name, readout, bar and done
+              structure, but lets the compact percentage column size to its
+              content so unused readout space stays available to a long name. */}
           <div
             className={clsx(
-              "outline-card-header relative px-[11px] py-3",
+              "outline-card-header relative p-3",
               !completed && "hover:bg-fill/50",
             )}
           >
@@ -544,7 +586,7 @@ function CourseCard({
               className="absolute inset-0 focus-visible:outline-none"
             />
 
-            <div className={clsx(COLUMNS, "pointer-events-none relative px-2")}>
+            <div className={clsx(COURSE_HEADER_COLUMNS, "pointer-events-none relative")}>
               <span className="flex min-w-0 items-center gap-2">
                 {/* The name is the selection control. Its padding is pulled
                     back on the left and above, so the row starts where it
@@ -582,7 +624,7 @@ function CourseCard({
                   {health?.exam && health.daysUntilExam !== null ? (
                     <>
                       <span aria-hidden="true">·</span>
-                      <span>{health.daysUntilExam}d until exam</span>
+                      <span>{health.daysUntilExam} days</span>
                     </>
                   ) : null}
                   {course.code ? <span aria-hidden="true">·</span> : null}
@@ -614,19 +656,19 @@ function CourseCard({
             {hasStatus ? (
               <div
                 aria-label={`${course.name} status`}
-                className="pointer-events-none relative mt-2 flex flex-wrap items-center gap-1.5 px-2"
+                className="pointer-events-none relative mt-2 flex flex-wrap items-center gap-1.5"
               >
-                {behindDays !== null ? (
+                {paceStatus !== null ? (
                   <Badge tone="warning">
                     <Gauge aria-hidden="true" className="size-3" strokeWidth={2} />
-                    Pace · {behindDays > 0 ? `${behindDays}d late` : "off track"}
+                    {paceStatus}
                   </Badge>
                 ) : null}
 
                 {overdueBlocks > 0 ? (
                   <Badge tone="negative">
                     <ClockAlert aria-hidden="true" className="size-3" strokeWidth={2} />
-                    Work · {overdueBlocks} overdue
+                    {overdueBlocks} overdue
                   </Badge>
                 ) : null}
               </div>
