@@ -1,9 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { coursePalette } from "@/domain";
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
-import { assessCourse, DEFAULT_PREFERENCES, type CourseHealth } from "@/domain";
-import { Inspector } from "./inspector";
+import { Inspector, isInspectable } from "./inspector";
 
 /**
  * The repository is mocked at the module boundary rather than provided through
@@ -13,42 +13,45 @@ import { Inspector } from "./inspector";
 const repository = {
   updateCourse: vi.fn(() => Promise.resolve()),
   updateTopic: vi.fn(() => Promise.resolve()),
+  moveTopic: vi.fn(() => Promise.resolve()),
   logStudy: vi.fn(() => Promise.resolve()),
   setTopicDependencies: vi.fn(() => Promise.resolve()),
+  createStudyBlock: vi.fn(() => Promise.resolve("block_new")),
+  updateStudyBlock: vi.fn(() => Promise.resolve()),
+  deleteStudyBlock: vi.fn(() => Promise.resolve()),
 };
 const run = vi.fn();
 
 vi.mock("@/data/use-repository", () => ({
   useRepository: () => repository,
   usePlannerRun: () => run,
+  usePlannerState: () => ({ status: "ready", snapshot: { plans: [] } }),
   usePlannerErrors: () => ({ run, error: null, clear: () => {} }),
 }));
 
 const TODAY = "2026-05-01";
+const inspectorNavigation = { onRevealBlock: vi.fn() };
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-function healthFor(course: Parameters<typeof assessCourse>[0]["course"]): Map<string, CourseHealth> {
-  return new Map([
-    [
-      course.id,
-      assessCourse({ course, today: TODAY, calendar: DEFAULT_PREFERENCES, log: [] }),
-    ],
-  ]);
-}
-
 describe("Inspector", () => {
-  it("says nothing is selected rather than showing an empty form", () => {
-    render(<Inspector selection={null} health={new Map()} today={TODAY} onDelete={vi.fn()} />);
-    expect(screen.getByText(/Nothing selected/)).toBeInTheDocument();
+  it("renders no inspector content when nothing is selected", () => {
+    render(
+      <Inspector
+        {...inspectorNavigation}
+        selection={null}
+        today={TODAY}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeEmptyDOMElement();
   });
 
   describe("a topic", () => {
     const topic = makeTopic({
       name: "Glycolysis",
-      section: "Block 1",
       totalUnits: 100,
       completedUnits: 40,
       notes: "Skip the appendix",
@@ -59,8 +62,8 @@ describe("Inspector", () => {
     function renderTopic() {
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={selection}
-          health={healthFor(course)}
           today={TODAY}
           onDelete={vi.fn()}
         />,
@@ -104,6 +107,45 @@ describe("Inspector", () => {
       });
     });
 
+    it("drops its progress preview when stored progress changes elsewhere", async () => {
+      const user = userEvent.setup();
+      const empty = makeTopic({ ...topic, completedUnits: 0 });
+      const full = makeTopic({ ...topic, completedUnits: 100 });
+      const emptySelection = { kind: "topic", course, topic: empty } as const;
+      const { rerender } = render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={emptySelection}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      const checkbox = screen.getByRole("checkbox", { name: "Mark Glycolysis as done" });
+      await user.click(checkbox);
+      expect(checkbox).toBeChecked();
+
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course, topic: full }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={emptySelection}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      expect(checkbox).not.toBeChecked();
+      expect(screen.getByText("0 / 100 slides")).toBeInTheDocument();
+    });
+
     it("passes completedUnits through untouched when something else is edited", async () => {
       // `updateTopic` takes a whole topic, so every edit resends the field.
       // Resending anything other than the current value would silently
@@ -111,8 +153,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       renderTopic();
 
-      await user.click(screen.getByRole("combobox", { name: "Priority" }));
-      await user.click(screen.getByRole("option", { name: "High" }));
+      await user.click(screen.getByRole("radio", { name: "High" }));
 
       expect(repository.updateTopic).toHaveBeenCalledWith(
         topic.id,
@@ -124,7 +165,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       renderTopic();
 
-      const field = screen.getByLabelText("Name");
+      const field = screen.getByLabelText("Topic name");
       await user.clear(field);
       await user.type(field, "Glycolysis I");
       expect(repository.updateTopic).not.toHaveBeenCalled();
@@ -137,11 +178,52 @@ describe("Inspector", () => {
       );
     });
 
+    it("moves the topic through the course picker", async () => {
+      const targetCourse = makeCourse({ name: "Neurobiology" });
+      const user = userEvent.setup();
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          courses={[course, targetCourse]}
+          selection={selection}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("combobox", { name: "Course for Glycolysis" }));
+      await user.click(screen.getByRole("option", { name: "Neurobiology" }));
+
+      expect(repository.moveTopic).toHaveBeenCalledWith(topic.id, targetCourse.id);
+    });
+
+    it("lists destination courses alphabetically", async () => {
+      const zoology = makeCourse({ name: "Zoology" });
+      const anatomy = makeCourse({ name: "Anatomy" });
+      const user = userEvent.setup();
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          courses={[zoology, course, anatomy]}
+          selection={selection}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("combobox", { name: "Course for Glycolysis" }));
+      expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+        "Anatomy",
+        "Biochemistry",
+        "Zoology",
+      ]);
+    });
+
     it("reverts an edit on Escape", async () => {
       const user = userEvent.setup();
       renderTopic();
 
-      const field = screen.getByLabelText("Name");
+      const field = screen.getByLabelText("Topic name");
       await user.type(field, " and friends{Escape}");
 
       expect(field).toHaveValue("Glycolysis");
@@ -152,7 +234,7 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       renderTopic();
 
-      await user.click(screen.getByLabelText("Name"));
+      await user.click(screen.getByLabelText("Topic name"));
       await user.tab();
 
       expect(repository.updateTopic).not.toHaveBeenCalled();
@@ -164,8 +246,8 @@ describe("Inspector", () => {
       const user = userEvent.setup();
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "topic", course: dependentCourse, topic }}
-          health={healthFor(dependentCourse)}
           today={TODAY}
           onDelete={vi.fn()}
         />,
@@ -173,6 +255,134 @@ describe("Inspector", () => {
 
       await user.click(screen.getByRole("checkbox", { name: "Cell biology" }));
       expect(repository.setTopicDependencies).toHaveBeenCalledWith(topic.id, [prerequisite.id]);
+    });
+
+    it("focuses a block in the timeline from its context menu", async () => {
+      const block = {
+        id: "block_1",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "manual" as const,
+      };
+      const scheduledTopic = makeTopic({ name: "Glycolysis", blocks: [block] });
+      const scheduledCourse = makeCourse({ name: "Biochemistry", topics: [scheduledTopic] });
+      const onRevealBlock = vi.fn();
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          onRevealBlock={onRevealBlock}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      const blocks = screen.getByRole("list", { name: "Study blocks for Glycolysis" });
+      await user.pointer({ keys: "[MouseRight]", target: within(blocks).getByLabelText("Starts") });
+      await user.click(await screen.findByRole("menuitem", { name: "Focus in timeline" }));
+
+      expect(onRevealBlock).toHaveBeenCalledWith(block);
+    });
+
+    it("adds a manual block after the topic's last block", async () => {
+      const lastBlock = {
+        id: "block_last",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "manual" as const,
+      };
+      const scheduledTopic = makeTopic({ blocks: [lastBlock] });
+      const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      // The section's own plus, in its label — the same control the outline
+      // adds topics and exams with.
+      await user.click(
+        screen.getByRole("button", { name: `Add a study block to ${scheduledTopic.name}` }),
+      );
+
+      expect(repository.createStudyBlock).toHaveBeenCalledWith({
+        topicId: scheduledTopic.id,
+        startDate: "2026-05-07",
+        endDate: "2026-05-07",
+        source: "manual",
+      });
+    });
+
+    it("moves a block when its start changes and resizes it when its end changes", () => {
+      const block = {
+        id: "block_dates",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "auto" as const,
+        plannedUnits: 12,
+      };
+      const scheduledTopic = makeTopic({ blocks: [block] });
+      const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-05-10" } });
+      expect(repository.updateStudyBlock).toHaveBeenCalledWith("block_dates", {
+        startDate: "2026-05-10",
+        endDate: "2026-05-12",
+        plannedUnits: 12,
+      });
+
+      fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "2026-05-14" } });
+      expect(repository.updateStudyBlock).toHaveBeenLastCalledWith("block_dates", {
+        startDate: "2026-05-04",
+        endDate: "2026-05-14",
+        plannedUnits: 12,
+      });
+    });
+
+    it("removes a block from its context menu", async () => {
+      const block = {
+        id: "block_remove",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "manual" as const,
+      };
+      const scheduledTopic = makeTopic({ blocks: [block] });
+      const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.pointer({ keys: "[MouseRight]", target: screen.getByLabelText("Starts") });
+      await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+
+      expect(repository.deleteStudyBlock).toHaveBeenCalledWith("block_remove");
     });
   });
 
@@ -183,74 +393,66 @@ describe("Inspector", () => {
     it("offers no slider, because there is no scale to slide along", () => {
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "topic", course, topic }}
-          health={healthFor(course)}
           today={TODAY}
           onDelete={vi.fn()}
         />,
       );
 
       expect(screen.queryByRole("slider")).not.toBeInTheDocument();
-      const bar = screen.getByRole("progressbar", { name: "Reading list progress" });
-      // Indeterminate, not zero: nobody has said how big this is.
-      expect(bar).not.toHaveAttribute("aria-valuenow");
-      expect(bar).toHaveAttribute("aria-valuetext", "Size not set");
     });
   });
 
   describe("a course", () => {
-    const course = makeCourse({
-      name: "Biochemistry",
-      topics: [makeTopic({ totalUnits: 100, completedUnits: 25 })],
-      exams: [makeExam({ startDate: "2026-05-15" })],
+    const course = makeCourse({ name: "Biochemistry", code: "BIO-201", topics: [makeTopic()] });
+
+    it("is something the inspector describes", () => {
+      expect(isInspectable({ kind: "course", course })).toBe(true);
+      expect(isInspectable({ kind: "topic", course, topic: makeTopic() })).toBe(true);
+      expect(isInspectable(null)).toBe(false);
     });
 
-    it("shows the pace it can measure", () => {
+    it("offers the creation sheet's fields and nothing about the topics inside it", () => {
+      // The topics are in the card beside the panel, with their own progress
+      // and their own actions. Listing them here too was a second, poorer copy
+      // of the view the panel is standing next to.
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "course", course }}
-          health={healthFor(course)}
           today={TODAY}
           onDelete={vi.fn()}
         />,
       );
 
-      expect(screen.getByText("25 / 100 units")).toBeInTheDocument();
-      // Nothing has been logged, so there is no velocity to extrapolate from
-      // and no honest finish date to give.
-      expect(screen.getByText("Not predictable yet")).toBeInTheDocument();
+      expect(screen.getByLabelText("Course name")).toHaveValue("Biochemistry");
+      expect(screen.getByLabelText("Course code")).toHaveValue("BIO-201");
+      expect(screen.getByRole("radiogroup", { name: "Course colour" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Notes")).toBeInTheDocument();
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+      expect(screen.queryByText(course.topics[0].name)).not.toBeInTheDocument();
     });
 
-    it("does not invent a pace for a course with no exam", () => {
-      const undated = makeCourse({ name: "Elective", topics: [makeTopic({ totalUnits: 10 })] });
-      render(
-        <Inspector
-          selection={{ kind: "course", course: undated }}
-          health={healthFor(undated)}
-          today={TODAY}
-          onDelete={vi.fn()}
-        />,
-      );
-
-      expect(screen.getByText(/No upcoming exam to measure against/)).toBeInTheDocument();
-    });
-
-    it("changes the colour through a radiogroup", async () => {
+    it("resends the course's other fields when one of them is edited", async () => {
       const user = userEvent.setup();
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "course", course }}
-          health={healthFor(course)}
           today={TODAY}
           onDelete={vi.fn()}
         />,
       );
 
-      await user.click(screen.getByRole("radio", { name: "Violet" }));
-      expect(repository.updateCourse).toHaveBeenCalledWith(
-        course.id,
-        expect.objectContaining({ color: "violet", name: "Biochemistry" }),
-      );
+      await user.click(screen.getByRole("radio", { name: coursePalette[2].name }));
+
+      expect(repository.updateCourse).toHaveBeenCalledWith(course.id, {
+        name: "Biochemistry",
+        code: "BIO-201",
+        color: coursePalette[2].id,
+        notes: course.notes,
+      });
     });
   });
 
@@ -266,8 +468,8 @@ describe("Inspector", () => {
 
       render(
         <Inspector
+          {...inspectorNavigation}
           selection={{ kind: "exam", course, exam }}
-          health={healthFor(course)}
           today={TODAY}
           onDelete={vi.fn()}
         />,
@@ -281,6 +483,131 @@ describe("Inspector", () => {
     });
   });
 
+  describe("changing what is selected", () => {
+    // The panel swaps its content the way the views swap theirs: half the
+    // shared motion out, half back in. jsdom has no stylesheet, so
+    // `motionDuration` falls back to the same 240ms the stylesheet declares.
+    const HALF_MOTION_MS = 120;
+    const first = makeTopic({ name: "Glycolysis", totalUnits: 10 });
+    const second = makeTopic({ name: "Krebs cycle", totalUnits: 10 });
+    const third = makeTopic({ name: "Electron transport", totalUnits: 10 });
+    const course = makeCourse({ name: "Biochemistry", topics: [first, second, third] });
+    const select = (topic: typeof first) => ({ kind: "topic", course, topic }) as const;
+
+    const panel = () =>
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(first)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+    const content = () => document.querySelector(".inspector-content");
+    const leaving = () => content()?.getAttribute("data-inspector-fade") === "out";
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("takes the old content away over half the shared motion", () => {
+      const { rerender } = panel();
+
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(second)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      // The click is answered in the commit it caused: the fade is already
+      // running, with the outgoing topic still legible.
+      expect(leaving()).toBe(true);
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Glycolysis");
+
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS));
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Krebs cycle");
+      expect(leaving()).toBe(false);
+    });
+
+    it("does not restart the fade when the selection changes again during it", () => {
+      const { rerender } = panel();
+
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(second)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS / 2));
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(third)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      // The clock belongs to the content leaving. What lands at the end of it
+      // is whatever is selected by then — the third topic, never the second.
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS / 2));
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Electron transport");
+    });
+
+    it("turns a fade around when its own selection comes back", () => {
+      const { rerender } = panel();
+
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(second)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS / 2));
+      rerender(
+        <Inspector
+          {...inspectorNavigation}
+          selection={select(first)}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      // Clicked away and back inside the fade: the content stops leaving at
+      // once and comes back up from the opacity it had reached, rather than
+      // completing a departure and a return nobody asked for.
+      expect(leaving()).toBe(false);
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Glycolysis");
+
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS));
+      expect(screen.getByLabelText("Topic name")).toHaveValue("Glycolysis");
+      expect(leaving()).toBe(false);
+    });
+
+    it("empties itself only once the last content has gone", () => {
+      const { rerender } = panel();
+
+      rerender(
+        <Inspector {...inspectorNavigation} selection={null} today={TODAY} onDelete={vi.fn()} />,
+      );
+      expect(leaving()).toBe(true);
+
+      act(() => void vi.advanceTimersByTime(HALF_MOTION_MS));
+      expect(screen.getByRole("complementary", { name: "Inspector" })).toBeEmptyDOMElement();
+    });
+  });
+
   it("asks before deleting rather than deleting", async () => {
     // There is no undo, so the macOS "do it and offer to take it back" pattern
     // is not available. The panel hands the request up instead of acting.
@@ -291,14 +618,16 @@ describe("Inspector", () => {
 
     render(
       <Inspector
+        {...inspectorNavigation}
         selection={{ kind: "topic", course, topic }}
-        health={healthFor(course)}
         today={TODAY}
         onDelete={onDelete}
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Delete topic" }));
+    // "Delete", not "Delete topic": a control never repeats the name of the
+    // object it is already pointing at.
+    await user.click(screen.getByRole("button", { name: "Delete" }));
     expect(onDelete).toHaveBeenCalledWith({ kind: "topic", course, topic });
   });
 });

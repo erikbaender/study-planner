@@ -450,7 +450,6 @@ export const createTopic = mutation({
   args: {
     courseId: v.id("courses"),
     name: v.string(),
-    section: v.optional(v.string()),
     unit: v.optional(unitValidator),
     totalUnits: v.optional(v.number()),
     priority: v.optional(priorityValidator),
@@ -467,7 +466,6 @@ export const createTopic = mutation({
     return await ctx.db.insert("topics", {
       courseId: args.courseId,
       name: args.name,
-      section: args.section,
       unit: args.unit ?? "slides",
       totalUnits,
       completedUnits: 0,
@@ -490,7 +488,6 @@ export const createTopics = mutation({
     topics: v.array(
       v.object({
         name: v.string(),
-        section: v.optional(v.string()),
         unit: unitValidator,
         totalUnits: v.number(),
       }),
@@ -510,7 +507,6 @@ export const createTopics = mutation({
         await ctx.db.insert("topics", {
           courseId: args.courseId,
           name: topic.name,
-          section: topic.section,
           unit: topic.unit,
           totalUnits: topic.totalUnits,
           completedUnits: 0,
@@ -534,7 +530,6 @@ export const updateTopic = mutation({
   args: {
     topicId: v.id("topics"),
     name: v.string(),
-    section: v.optional(v.string()),
     unit: unitValidator,
     totalUnits: v.number(),
     completedUnits: v.number(),
@@ -549,7 +544,6 @@ export const updateTopic = mutation({
     assertProgress(args.completedUnits, args.totalUnits);
     await ctx.db.patch(args.topicId, {
       name: args.name,
-      section: args.section,
       unit: args.unit,
       totalUnits: args.totalUnits,
       completedUnits: args.completedUnits,
@@ -559,6 +553,41 @@ export const updateTopic = mutation({
       color: args.color,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const moveTopic = mutation({
+  args: { topicId: v.id("topics"), courseId: v.id("courses") },
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const { topic, course: oldCourse } = await assertTopicOwner(ctx, args.topicId, userId);
+    const targetCourse = await assertCourseOwner(ctx, args.courseId, userId);
+    if (oldCourse._id === targetCourse._id) return;
+    if (oldCourse.planId !== targetCourse.planId) {
+      throw new Error("A topic can only move within its plan");
+    }
+
+    const targetTopics = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", args.courseId)).collect();
+    const inheritedColor = topic.color === oldCourse.color;
+    await ctx.db.patch(args.topicId, {
+      courseId: args.courseId,
+      order: nextOrder(targetTopics),
+      dependencyIds: [],
+      // Topic colours normally inherit their course. Preserve an explicit
+      // override, while an inherited tint should remain meaningful after the move.
+      color: inheritedColor ? targetCourse.color : topic.color,
+      updatedAt: Date.now(),
+    });
+
+    const oldSiblings = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", oldCourse._id)).collect();
+    for (const sibling of oldSiblings) {
+      if (sibling.dependencyIds.includes(args.topicId)) {
+        await ctx.db.patch(sibling._id, {
+          dependencyIds: sibling.dependencyIds.filter((id) => id !== args.topicId),
+          updatedAt: Date.now(),
+        });
+      }
+    }
   },
 });
 
@@ -782,7 +811,6 @@ const importBlock = v.object({
 });
 const importTopic = v.object({
   name: v.string(),
-  section: v.optional(v.string()),
   unit: unitValidator,
   totalUnits: v.number(),
   completedUnits: v.number(),
@@ -934,7 +962,6 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
         const topicId = await ctx.db.insert("topics", {
           courseId,
           name: topicInput.name,
-          section: topicInput.section,
           unit: topicInput.unit,
           totalUnits: topicInput.totalUnits,
           completedUnits: topicInput.completedUnits,

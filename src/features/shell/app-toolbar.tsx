@@ -25,7 +25,6 @@ import {
   FlaskConical,
   MoreHorizontal,
   PanelLeft,
-  PanelRight,
   Plus,
   Settings2,
   Upload,
@@ -53,8 +52,6 @@ export function AppToolbar(props: {
     contentId: string;
     sidebarOpen: boolean;
     onToggleSidebar: () => void;
-    inspectorOpen: boolean;
-    onToggleInspector: () => void;
     onOpenPalette: () => void;
     onNewPlan: () => void;
     onNewCourse: () => void;
@@ -72,6 +69,7 @@ export function AppToolbar(props: {
     <Toolbar>
       <IconButton
         size="sm"
+        className="max-lg:hidden"
         label={props.sidebarOpen ? "Hide sidebar" : "Show sidebar"}
         aria-pressed={props.sidebarOpen}
         icon={<PanelLeft />}
@@ -113,15 +111,6 @@ export function AppToolbar(props: {
             <IconButton size="sm" label="New" icon={<Plus />} />
           </span>
         }
-      />
-
-      <IconButton
-        size="sm"
-        label="Inspector"
-        aria-pressed={props.inspectorOpen}
-        variant={props.inspectorOpen ? "push" : "plain"}
-        icon={<PanelRight />}
-        onClick={props.onToggleInspector}
       />
 
       <Separator orientation="vertical" className="mx-1 h-4" />

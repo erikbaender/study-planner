@@ -1,31 +1,29 @@
 "use client";
 
+/**
+ * The course inspector.
+ *
+ * A course is opened to be worked in, and opening it is what selects it — so
+ * the panel describes the card you just unfolded. What it offers is exactly
+ * what the New course sheet asks for and nothing more: a name, a code, a colour
+ * and notes. The topics and exams are *in* the card, listed there with their
+ * own progress and their own actions, and repeating them here as a second,
+ * poorer list was the thing that made the old course panel a duplicate of the
+ * view beside it.
+ */
+
+import { clsx } from "clsx";
 import { Trash2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
-import {
-  courseColorValue,
-  courseProgress,
-  type Course,
-  type CourseHealth,
-} from "@/domain";
-import { Badge, Button, ProgressBar, Separator } from "@/ui";
-import { ColorPicker, DraftText, Header, Row, Section } from "./shared";
+import { coursePalette, resolveCourseColorId, type Course } from "@/domain";
+import { Button, Separator } from "@/ui";
+import { DraftText, NameSection, Section } from "./shared";
 
-/* ─── Course ────────────────────────────────────────────────────────────── */
-
-export function CourseInspector({
-  course,
-  health,
-  onDelete,
-}: {
-  course: Course;
-  health: CourseHealth | undefined;
-  onDelete: () => void;
-}) {
+export function CourseInspector({ course, onDelete }: { course: Course; onDelete: () => void }) {
   const repository = useRepository();
   const run = usePlannerRun();
-  const progress = courseProgress(course);
 
+  /** `updateCourse` takes a whole course, so every edit resends the other three fields. */
   const patch = (changes: Partial<{ name: string; code?: string; color: string; notes: string }>) =>
     run(
       repository.updateCourse(course.id, {
@@ -39,74 +37,29 @@ export function CourseInspector({
 
   return (
     <>
-      <Header kind="Course">
-        <h2 className="flex items-center gap-2 text-title3 font-semibold">
-          <span
-            aria-hidden="true"
-            className="size-2.5 shrink-0 rounded-full"
-            style={{ background: courseColorValue(course.color) }}
-          />
-          <span className="min-w-0 truncate">{course.name}</span>
-        </h2>
-      </Header>
+      <NameSection
+        kind="Course"
+        entityId={course.id}
+        name={course.name}
+        onCommit={(name) => name && patch({ name })}
+      />
 
       <Separator />
 
-      <Section>
-        <DraftText label="Name" value={course.name} onCommit={(name) => patch({ name })} />
+      <Section title="Code">
         <DraftText
-          label="Code"
+          label="Course code"
+          hideLabel
           value={course.code ?? ""}
-          placeholder="e.g. BIO-201"
+          placeholder="Optional, e.g. BIO-201"
           onCommit={(code) => patch({ code: code || undefined })}
         />
-        <ColorPicker value={course.color} onChange={(color) => patch({ color })} />
       </Section>
 
       <Separator />
 
-      <Section title="Progress">
-        <ProgressBar
-          ratio={progress.ratio}
-          label={`${course.name} progress`}
-          tint={courseColorValue(course.color)}
-        />
-        <Row label="Done">
-          {progress.totalUnits > 0
-            ? `${progress.completedUnits} / ${progress.totalUnits} units`
-            : // Not "0 / 0": the course has topics whose size nobody has stated,
-              // and reporting that as complete would be a fabrication.
-              "No sizes recorded yet"}
-        </Row>
-        <Row label="Topics">{course.topics.length}</Row>
-        {health?.pace ? (
-          <>
-            <Row label="Pace">
-              <Badge tone={health.pace.onTrack ? "positive" : "warning"}>
-                {health.pace.onTrack
-                  ? "On track"
-                  : health.pace.daysLate > 0
-                    ? `${health.pace.daysLate} days late`
-                    : "Behind pace"}
-              </Badge>
-            </Row>
-            <Row label="Needed">
-              {Number.isFinite(health.pace.requiredPace)
-                ? `${Math.ceil(health.pace.requiredPace)} units / study day`
-                : "No study days left"}
-            </Row>
-            <Row label="Current">{`${health.pace.actualVelocity.toFixed(1)} units / study day`}</Row>
-            <Row label="Finish">
-              {/* `null` means there is no forward progress to extrapolate from.
-                  A date here would be an invention. */}
-              {health.pace.projectedFinish ?? "Not predictable yet"}
-            </Row>
-          </>
-        ) : (
-          <Row label="Pace">
-            <span className="text-secondary">No upcoming exam to measure against</span>
-          </Row>
-        )}
+      <Section title="Colour">
+        <ColorPicker value={course.color} onChange={(color) => patch({ color })} />
       </Section>
 
       <Separator />
@@ -114,6 +67,7 @@ export function CourseInspector({
       <Section title="Notes">
         <DraftText
           label="Notes"
+          hideLabel
           value={course.notes}
           multiline
           placeholder="Anything you need to remember about this course"
@@ -124,10 +78,47 @@ export function CourseInspector({
       <Separator />
 
       <Section>
-        <Button variant="plain" leadingIcon={<Trash2 />} className="text-negative" onClick={onDelete}>
-          Delete course
+        <Button variant="danger" leadingIcon={<Trash2 />} className="self-start" onClick={onDelete}>
+          Delete
         </Button>
       </Section>
     </>
+  );
+}
+
+/**
+ * The palette, five and five.
+ *
+ * A grid rather than a wrap: ten colours in two rows read as a palette, while
+ * a wrap breaks wherever the panel's width happens to fall and looks like an
+ * accident. The padding is for the selected swatch, which grows past its box.
+ */
+function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const selectedColorId = resolveCourseColorId(value);
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Course colour"
+      className="grid grid-cols-5 justify-items-start gap-1.5 p-1"
+    >
+      {coursePalette.map((color) => (
+        <button
+          key={color.id}
+          type="button"
+          role="radio"
+          aria-checked={color.id === selectedColorId}
+          aria-label={color.name}
+          onClick={() => onChange(color.id)}
+          className={clsx(
+            "size-5 rounded-full transition-transform duration-150 ease-mac",
+            color.id === selectedColorId
+              ? "scale-110 inset-ring-2 inset-ring-[var(--mac-label)]"
+              : "hover:scale-110",
+          )}
+          style={{ background: color.value }}
+        />
+      ))}
+    </div>
   );
 }

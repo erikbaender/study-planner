@@ -210,6 +210,7 @@ export function Select({
       </RadixSelect.Trigger>
       <RadixSelect.Portal>
         <RadixSelect.Content
+          data-keeps-selection
           position="popper"
           sideOffset={4}
           collisionPadding={12}

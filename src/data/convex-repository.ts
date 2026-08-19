@@ -67,7 +67,6 @@ function toTopic(topic: PlanTree["courses"][number]["topics"][number]): Topic {
     id: topic._id,
     courseId: topic.courseId,
     name: topic.name,
-    section: topic.section,
     unit: topic.unit,
     totalUnits: topic.totalUnits,
     completedUnits: topic.completedUnits,
@@ -350,6 +349,12 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         topicId: asId<"topics">(topicId),
         ...patch,
         color: resolveCourseColorId(patch.color),
+      });
+    },
+    async moveTopic(topicId, courseId) {
+      await client.mutation(api.planner.moveTopic, {
+        topicId: asId<"topics">(topicId),
+        courseId: asId<"courses">(courseId),
       });
     },
     async deleteTopic(topicId) {

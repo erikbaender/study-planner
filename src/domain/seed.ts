@@ -46,8 +46,7 @@ type CourseBlueprint = {
   name: string;
   code: string;
   unit: Unit;
-  sections: string[];
-  topicsPerSection: number;
+  topicCount: number;
   /** Days from `today` to the exam. Negative values are not used. */
   examOffset: number;
   examStatus: "confirmed" | "provisional";
@@ -60,8 +59,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Biochemistry",
     code: "BIO-201",
     unit: "slides",
-    sections: ["Metabolism", "Enzymes", "Molecular biology", "Signal transduction"],
-    topicsPerSection: 11,
+    topicCount: 44,
     examOffset: 24,
     examStatus: "confirmed",
     completion: 0.42,
@@ -70,8 +68,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Physiology",
     code: "PHY-202",
     unit: "slides",
-    sections: ["Cardiovascular", "Respiratory", "Renal", "Neurophysiology"],
-    topicsPerSection: 10,
+    topicCount: 40,
     examOffset: 38,
     examStatus: "confirmed",
     completion: 0.31,
@@ -80,8 +77,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Anatomy",
     code: "ANA-203",
     unit: "pages",
-    sections: ["Upper limb", "Lower limb", "Thorax", "Abdomen", "Head and neck"],
-    topicsPerSection: 9,
+    topicCount: 45,
     examOffset: 17,
     examStatus: "confirmed",
     completion: 0.68,
@@ -90,8 +86,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Histology",
     code: "HIS-204",
     unit: "slides",
-    sections: ["Epithelia", "Connective tissue", "Organ systems"],
-    topicsPerSection: 10,
+    topicCount: 30,
     examOffset: 45,
     examStatus: "provisional",
     completion: 0.15,
@@ -100,8 +95,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Pharmacology",
     code: "PHA-301",
     unit: "cards",
-    sections: ["Pharmacokinetics", "Autonomic drugs", "Antibiotics", "Cardiac drugs"],
-    topicsPerSection: 12,
+    topicCount: 48,
     examOffset: 52,
     examStatus: "provisional",
     completion: 0.08,
@@ -110,8 +104,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Pathology",
     code: "PAT-302",
     unit: "slides",
-    sections: ["General pathology", "Neoplasia", "Systemic pathology"],
-    topicsPerSection: 13,
+    topicCount: 39,
     examOffset: 31,
     examStatus: "confirmed",
     completion: 0.22,
@@ -120,8 +113,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Microbiology",
     code: "MIC-303",
     unit: "cards",
-    sections: ["Bacteriology", "Virology", "Mycology and parasitology"],
-    topicsPerSection: 12,
+    topicCount: 36,
     examOffset: 59,
     examStatus: "provisional",
     completion: 0.05,
@@ -130,8 +122,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Immunology",
     code: "IMM-304",
     unit: "videos",
-    sections: ["Innate immunity", "Adaptive immunity", "Immunopathology"],
-    topicsPerSection: 8,
+    topicCount: 24,
     examOffset: 41,
     examStatus: "provisional",
     completion: 0.19,
@@ -140,8 +131,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Medical psychology",
     code: "PSY-105",
     unit: "pages",
-    sections: ["Learning and memory", "Doctor–patient communication"],
-    topicsPerSection: 9,
+    topicCount: 18,
     examOffset: 12,
     examStatus: "confirmed",
     completion: 0.77,
@@ -150,8 +140,7 @@ const COURSE_BLUEPRINTS: CourseBlueprint[] = [
     name: "Epidemiology",
     code: "EPI-106",
     unit: "slides",
-    sections: ["Study design", "Biostatistics"],
-    topicsPerSection: 10,
+    topicCount: 20,
     examOffset: 8,
     examStatus: "confirmed",
     completion: 0.85,
@@ -225,45 +214,41 @@ export function generateSeedData(options: SeedOptions): SeedData {
     const topics: Topic[] = [];
     let order = 0;
 
-    for (const section of blueprint.sections) {
-      let previousTopicId: string | undefined;
+    let previousTopicId: string | undefined;
+    for (let index = 0; index < blueprint.topicCount; index += 1) {
+      const topicId = `topic_${slug(blueprint.code)}_${order}`;
+      const name = `${TOPIC_NAMES[(order + courseIndex) % TOPIC_NAMES.length]}`;
+      const totalUnits = sizeFor(blueprint.unit, random);
 
-      for (let index = 0; index < blueprint.topicsPerSection; index += 1) {
-        const topicId = `topic_${slug(blueprint.code)}_${order}`;
-        const name = `${TOPIC_NAMES[(order + courseIndex) % TOPIC_NAMES.length]}`;
-        const totalUnits = sizeFor(blueprint.unit, random);
+      // Completion tapers across the course so early material looks worked
+      // through and later material untouched, which is how revision actually
+      // looks partway through a semester.
+      const positionRatio = order / blueprint.topicCount;
+      const localCompletion = clamp01(
+        blueprint.completion * 2 - positionRatio * 1.4 + (random() - 0.5) * 0.2,
+      );
+      const completedUnits = Math.round(totalUnits * localCompletion);
 
-        // Completion tapers across the course so early sections look worked
-        // through and later ones untouched, which is how revision actually
-        // looks partway through a semester.
-        const positionRatio = order / (blueprint.sections.length * blueprint.topicsPerSection);
-        const localCompletion = clamp01(
-          blueprint.completion * 2 - positionRatio * 1.4 + (random() - 0.5) * 0.2,
-        );
-        const completedUnits = Math.round(totalUnits * localCompletion);
+      topics.push({
+        id: topicId,
+        courseId,
+        name,
+        unit: blueprint.unit,
+        totalUnits,
+        completedUnits,
+        status: completedUnits >= totalUnits ? "done" : completedUnits > 0 ? "active" : "planned",
+        priority: random() < 0.15 ? "high" : random() < 0.2 ? "low" : "normal",
+        // A short chain every few topics, so dependency handling is exercised
+        // without producing an unreadable graph.
+        dependencyIds: previousTopicId && index % 4 === 3 ? [previousTopicId] : [],
+        color,
+        notes: "",
+        order,
+        blocks: [],
+      });
 
-        topics.push({
-          id: topicId,
-          courseId,
-          name,
-          section,
-          unit: blueprint.unit,
-          totalUnits,
-          completedUnits,
-          status: completedUnits >= totalUnits ? "done" : completedUnits > 0 ? "active" : "planned",
-          priority: random() < 0.15 ? "high" : random() < 0.2 ? "low" : "normal",
-          // A short chain every few topics, so dependency handling is exercised
-          // without producing an unreadable graph.
-          dependencyIds: previousTopicId && index % 4 === 3 ? [previousTopicId] : [],
-          color,
-          notes: "",
-          order,
-          blocks: [],
-        });
-
-        previousTopicId = topicId;
-        order += 1;
-      }
+      previousTopicId = topicId;
+      order += 1;
     }
 
     // A handful of hand-placed blocks per course, so reflow has `manual` blocks

@@ -140,7 +140,10 @@ export function CompletionCheckbox({
   onChange?: (checked: boolean) => void;
 }) {
   return (
-    <label className="relative grid size-5 shrink-0 place-items-center">
+    // `pointer-events-auto` because the outline lays its rows out under a
+    // full-width selection button and turns pointer events off for everything
+    // that is not a control.
+    <label className="pointer-events-auto relative grid size-5 shrink-0 place-items-center">
       <input
         ref={inputRef}
         data-topic-id={topicId}
@@ -177,6 +180,93 @@ export function CompletionCheckbox({
   );
 }
 
+/**
+ * The same control, one level up: is this whole course finished?
+ *
+ * It has class names of its own rather than reusing the topic ones, because the
+ * card it sits in *contains* topic rows — a `.topic-completion-*` selector
+ * scoped to the card would animate every checkmark inside it whenever the
+ * course pulsed. Its markup, sizes and motion are otherwise identical, which is
+ * the point: the course header reads exactly like the rows beneath it.
+ */
+export function CourseCompletionCheckbox({
+  courseId,
+  courseName,
+  checked,
+  disabled = false,
+  onChange,
+}: {
+  courseId: string;
+  courseName: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="pointer-events-auto relative grid size-5 shrink-0 place-items-center">
+      <input
+        data-course-id={courseId}
+        type="checkbox"
+        aria-label={`Mark ${courseName} as done`}
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.currentTarget.checked)}
+        className="course-completion-checkbox peer relative z-10 size-5 appearance-none rounded-full border border-separator-strong bg-control focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-35"
+      />
+      <span
+        aria-hidden="true"
+        className="course-completion-fill pointer-events-none absolute inset-0 z-20 rounded-full opacity-0 peer-checked:opacity-100"
+      />
+      <Check
+        aria-hidden="true"
+        strokeWidth={3}
+        className="course-completion-checkmark pointer-events-none absolute z-30 size-3 scale-75 opacity-0 peer-checked:scale-100 peer-checked:opacity-100"
+      />
+    </label>
+  );
+}
+
+/**
+ * The course-level pulse.
+ *
+ * A course flashes when the *course* is finished, never when one of its topics
+ * is. Ticking the thirty-first of forty topics is progress, not completion, and
+ * a card that lit up for it was reporting a state the course was nowhere near.
+ * So this is driven by the card watching its own completeness rather than by
+ * whichever row happened to be clicked.
+ */
+export function triggerCourseCompletionAnimation(courseId: string, animateCompletion = true) {
+  const rows = () =>
+    [...document.querySelectorAll<HTMLElement>(".course-completion-row")].filter(
+      (candidate) => candidate.dataset.courseId === courseId,
+    );
+  for (const row of rows()) {
+    delete row.dataset.completionAnimating;
+    delete row.dataset.completionTrigger;
+    delete row.dataset.completionDirection;
+    void row.offsetWidth;
+    if (animateCompletion) row.dataset.completionAnimating = "true";
+    row.dataset.completionTrigger = "checkbox";
+    row.dataset.completionDirection = animateCompletion ? "on" : "off";
+  }
+  const key = `course:${courseId}`;
+  const previousTimer = completionTimers.get(key);
+  if (previousTimer !== undefined) window.clearTimeout(previousTimer);
+  const first = rows()[0];
+  const duration = first ? completionMotionDuration(first) : COMPLETION_ANIMATION_MS;
+  completionTimers.set(
+    key,
+    window.setTimeout(() => {
+      for (const row of rows()) {
+        delete row.dataset.completionAnimating;
+        delete row.dataset.completionTrigger;
+        delete row.dataset.completionDirection;
+      }
+      completionTimers.delete(key);
+    }, duration + 50),
+  );
+}
+
 export function triggerCompletionAnimation(
   control: HTMLInputElement | null,
   source: "checkbox" | "slider",
@@ -190,14 +280,10 @@ export function triggerCompletionAnimation(
       .filter((checkbox) => checkbox.dataset.topicId === topicId)
       .map((checkbox) => checkbox.closest<HTMLElement>(".topic-completion-row"))
       .filter((candidate): candidate is HTMLElement => candidate !== null);
-  const topicRows = currentRows();
-  const courseId = row.dataset.courseId;
-  const courseRows = courseId
-    ? [...document.querySelectorAll<HTMLElement>(".course-completion-row")].filter(
-        (candidate) => candidate.dataset.courseId === courseId,
-      )
-    : [];
-  for (const currentRow of [...new Set([...topicRows, ...courseRows])]) {
+  // Only the topic's own rows. The card this row sits in has its own pulse,
+  // fired when the course as a whole finishes — see
+  // `triggerCourseCompletionAnimation`.
+  for (const currentRow of currentRows()) {
     // Re-applying the same data attributes does not restart a CSS animation.
     // Clear the previous run and force one layout read before setting the new
     // direction, so repeated completions always produce a visible flash.

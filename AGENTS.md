@@ -35,3 +35,15 @@
 - Treat related UI animations as one coordinated motion system. Unless a requirement explicitly says otherwise, all layers of one interaction must start together, finish together, and use the exact same duration and velocity curve.
 - Define shared motion duration and easing values once and reuse them rather than repeating approximations. Keep forward and reverse animations symmetrical, including deliberate overshoot and settling behavior.
 - When an interaction animates several visual properties (for example outline, background, fill, icon, progress, and handle), verify the complete sequence in the browser in both directions.
+
+## Context menus
+
+- Every context-menu item is an icon followed by a label. The icon comes first and always exists; an item without one breaks the column the menu reads down.
+- The label names the action only, never the object the menu was invoked on. "Delete", not "Delete topic"; "Focus in timeline", not "Show this block on the timeline". The menu already points at its target — repeating it in every row makes the labels long, ragged, and impossible to scan.
+- Keep the same verb for the same action everywhere, so one label means one thing across the app.
+
+## Inspector sections
+
+- A section is one object: one label, one block of controls, the same padding on every side, and the same spacing between sections.
+- Exactly one label per section, and sections are separated by a horizontal rule. Two labelled groups of controls are two sections, never one section with sub-headings.
+- Controls inside the inspector use the same components as the rest of the app. The inspector has no button, field, or row styles of its own.

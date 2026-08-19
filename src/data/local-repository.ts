@@ -538,7 +538,6 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
               id: topicId,
               courseId,
               name: input.name,
-              section: input.section,
               unit: input.unit ?? "slides",
               totalUnits,
               completedUnits: 0,
@@ -571,7 +570,6 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
                 id: topic.id,
                 courseId,
                 name: topic.name,
-                section: topic.section,
                 unit: topic.unit,
                 totalUnits: topic.totalUnits,
                 completedUnits: 0,
@@ -599,6 +597,62 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
             ...topic,
             ...patch,
             color: resolveCourseColorId(patch.color),
+          })),
+        );
+      });
+    },
+
+    async moveTopic(topicId, courseId) {
+      await commit((snapshot) => {
+        const { course: oldCourse, topic } = findTopic(snapshot, topicId);
+        const targetCourse = findCourse(snapshot, courseId);
+        if (oldCourse.id === targetCourse.id) return snapshot;
+        if (oldCourse.planId !== targetCourse.planId) {
+          throw new ValidationError("A topic can only move within its plan");
+        }
+
+        const inheritedColor = resolveCourseColorId(topic.color) === resolveCourseColorId(oldCourse.color);
+        return withPlans(
+          snapshot,
+          snapshot.plans.map((plan) => ({
+            ...plan,
+            courses: plan.courses.map((course) => {
+              if (course.id === oldCourse.id) {
+                return {
+                  ...course,
+                  topics: course.topics
+                    .filter((candidate) => candidate.id !== topicId)
+                    .map((candidate) =>
+                      candidate.dependencyIds.includes(topicId)
+                        ? {
+                            ...candidate,
+                            dependencyIds: candidate.dependencyIds.filter((id) => id !== topicId),
+                          }
+                        : candidate,
+                    ),
+                };
+              }
+              if (course.id === targetCourse.id) {
+                return {
+                  ...course,
+                  topics: [
+                    ...course.topics,
+                    {
+                      ...topic,
+                      courseId: targetCourse.id,
+                      order: nextOrder(course.topics),
+                      // A topic with an inherited tint should follow its new
+                      // course; a deliberately chosen tint is its own fact and
+                      // must survive the move. Dependencies are course-local,
+                      // so they are cleared while old references are removed.
+                      color: inheritedColor ? resolveCourseColorId(targetCourse.color) : topic.color,
+                      dependencyIds: [],
+                    },
+                  ],
+                };
+              }
+              return course;
+            }),
           })),
         );
       });

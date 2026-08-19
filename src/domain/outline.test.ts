@@ -17,7 +17,7 @@ describe("normalizeUnit", () => {
 });
 
 describe("parseOutline", () => {
-  it("reads indented lines as topics under the heading above them", () => {
+  it("reads every non-blank line as a topic", () => {
     const result = parseOutline(
       ["Block 1", "  Cell biology — 120 slides", "  Membrane transport — 85", "Block 2", "  Glycolysis — 140 pages"].join(
         "\n",
@@ -26,20 +26,21 @@ describe("parseOutline", () => {
 
     expect(result.issues).toEqual([]);
     expect(result.topics).toEqual([
-      { name: "Cell biology", section: "Block 1", totalUnits: 120, unit: "slides", line: 2 },
+      { name: "Block 1", totalUnits: 0, unit: "slides", line: 1 },
+      { name: "Cell biology", totalUnits: 120, unit: "slides", line: 2 },
       // A bare number inherits the unit from the line before, so a run of
       // same-unit topics needs the word only once.
-      { name: "Membrane transport", section: "Block 1", totalUnits: 85, unit: "slides", line: 3 },
-      { name: "Glycolysis", section: "Block 2", totalUnits: 140, unit: "pages", line: 5 },
+      { name: "Membrane transport", totalUnits: 85, unit: "slides", line: 3 },
+      { name: "Block 2", totalUnits: 0, unit: "slides", line: 4 },
+      { name: "Glycolysis", totalUnits: 140, unit: "pages", line: 5 },
     ]);
   });
 
   it("reads a file with no indentation as a flat topic list", () => {
-    // The most common paste is a lecture index with no structure at all;
-    // reading forty of those as forty empty sections would be useless.
+    // A lecture index is already in the format the parser consumes directly.
     const result = parseOutline(["Cardiac cycle — 30", "Blood pressure — 25"].join("\n"));
     expect(result.topics.map((topic) => topic.name)).toEqual(["Cardiac cycle", "Blood pressure"]);
-    expect(result.topics.every((topic) => topic.section === undefined)).toBe(true);
+    expect(result.topics).toHaveLength(2);
   });
 
   it("honours the default unit until a line names one", () => {
@@ -61,7 +62,7 @@ describe("parseOutline", () => {
   });
 
   it("strips list markers", () => {
-    const result = parseOutline(["Block 1", "  - Glycolysis — 42", "  * Krebs cycle — 38", "  • Beta oxidation"].join("\n"));
+    const result = parseOutline(["  - Glycolysis — 42", "  * Krebs cycle — 38", "  • Beta oxidation"].join("\n"));
     expect(result.topics.map((topic) => topic.name)).toEqual([
       "Glycolysis",
       "Krebs cycle",
@@ -69,16 +70,15 @@ describe("parseOutline", () => {
     ]);
   });
 
-  it("treats a tab as indentation", () => {
+  it("ignores indentation, including tabs", () => {
     const result = parseOutline(["Block 1", "\tGlycolysis — 42"].join("\n"));
-    expect(result.topics).toHaveLength(1);
-    expect(result.topics[0].section).toBe("Block 1");
+    expect(result.topics.map((topic) => topic.name)).toEqual(["Block 1", "Glycolysis"]);
   });
 
   it("normalises CRLF and skips blank lines", () => {
     const result = parseOutline("Block 1\r\n\r\n  Glycolysis — 42\r\n");
-    expect(result.topics).toHaveLength(1);
-    expect(result.topics[0]).toMatchObject({ name: "Glycolysis", section: "Block 1", line: 3 });
+    expect(result.topics).toHaveLength(2);
+    expect(result.topics[1]).toMatchObject({ name: "Glycolysis", line: 3 });
   });
 
   it("leaves a topic sizeless when no number is given", () => {
@@ -112,7 +112,7 @@ describe("parseOutline", () => {
 });
 
 describe("formatOutline", () => {
-  it("omits indentation when nothing is sectioned", () => {
+  it("emits one unindented line per topic", () => {
     expect(
       formatOutline([
         { name: "Cardiac cycle", totalUnits: 30, unit: "slides" },
@@ -123,21 +123,16 @@ describe("formatOutline", () => {
 
   it("round-trips through parseOutline", () => {
     const topics = [
-      { name: "Cell biology", section: "Block 1", totalUnits: 120, unit: "slides" as const },
-      { name: "Membrane transport", section: "Block 1", totalUnits: 85, unit: "slides" as const },
-      { name: "Glycolysis", section: "Block 2", totalUnits: 140, unit: "pages" as const },
-      { name: "Unmeasured", section: "Block 2", totalUnits: 0, unit: "pages" as const },
+      { name: "Cell biology", totalUnits: 120, unit: "slides" as const },
+      { name: "Membrane transport", totalUnits: 85, unit: "slides" as const },
+      { name: "Glycolysis", totalUnits: 140, unit: "pages" as const },
+      { name: "Unmeasured", totalUnits: 0, unit: "pages" as const },
     ];
 
     const reparsed = parseOutline(formatOutline(topics));
     expect(reparsed.issues).toEqual([]);
     expect(
-      reparsed.topics.map(({ name, section, totalUnits, unit }) => ({
-        name,
-        section,
-        totalUnits,
-        unit,
-      })),
+      reparsed.topics.map(({ name, totalUnits, unit }) => ({ name, totalUnits, unit })),
     ).toEqual(topics);
   });
 });

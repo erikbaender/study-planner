@@ -34,6 +34,7 @@ import {
   type Course,
   type Exam,
   type SampleDatasetId,
+  type StudyBlock,
   type Topic,
 } from "@/domain";
 import {
@@ -46,8 +47,17 @@ import { Button, EmptyState, Spinner } from "@/ui";
 import { AppSidebar } from "./app-sidebar";
 import { AppToolbar } from "./app-toolbar";
 import { CommandPalette } from "./command-palette";
-import { Inspector } from "./inspector";
-import { ConfirmDeleteSheet, ConfirmPlanDeleteSheet, EditPlanSheet, NewCourseSheet, NewPlanSheet, SampleDataSheet } from "./sheets";
+import { Inspector, isInspectable } from "./inspector";
+import {
+  ConfirmDeleteSheet,
+  ConfirmPlanDeleteSheet,
+  EditCourseSheet,
+  EditPlanSheet,
+  NewCourseSheet,
+  NewPlanSheet,
+  SampleDataSheet,
+} from "./sheets";
+import { ViewFade } from "./view-fade";
 import { OutlineView } from "@/features/outline/outline-view";
 import { TimelineView } from "@/features/timeline/timeline-view";
 import { TodayView } from "@/features/today/today-view";
@@ -60,6 +70,26 @@ import {
   type ResolvedSelection,
 } from "@/features/workspace/scope";
 import { toggleRevealSelection, revealSelection, useWorkspace } from "@/features/workspace/store";
+
+/**
+ * What a click has to land on to leave the selection alone.
+ *
+ * Controls and the panels made of them, plus anything that manages its own
+ * selection — the timeline clears on its own empty canvas, and doing it twice
+ * would fight its box-select. Everything else is empty space.
+ */
+const KEEPS_SELECTION = [
+  "[data-keeps-selection]",
+  "button",
+  "a",
+  "input",
+  "select",
+  "textarea",
+  "label",
+  '[role="slider"]',
+  '[role="menu"]',
+  '[role="dialog"]',
+].join(", ");
 
 /** Read once per mount: the planner is day-granular, so a re-render mid-day is not worth it. */
 function useToday() {
@@ -80,8 +110,8 @@ export function AppShell() {
   /**
    * Both side panels start closed on a narrow window and open on a wide one.
    * A 390px phone has room for exactly one column, and a sidebar that takes
-   * two-thirds of it is not a sidebar. Read once, because a resize mid-session
-   * is a deliberate act and should not throw away what the user has opened.
+   * two-thirds of it is not a sidebar. CSS keeps both panels out of the compact
+   * layout entirely, including when a selection would open the inspector.
    */
   const [sidebarOpen, setSidebarOpen] = useState(
     () => typeof window === "undefined" || window.innerWidth >= 1024,
@@ -112,14 +142,21 @@ export function AppShell() {
     () => resolveSelection(plan, workspace.selection),
     [plan, workspace.selection],
   );
-  // A stale id can remain in the ephemeral store after its course or topic is
-  // filtered out or deleted. The inspector describes resolved data, so its
-  // visible state follows that data rather than leaving an empty panel open.
-  const inspectorOpen = workspace.inspectorOpen && selection !== null;
+  // The inspector has no switch of its own: a selection that resolves is what
+  // opens it, and a stale id left in the ephemeral store after its topic was
+  // filtered out or deleted closes it again. The inspector owns the brief
+  // retention needed for its sequential content fade.
+  const inspectable = isInspectable(selection) ? selection : null;
+  const inspectorOpen = inspectable !== null;
+
   const pendingDelete = useMemo(
     () => resolveSelection(plan, workspace.pendingDelete),
     [plan, workspace.pendingDelete],
   );
+  // Held as an id rather than as the course itself, so an edit made in the
+  // sheet is reflected in its own title rather than by a stale copy.
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const editingCourse = plan?.courses.find((course) => course.id === editingCourseId);
 
   /* ─── Actions ─────────────────────────────────────────────────────────── */
 
@@ -175,15 +212,68 @@ export function AppShell() {
     workspace.select(null);
   };
 
-  // Selecting is not scoping. Clicking a course in the sidebar inspects it and
-  // opens its section in the outline; clicking it again clears that selection.
-  // It does not hide the other courses — narrowing to one is what the Focus
-  // rows are for.
   const selectCourse = (course: Course) => toggleRevealSelection({ kind: "course", id: course.id });
+
+  /**
+   * A course's name in the outline was clicked.
+   *
+   * The card's fold state is the outline's own business — this only follows
+   * what its name says, and clearing only ever applies to *this* course, so
+   * letting one course go cannot deselect the topic you are working on in
+   * another.
+   */
+  const applyCourseSelection = (course: Course, selected: boolean) => {
+    if (selected) revealSelection({ kind: "course", id: course.id });
+    else if (workspace.selection?.kind === "course" && workspace.selection.id === course.id)
+      workspace.select(null);
+  };
+
+  /**
+   * The sidebar's course list is a filter, not a selection surface.
+   *
+   * Clicking a row there takes you to the course in the outline and opens it —
+   * it does not select it, because the sidebar is where you decide what is in
+   * scope, and a click that both scoped and inspected made the two impossible
+   * to tell apart. Selection happens on the card itself.
+   */
+  const revealCourseInOutline = (course: Course) => {
+    workspace.revealCourse(course.id);
+  };
+
   const selectTopic = (_course: Course, topic: Topic) =>
     toggleRevealSelection({ kind: "topic", id: topic.id });
   const selectExam = (_course: Course, exam: Exam) =>
     toggleRevealSelection({ kind: "exam", id: exam.id });
+
+  /**
+   * Following a reference out of the inspector.
+   *
+   * A block belongs to the timeline the way a topic belongs to the outline, so
+   * clicking one goes there rather than trying to reproduce a chart inside a
+   * 288px panel. The chart owns which bars are selected, so the id is handed
+   * over as a request and cleared once the chart has honoured it.
+   */
+  const revealBlock = (block: StudyBlock) => {
+    workspace.setView("timeline");
+    workspace.revealBlock(block.id);
+  };
+
+  /**
+   * A click that lands on nothing lets the selection go.
+   *
+   * Every selectable thing in the app can be clicked again to deselect it, but
+   * that only helps if you can find it — and after scrolling a semester you
+   * often cannot. Empty space is the deselect that is always in reach. Controls
+   * and the panels made of them are excluded, so pressing a button is never
+   * also a deselect.
+   */
+  const clearSelectionOnEmptySpace = (event: React.MouseEvent) => {
+    if (workspace.selection === null) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(KEEPS_SELECTION)) return;
+    workspace.select(null);
+  };
 
   /* ─── Command palette ─────────────────────────────────────────────────── */
 
@@ -199,7 +289,6 @@ export function AppShell() {
           focusSoon: () => workspace.setFocus({ kind: "soon" }),
           revealCourse: selectCourse,
           revealTopic: (topic) => revealSelection({ kind: "topic", id: topic.id }),
-          toggleInspector: workspace.toggleInspector,
           newSemester: () => workspace.setCreating("plan"),
           newCourse: () => workspace.setCreating("course"),
           loadSampleData: () => setSampleDataOpen(true),
@@ -216,15 +305,13 @@ export function AppShell() {
   /* ─── Render ──────────────────────────────────────────────────────────── */
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    <div className="flex h-screen flex-col overflow-hidden" onClick={clearSelectionOnEmptySpace}>
       <AppToolbar
         view={workspace.view}
         onViewChange={workspace.setView}
         contentId={contentId}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
-        inspectorOpen={inspectorOpen}
-        onToggleInspector={workspace.toggleInspector}
         onOpenPalette={() => workspace.setPaletteOpen(true)}
         onNewPlan={() => workspace.setCreating("plan")}
         onNewCourse={() => workspace.setCreating("course")}
@@ -255,14 +342,12 @@ export function AppShell() {
           inert={!sidebarOpen}
           data-panel-side="left"
           data-panel-state={sidebarOpen ? "open" : "closed"}
-          className={`side-panel-shell absolute inset-y-0 left-0 z-30 flex w-60 overflow-hidden material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none ${
+          className={`side-panel-shell hidden w-60 overflow-hidden lg:static lg:flex ${
             sidebarOpen ? "" : "lg:w-0"
           }`}
         >
-          {/* Overlaid on a narrow window, in the flow on a wide one: at 390px
-              there is no room for two columns, and pushing the content off the
-              screen is worse than covering it. The shell stays mounted so its
-              entrance and exit share the same motion. */}
+          {/* Panels belong to the desktop split view. Compact windows get the
+              content column only, rather than drawers covering that content. */}
           <AppSidebar
             plans={snapshot.plans}
             plan={plan}
@@ -279,7 +364,7 @@ export function AppShell() {
             onDeletePlan={() => setDeletePlanOpen(true)}
             onSetFocus={workspace.setFocus}
             onSetQuery={workspace.setQuery}
-            onSelectCourse={selectCourse}
+            onSelectCourse={revealCourseInOutline}
             onToggleHidden={(course) => workspace.toggleCourseHidden(course.id)}
             onHideAll={() => workspace.hideAllCourses((plan?.courses ?? []).map((c) => c.id))}
             onShowAll={workspace.showAllCourses}
@@ -306,51 +391,66 @@ export function AppShell() {
                 </Button>
               }
             />
-          ) : workspace.view === "today" ? (
-            <TodayView
-              courses={filteredFocused}
-              health={health}
-              studyLog={snapshot.studyLog}
-              snapshot={snapshot}
-              today={today}
-              query={workspace.query}
-              selectedTopicId={workspace.selection?.kind === "topic" ? workspace.selection.id : null}
-              onSelectTopic={selectTopic}
-              onDeleteTopic={(_course, topic) =>
-                workspace.setPendingDelete({ kind: "topic", id: topic.id })
-              }
-              onGoToOutline={() => workspace.setView("outline")}
-            />
-          ) : workspace.view === "timeline" ? (
-            <TimelineView
-              courses={filteredFocused}
-              health={health}
-              today={today}
-              query={workspace.query}
-              selectedId={workspace.selection?.id ?? null}
-              onSelectTopic={selectTopic}
-
-              onClearSelection={() => workspace.select(null)}
-              onGoToOutline={() => workspace.setView("outline")}
-            />
           ) : (
-            <OutlineView
-              courses={filteredFocused}
-              health={health}
-              today={today}
-              query={workspace.query}
-              snapshot={snapshot}
-              selectedId={workspace.selection?.id ?? null}
-              onSelectCourse={selectCourse}
-              onSelectTopic={selectTopic}
-              onSelectExam={selectExam}
-              onDeleteTopic={(_course, topic) =>
-                workspace.setPendingDelete({ kind: "topic", id: topic.id })
+            <ViewFade
+              view={workspace.view}
+              // The chart runs its own reveal, and it is better at it than a
+              // fade that cannot see what the chart is still doing.
+              instant={["timeline"]}
+              render={(view) =>
+                view === "today" ? (
+                  <TodayView
+                    courses={filteredFocused}
+                    health={health}
+                    studyLog={snapshot.studyLog}
+                    snapshot={snapshot}
+                    today={today}
+                    query={workspace.query}
+                    selectedTopicId={
+                      workspace.selection?.kind === "topic" ? workspace.selection.id : null
+                    }
+                    onSelectTopic={selectTopic}
+                    onDeleteTopic={(_course, topic) =>
+                      workspace.setPendingDelete({ kind: "topic", id: topic.id })
+                    }
+                    onGoToOutline={() => workspace.setView("outline")}
+                  />
+                ) : view === "timeline" ? (
+                  <TimelineView
+                    courses={filteredFocused}
+                    health={health}
+                    today={today}
+                    query={workspace.query}
+                    selectedId={workspace.selection?.id ?? null}
+                    onSelectTopic={selectTopic}
+                    onClearSelection={() => workspace.select(null)}
+                    onGoToOutline={() => workspace.setView("outline")}
+                  />
+                ) : (
+                  <OutlineView
+                    courses={filteredFocused}
+                    health={health}
+                    today={today}
+                    query={workspace.query}
+                    snapshot={snapshot}
+                    selectedId={workspace.selection?.id ?? null}
+                    onSelectTopic={selectTopic}
+                    onSelectExam={selectExam}
+                    onSelectCourse={applyCourseSelection}
+                    onDeleteExam={(_course, exam) =>
+                      workspace.setPendingDelete({ kind: "exam", id: exam.id })
+                    }
+                    onDeleteTopic={(_course, topic) =>
+                      workspace.setPendingDelete({ kind: "topic", id: topic.id })
+                    }
+                    onDeleteCourse={(course) =>
+                      workspace.setPendingDelete({ kind: "course", id: course.id })
+                    }
+                    onEditCourse={(courseId) => setEditingCourseId(courseId)}
+                    onNewCourse={() => workspace.setCreating("course")}
+                  />
+                )
               }
-              onDeleteCourse={(course) =>
-                workspace.setPendingDelete({ kind: "course", id: course.id })
-              }
-              onNewCourse={() => workspace.setCreating("course")}
             />
           )}
         </main>
@@ -360,14 +460,16 @@ export function AppShell() {
           inert={!inspectorOpen}
           data-panel-side="right"
           data-panel-state={inspectorOpen ? "open" : "closed"}
-          className={`side-panel-shell absolute inset-y-0 right-0 z-30 flex w-72 overflow-hidden material-overlay shadow-popover lg:static lg:z-auto lg:bg-transparent lg:backdrop-filter-none lg:shadow-none ${
+          // The inspector is a desktop column only. On compact windows the
+          // selection remains useful to the view, but no panel covers it.
+          className={`side-panel-shell hidden w-72 overflow-hidden lg:static lg:flex ${
             inspectorOpen ? "" : "lg:w-0"
           }`}
         >
           <Inspector
-            selection={selection}
-            health={health}
+            selection={inspectable}
             today={today}
+            onRevealBlock={revealBlock}
             onDelete={(target) =>
               workspace.setPendingDelete(
                 target.kind === "course"
@@ -416,6 +518,15 @@ export function AppShell() {
           const nextPlan = snapshot.plans.find((candidate) => candidate.id !== plan.id);
           run(repository.deletePlan(plan.id).then(() => workspace.setPlan(nextPlan?.id ?? null)));
           workspace.select(null);
+        }}
+      />
+
+      <EditCourseSheet
+        course={editingCourse}
+        open={editingCourse !== undefined}
+        onOpenChange={(open) => setEditingCourseId(open ? editingCourseId : null)}
+        onSave={(input) => {
+          if (editingCourse) run(repository.updateCourse(editingCourse.id, input));
         }}
       />
 

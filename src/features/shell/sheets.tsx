@@ -19,7 +19,7 @@ import {
   type Plan,
   type SampleDatasetId,
 } from "@/domain";
-import { Button, Sheet, TextField } from "@/ui";
+import { Button, Sheet, TextArea, TextField } from "@/ui";
 import type { ResolvedSelection } from "@/features/workspace/scope";
 import { useResetWhen } from "./use-reset-when";
 
@@ -229,6 +229,8 @@ export function NewPlanSheet({
   );
 }
 
+type CourseInput = { name: string; code?: string; color: string; notes: string };
+
 export function NewCourseSheet({
   open,
   onOpenChange,
@@ -238,25 +240,98 @@ export function NewCourseSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   existing: readonly Course[];
-  onCreate: (input: { name: string; code?: string; color: string }) => void;
+  onCreate: (input: CourseInput) => void;
 }) {
+  // Reseeded per opening, so adding three courses in a row gives three
+  // different colours rather than three of whatever was least used first.
   const suggested = leastUsedColor(existing.map((course) => course.color));
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [color, setColor] = useState(suggested);
+
+  return (
+    <CourseSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title="New course"
+      description="Topics, exams and progress all hang off a course."
+      confirmLabel="Create"
+      initial={{ name: "", code: "", color: suggested, notes: "" }}
+      onSubmit={onCreate}
+    />
+  );
+}
+
+/**
+ * A course's own properties, edited where the course lives.
+ *
+ * The inspector describes topics and nothing else, so a course's name, code,
+ * colour and notes need a surface of their own. They are four fields committed
+ * together, which is the sheet's grading in §7.4 — and reusing the creation
+ * form means the fields a course is made of are described in exactly one place.
+ */
+export function EditCourseSheet({
+  course,
+  open,
+  onOpenChange,
+  onSave,
+}: {
+  course: Course | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (input: CourseInput) => void;
+}) {
+  if (!course) return null;
+  return (
+    <CourseSheet
+      // Keyed on the course, so opening the sheet on a different one seeds the
+      // fields from that course rather than from whoever was edited last.
+      key={course.id}
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Edit “${course.name}”`}
+      confirmLabel="Save"
+      initial={{
+        name: course.name,
+        code: course.code ?? "",
+        color: course.color,
+        notes: course.notes,
+      }}
+      onSubmit={onSave}
+    />
+  );
+}
+
+function CourseSheet({
+  open,
+  onOpenChange,
+  title,
+  description,
+  confirmLabel,
+  initial,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description?: string;
+  confirmLabel: string;
+  initial: { name: string; code: string; color: string; notes: string };
+  onSubmit: (input: CourseInput) => void;
+}) {
+  const [name, setName] = useState(initial.name);
+  const [code, setCode] = useState(initial.code);
+  const [color, setColor] = useState(initial.color);
+  const [notes, setNotes] = useState(initial.notes);
 
   useResetWhen(open, () => {
-    setName("");
-    setCode("");
-    // Reseeded per opening, so adding three courses in a row gives three
-    // different colours rather than three of whatever was least used first.
-    setColor(suggested);
+    setName(initial.name);
+    setCode(initial.code);
+    setColor(initial.color);
+    setNotes(initial.notes);
   });
 
   const submit = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onCreate({ name: trimmed, code: code.trim() || undefined, color });
+    onSubmit({ name: trimmed, code: code.trim() || undefined, color, notes: notes.trim() });
     onOpenChange(false);
   };
 
@@ -264,13 +339,13 @@ export function NewCourseSheet({
     <Sheet
       open={open}
       onOpenChange={onOpenChange}
-      title="New course"
-      description="Topics, exams and progress all hang off a course."
+      title={title}
+      description={description}
       footer={
         <>
           <Button onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button variant="accent" onClick={submit} disabled={name.trim() === ""}>
-            Create
+            {confirmLabel}
           </Button>
         </>
       }
@@ -316,8 +391,15 @@ export function NewCourseSheet({
             ))}
           </div>
         </div>
+        <TextArea
+          label="Notes"
+          rows={3}
+          placeholder="Anything you need to remember about this course"
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+        />
         <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only">
-          Create
+          {confirmLabel}
         </button>
       </form>
     </Sheet>

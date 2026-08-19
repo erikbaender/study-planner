@@ -242,8 +242,8 @@ describe("topics", () => {
     const ids = await repository.createTopics(
       courseId,
       [
-        { name: "Glycolysis", section: "Metabolism", unit: "slides", totalUnits: 42 },
-        { name: "Krebs cycle", section: "Metabolism", unit: "slides", totalUnits: 38 },
+        { name: "Glycolysis", unit: "slides", totalUnits: 42 },
+        { name: "Krebs cycle", unit: "slides", totalUnits: 38 },
       ],
       "coral",
     );
@@ -310,6 +310,77 @@ describe("topics", () => {
     // A dangling id would survive export and reappear as a broken reference.
     expect(topics[0].dependencyIds).toEqual([]);
     expect(snapshot.studyLog).toEqual([]);
+  });
+
+  it("moves a topic within its plan and severs course-local dependencies", async () => {
+    const { repository } = setup();
+    const { planId, courseId } = await withCourse(repository);
+    const targetCourseId = await repository.createCourse(planId, {
+      name: "Neurobiology",
+      color: "blue",
+    });
+    const sourceColor = (await read(repository)).plans[0].courses.find(
+      (candidate) => candidate.id === courseId,
+    )!.color;
+    const prerequisite = await repository.createTopic(courseId, {
+      name: "Cells",
+      color: sourceColor,
+    });
+    const moved = await repository.createTopic(courseId, {
+      name: "Synapses",
+      color: sourceColor,
+    });
+    const dependant = await repository.createTopic(courseId, {
+      name: "Circuits",
+      color: sourceColor,
+    });
+    await repository.setTopicDependencies(moved, [prerequisite]);
+    await repository.setTopicDependencies(dependant, [moved]);
+
+    await repository.moveTopic(moved, targetCourseId);
+
+    const courses = (await read(repository)).plans[0].courses;
+    const source = courses.find((candidate) => candidate.id === courseId)!;
+    const target = courses.find((candidate) => candidate.id === targetCourseId)!;
+    expect(source.topics.find((topic) => topic.id === dependant)?.dependencyIds).toEqual([]);
+    expect(target.topics).toHaveLength(1);
+    expect(target.topics[0]).toMatchObject({
+      id: moved,
+      courseId: targetCourseId,
+      color: target.color,
+      dependencyIds: [],
+      order: 0,
+    });
+  });
+
+  it("rejects cross-plan moves and preserves an explicit topic colour", async () => {
+    const { repository } = setup();
+    const { planId, courseId } = await withCourse(repository);
+    const samePlanTarget = await repository.createCourse(planId, {
+      name: "Neurobiology",
+      color: "blue",
+    });
+    const custom = await repository.createTopic(courseId, {
+      name: "Synapses",
+      color: "violet",
+    });
+    await repository.moveTopic(custom, samePlanTarget);
+
+    const otherPlan = await repository.createPlan({ name: "Summer semester" });
+    const otherCourse = await repository.createCourse(otherPlan, {
+      name: "Psychology",
+      color: "green",
+    });
+    await expect(repository.moveTopic(custom, otherCourse)).rejects.toThrow(
+      "A topic can only move within its plan",
+    );
+
+    const snapshot = await read(repository);
+    const moved = snapshot.plans[0].courses
+      .find((candidate) => candidate.id === samePlanTarget)!
+      .topics.find((topic) => topic.id === custom)!;
+    expect(moved.color).toBe("violet");
+    expect(snapshot.plans[1].courses[0].topics).toEqual([]);
   });
 });
 

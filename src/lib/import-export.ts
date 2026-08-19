@@ -28,6 +28,8 @@ const blockSchema = z.object({
 
 const topicSchema = z.object({
   name: z.string().min(1),
+  // Accepted only so exports from older builds remain importable; the
+  // transform removes the retired grouping before it reaches the domain.
   section: z.string().optional(),
   unit: z.enum(UNITS).default("slides"),
   totalUnits: z.number().nonnegative().default(0),
@@ -38,6 +40,10 @@ const topicSchema = z.object({
   notes: z.string().default(""),
   dependencies: z.array(z.string()).default([]),
   blocks: z.array(blockSchema).default([]),
+}).transform((topic) => {
+  const legacyFreeTopic = { ...topic };
+  delete legacyFreeTopic.section;
+  return legacyFreeTopic;
 });
 
 const examSchema = z.object({
@@ -121,7 +127,6 @@ export function serializePlans(snapshot: PlannerSnapshot, exportedAt?: string): 
           })),
           topics: course.topics.map((topic) => ({
             name: topic.name,
-            section: topic.section,
             unit: topic.unit,
             totalUnits: topic.totalUnits,
             completedUnits: topic.completedUnits,
@@ -246,7 +251,6 @@ export function toPlans(
               id: topicId,
               courseId,
               name: topicInput.name,
-              section: topicInput.section,
               unit: topicInput.unit,
               totalUnits: topicInput.totalUnits,
               completedUnits: topicInput.completedUnits,

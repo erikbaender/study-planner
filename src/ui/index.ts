@@ -19,6 +19,9 @@ export type { Segment } from "./segmented-control";
 export { Checkbox, Stepper, Switch } from "./toggles";
 
 export { Badge, Card, EmptyState, ProgressBar, Separator, Spinner } from "./feedback";
+export { Collapse, useListPresence } from "./collapse";
+export type { Presence } from "./collapse";
+export { useStableCallback } from "./stable-callback";
 export type { BadgeTone } from "./feedback";
 
 export { ProgressSlider } from "./progress-slider";

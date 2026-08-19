@@ -1,28 +1,95 @@
 "use client";
 
-import { clsx } from "clsx";
-import { useState, type ReactNode } from "react";
-import { coursePalette, resolveCourseColorId } from "@/domain";
+/**
+ * The inspector's furniture.
+ *
+ * The old panel said everything twice: a heading with the topic's name, and
+ * then, two sections down, a field labelled "Name" containing the same string.
+ * Every kind of thing it described did this, and the result was a column of
+ * forms with a summary bolted on top — long enough to scroll, and never obvious
+ * which of the two copies you were meant to change.
+ *
+ * The rule the panel follows: **each fact appears exactly once, where it is
+ * edited.** There is no panel title naming the kind of object either: the
+ * inspector only ever describes the thing that is selected, and a line of text
+ * saying "Topic" above a topic is a label for the panel rather than for
+ * anything in it.
+ *
+ * A **section** is the panel's unit of layout, and it is one object: exactly one
+ * label, one block of controls, the same padding on every side, and a rule
+ * between it and the next one. Two labelled groups of controls are two
+ * sections — see the context-menu and inspector rules in `AGENTS.md`.
+ */
+
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TextArea, TextField } from "@/ui";
+import { useWorkspace } from "@/features/workspace/store";
 
 /* ─── Shared furniture ──────────────────────────────────────────────────── */
 
-export function Header({ kind, children }: { kind: string; children: ReactNode }) {
+/**
+ * The object's name, in an ordinary text field.
+ *
+ * It used to be a borderless input that only looked like a field once you had
+ * found it with the pointer. The panel is an editor; its most-edited control
+ * should look like a control, with the same height and padding as every other
+ * field in the app.
+ */
+export function NameSection({
+  kind,
+  entityId,
+  name,
+  onCommit,
+}: {
+  kind: string;
+  entityId: string;
+  name: string;
+  onCommit: (next: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const renameRequestId = useWorkspace((state) => state.renameRequestId);
+  const setRenameRequest = useWorkspace((state) => state.setRenameRequest);
+
+  useEffect(() => {
+    if (renameRequestId !== entityId) return;
+    setRenameRequest(null);
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, [renameRequestId, entityId, setRenameRequest]);
+
   return (
-    <header className="flex flex-col gap-0.5 px-4 pt-3 pb-2">
-      <p className="text-caption font-semibold tracking-wide text-tertiary uppercase">{kind}</p>
-      {children}
-    </header>
+    <Section title="Name">
+      <DraftText inputRef={inputRef} label={`${kind} name`} hideLabel value={name} onCommit={onCommit} />
+    </Section>
   );
 }
 
-export function Section({ title, children }: { title?: string; children: ReactNode }) {
+/**
+ * `action` is what the section can be *given*, and it sits on the label's own
+ * row — the same arrangement the sidebar and the course card use, so adding a
+ * study block looks like adding a topic or an exam rather than like a button
+ * that happens to be the last thing in the section.
+ */
+export function Section({
+  title,
+  action,
+  children,
+}: {
+  title?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <section className="flex flex-col gap-2 px-4 py-3">
+    <section className="flex flex-col gap-2 p-4">
       {title ? (
-        <h3 className="text-caption font-semibold tracking-wide text-tertiary uppercase">
-          {title}
-        </h3>
+        <header className="flex h-6 items-center gap-1">
+          <h3 className="text-caption font-semibold tracking-wide text-tertiary uppercase">
+            {title}
+          </h3>
+          {action ? <span className="ml-auto">{action}</span> : null}
+        </header>
       ) : null}
       {children}
     </section>
@@ -32,15 +99,50 @@ export function Section({ title, children }: { title?: string; children: ReactNo
 /** A label/value line. The label column is fixed so a stack of them aligns. */
 export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-baseline gap-2 text-body">
+    <div className="flex min-w-0 items-start gap-2 text-body">
       <span className="w-24 shrink-0 text-secondary">{label}</span>
-      <span className="min-w-0 flex-1 tabular-nums">{children}</span>
+      <span className="min-w-0 flex-1 break-words tabular-nums">{children}</span>
     </div>
   );
 }
 
+/* ─── References ────────────────────────────────────────────────────────── */
+
 /**
- * A text input that commits on blur or Enter and reverts on Escape.
+ * The other objects this one is made of.
+ *
+ * A course's topics are not properties to be typed into a field; they are
+ * things in their own right, with their own place in the app. So they are
+ * listed as references: each one says what it is, and clicking it goes there —
+ * to the topic in the outline. Study blocks are the deliberate exception:
+ * their dates are small, local adjustments, so the topic inspector edits them
+ * in place while still offering the timeline as the richer view.
+ */
+export function ReferenceList({
+  label,
+  empty,
+  children,
+}: {
+  label: string;
+  empty?: string;
+  children: ReactNode;
+}) {
+  const items = Array.isArray(children) ? children.filter(Boolean) : children;
+  const isEmpty = Array.isArray(items) ? items.length === 0 : !items;
+
+  return isEmpty ? (
+    <p className="text-body text-tertiary">{empty}</p>
+  ) : (
+    <ul aria-label={label} className="flex flex-col gap-0.5">
+      {items}
+    </ul>
+  );
+}
+
+/* ─── Long text ─────────────────────────────────────────────────────────── */
+
+/**
+ * A text area that commits on blur and reverts on Escape.
  *
  * Committing on every keystroke would write a repository mutation per character
  * — and on the Convex backend, a round trip per character. Committing only on
@@ -54,6 +156,8 @@ export function DraftText({
   multiline,
   placeholder,
   hint,
+  hideLabel,
+  inputRef,
 }: {
   label: string;
   value: string;
@@ -61,11 +165,12 @@ export function DraftText({
   multiline?: boolean;
   placeholder?: string;
   hint?: string;
+  hideLabel?: boolean;
+  /** Lets a rename request from elsewhere put the caret in this field. */
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
   const [draft, setDraft] = useState(value);
   const [settled, setSettled] = useState(value);
-  // Adjusted during render rather than in an effect, so a value arriving from
-  // elsewhere is never painted a frame late. Same pattern as `ProgressSlider`.
   if (settled !== value) {
     setSettled(value);
     setDraft(value);
@@ -82,6 +187,7 @@ export function DraftText({
     value: draft,
     placeholder,
     hint,
+    hideLabel,
     onChange: (event: { target: { value: string } }) => setDraft(event.target.value),
     onBlur: commit,
     onKeyDown: (event: React.KeyboardEvent) => {
@@ -97,37 +203,5 @@ export function DraftText({
     },
   };
 
-  return multiline ? <TextArea rows={3} {...props} /> : <TextField {...props} />;
+  return multiline ? <TextArea rows={3} {...props} /> : <TextField ref={inputRef} {...props} />;
 }
-
-export function ColorPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const selectedColorId = resolveCourseColorId(value);
-  return (
-    <div className="flex flex-col gap-1">
-      {/* Not a `Field`: that wires a `<label for>` to a single control, and
-          this is a radiogroup of thirteen. The group's own `aria-label` is what
-          names it. */}
-      <span className="text-callout font-medium text-secondary">Colour</span>
-      <div role="radiogroup" aria-label="Course colour" className="flex flex-wrap gap-1.5 pt-0.5">
-        {coursePalette.map((color) => (
-          <button
-            key={color.id}
-            type="button"
-            role="radio"
-            aria-checked={color.id === selectedColorId}
-            aria-label={color.name}
-            onClick={() => onChange(color.id)}
-            className={clsx(
-              "size-5 rounded-full transition-transform duration-100 ease-mac",
-              color.id === selectedColorId
-                ? "scale-110 inset-ring-2 inset-ring-[var(--mac-label)]"
-                : "hover:scale-110",
-            )}
-            style={{ background: color.value }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-

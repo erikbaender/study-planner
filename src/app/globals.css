@@ -40,6 +40,36 @@
   }
 }
 
+@keyframes course-completion-border {
+  0% {
+    background-color: transparent;
+    border-color: color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+  45% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 18%, transparent);
+    border-color: var(--topic-completion-color);
+  }
+  100% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+    border-color: color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+}
+
+@keyframes course-completion-border-out {
+  0% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 14%, transparent);
+    border-color: color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+  35% {
+    background-color: color-mix(in srgb, var(--topic-completion-color) 18%, transparent);
+    border-color: var(--topic-completion-color);
+  }
+  100% {
+    background-color: transparent;
+    border-color: color-mix(in srgb, var(--topic-completion-color) 0%, transparent);
+  }
+}
+
 @keyframes topic-completion-checkmark {
   0% {
     opacity: 0;
@@ -107,28 +137,35 @@
 }
 
 .course-completion-row[data-completion-animating="true"] {
-  animation: topic-completion-outline var(--topic-motion-duration) var(--topic-motion-curve);
+  animation: course-completion-border var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="off"],
-.course-completion-row[data-completion-direction="off"] {
+.topic-completion-row[data-completion-direction="off"] {
   animation: topic-completion-row-out var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="on"] .topic-completion-checkmark {
+.course-completion-row[data-completion-direction="off"] {
+  animation: course-completion-border-out var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+.topic-completion-row[data-completion-direction="on"] .topic-completion-checkmark,
+.course-completion-row[data-completion-direction="on"] .course-completion-checkmark {
   /* Control motion is intentionally shorter than the surrounding row pulse. */
   animation: topic-completion-checkmark var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="off"] .topic-completion-checkmark {
+.topic-completion-row[data-completion-direction="off"] .topic-completion-checkmark,
+.course-completion-row[data-completion-direction="off"] .course-completion-checkmark {
   animation: topic-completion-checkmark-out var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="on"] .topic-completion-fill {
+.topic-completion-row[data-completion-direction="on"] .topic-completion-fill,
+.course-completion-row[data-completion-direction="on"] .course-completion-fill {
   animation: topic-completion-fill var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
-.topic-completion-row[data-completion-direction="off"] .topic-completion-fill {
+.topic-completion-row[data-completion-direction="off"] .topic-completion-fill,
+.course-completion-row[data-completion-direction="off"] .course-completion-fill {
   animation: topic-completion-fill-out var(--topic-motion-duration) var(--topic-motion-curve);
 }
 
@@ -211,6 +248,13 @@ span:has(> .topic-progress-thumb) {
   background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
 }
 
+/* The outline card's completed tint, layered under its own hover the same way
+   a finished topic row is. The card carries the tint; the header does not, so
+   a course reads as done without its forty rows reading as selected. */
+.course-completion-row[data-course-completed="true"] .outline-card-header:hover {
+  background-image: linear-gradient(var(--mac-fill), var(--mac-fill));
+}
+
 /* Inspection selection is blue even for a completed course and while the
    pointer is over it; the completion tint must not win over selection. */
 .course-completion-row[aria-current="true"] {
@@ -221,16 +265,52 @@ span:has(> .topic-progress-thumb) {
   background-image: none;
 }
 
-.topic-completion-fill {
+/* The completion pulse is the only thing that thickens a card's border now:
+   selection moved to the course's name, where it is drawn outside the box. */
+.course-completion-row[data-completion-animating="true"],
+.course-completion-row[data-completion-direction] {
+  border-width: 2px;
+}
+
+/**
+ * A selected course, marked on its name.
+ *
+ * An `outline` rather than a border or an inset ring, for the two reasons the
+ * timeline's bars already draw theirs this way: it is painted outside the box,
+ * so it neither eats into the padding the name needs to stay legible nor moves
+ * a single pixel of the row when it appears — and it is one property, so the
+ * primary course and the rest of a multi-selection differ only by colour.
+ *
+ * Neither the ring nor the fill under it fades: selection and hover are states
+ * the pointer is already in by the time you could see them travel, and nothing
+ * else in the app animates them — a row, a bar and a sidebar item all switch.
+ */
+.outline-course-label {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.outline-course-label[data-selection="primary"] {
+  outline-color: var(--mac-accent);
+}
+
+.outline-course-label[data-selection="secondary"] {
+  outline-color: color-mix(in srgb, var(--mac-accent) 50%, transparent);
+}
+
+.topic-completion-fill,
+.course-completion-fill {
   background-color: var(--topic-completion-color);
   transform-origin: center;
 }
 
-.topic-completion-checkbox:focus-visible {
+.topic-completion-checkbox:focus-visible,
+.course-completion-checkbox:focus-visible {
   outline-color: var(--topic-completion-color);
 }
 
-.topic-completion-checkmark {
+.topic-completion-checkmark,
+.course-completion-checkmark {
   color: var(--mac-completion-mark);
 }
 
@@ -518,20 +598,136 @@ span:has(> .topic-progress-thumb) {
 /**
  * A row arriving or leaving, in two halves.
  *
- * The height is the space the chart makes for the row; the opacity is the row
- * itself. They are sequenced rather than simultaneous — grow then fade in,
- * fade out then collapse — by the phases in `useRowTransitions`, so each half
- * gets half the shared duration on the shared curve and one filter change
- * costs exactly what one disclosure does.
+ * Fixed-height rows use both properties because their slots are part of the
+ * timeline. Course filtering intentionally uses opacity alone below: several
+ * variable-height cards changing layout together is visibly rough.
  *
  * `overflow: clip`, so a row halfway through its collapse clips its own bars
  * rather than letting them spill into the row below.
  */
+.row-motion,
 .timeline-row-motion {
   overflow: clip;
   transition:
     height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
     opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/**
+ * …but only while the height is actually moving.
+ *
+ * A selected row's ring is drawn 2px clear of the row and is 2px thick, which
+ * is one pixel more than the slot has to spare — clipped, it lost its outer
+ * edge and its corners, which read as a broken border rather than a tight one.
+ * A settled row has nothing to clip: it is exactly its own height, and the
+ * ring is the only thing outside it.
+ */
+.row-motion[data-settled="true"] {
+  overflow: visible;
+}
+
+/**
+ * A course card only does layout work while it is on screen.
+ *
+ * The outline holds a semester: seven cards of up to forty rows each, all
+ * expanded, and every one of those rows is laid out again whenever anything
+ * changes the width of the content column. The inspector opening is exactly
+ * that — a width animation, fifteen frames of it — so selecting a topic
+ * relayouted ninety rows fifteen times and the pointer stopped moving for
+ * roughly half a second. Measured on this machine: a worst frame of 404ms
+ * before, 20ms after, with one commit of 108ms where the panel mounts.
+ *
+ * `auto` rather than a fixed size, so the browser keeps each card's last real
+ * height and the scrollbar does not jump as cards are skipped and rendered.
+ */
+.outline-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
+/**
+ * A course opening in the outline.
+ *
+ * The same motion the chart's lanes use, for the same reason and at the same
+ * length: half the shared duration, because a disclosure is a density change
+ * rather than a move between two places. `clip` keeps a half-collapsed row from
+ * spilling past the card's rounded corner.
+ */
+.outline-disclosure {
+  overflow: clip;
+  transition: height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+/**
+ * A course card arriving or leaving the filtered outline.
+ *
+ * The card stays in natural flow while its pixels fade. Keeping filtering to
+ * one composited property avoids layout work fighting several cards at once.
+ */
+.collapse-motion {
+  overflow: clip;
+  transition: opacity var(--topic-motion-duration) var(--topic-motion-curve);
+}
+
+/**
+ * Switching views: out, then in, never a cut.
+ *
+ * The outgoing view is not kept mounted underneath the incoming one. Two
+ * timelines in the tree at once is the most expensive frame the app can
+ * produce, and the second copy would mount from nothing anyway — so the fade
+ * is sequential, and the swap happens in the frame where nothing is visible.
+ * Each half is half the shared duration, so a view change costs what every
+ * other transition in the app costs.
+ */
+.view-fade {
+  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.view-fade[data-view-fade="out"] {
+  opacity: 0;
+}
+
+/* A view that reveals itself — the timeline — is restored in one frame, so
+   nothing of this fade is left running over the chart's own arrival. */
+.view-fade[data-view-fade="instant"] {
+  opacity: 1;
+  transition: none;
+}
+
+/**
+ * The inspector's content changing.
+ *
+ * Out, swap, in — the same shape and the same clock as a view change, so
+ * selecting a second topic costs what every other transition in the app costs.
+ * It used to run on a second of its own, which is long enough that the panel
+ * read as thinking about the click rather than answering it: the answer was
+ * already rendered and simply being withheld.
+ *
+ * Both halves are transitions rather than an animation, because a selection can
+ * change in the middle of either one. A transition reverses from the opacity it
+ * has reached, so content interrupted on its way in leaves again from there,
+ * and content interrupted on its way out slides back up from there. A keyframe
+ * animation restarts from its own `from`, which is why an interrupted fade used
+ * to flash the panel back to full opacity before taking it away again.
+ *
+ * `@starting-style` gives arriving content the same transition without a frame
+ * of React state to turn it on: the content mounts transparent and is opaque by
+ * the rules that apply to it a frame later. Where it is not supported the
+ * content simply arrives, which is the old behaviour of every panel in the app.
+ */
+.inspector-content {
+  opacity: 1;
+  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+@starting-style {
+  .inspector-content {
+    opacity: 0;
+  }
+}
+
+.inspector-content[data-inspector-fade="out"] {
+  opacity: 0;
 }
 
 /**
@@ -647,12 +843,19 @@ span:has(> .topic-progress-thumb) {
   .timeline-disclosure,
   .timeline-zoom-layer,
   .timeline-row-motion,
+  .row-motion,
+  .outline-disclosure,
+  .collapse-motion,
+  .view-fade,
   .timeline-tint,
   .input-hint-fade {
     transition: none;
   }
   .timeline-marker {
     animation: none;
+  }
+  .inspector-content {
+    transition: none;
   }
 }
 
@@ -669,11 +872,13 @@ span:has(> .topic-progress-thumb) {
   .course-completion-row[data-completion-direction="off"] {
     animation: none;
   }
-  .topic-completion-row[data-completion-direction] .topic-completion-checkmark {
+  .topic-completion-row[data-completion-direction] .topic-completion-checkmark,
+  .course-completion-row[data-completion-direction] .course-completion-checkmark {
     animation: none;
   }
 
-  .topic-completion-row[data-completion-direction] .topic-completion-fill {
+  .topic-completion-row[data-completion-direction] .topic-completion-fill,
+  .course-completion-row[data-completion-direction] .course-completion-fill {
     animation: none;
   }
   .topic-progress-range,

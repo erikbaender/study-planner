@@ -42,7 +42,7 @@ import {
   motionDuration,
   prefersReducedMotion,
   stopScrollAnimation,
-} from "./motion";
+} from "@/ui/motion";
 import { type ViewportStore } from "./chart-context";
 import { createRafCoalescer } from "./raf";
 import { COURSE_FILTER_WILL_CHANGE } from "@/features/workspace/store";

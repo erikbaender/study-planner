@@ -1,7 +1,7 @@
 /**
- * The timeline's motion, in JavaScript.
+ * The app's motion, in JavaScript.
  *
- * Scrolling is the one thing on this chart that cannot be animated in CSS — a
+ * Scrolling is the one thing in the app that cannot be animated in CSS — a
  * scroll offset is not a style — and `behavior: "smooth"` is the browser's
  * curve over the browser's duration, neither of which is the app's. Everything
  * here reads `--topic-motion-duration` and `--topic-motion-curve` off the
@@ -21,8 +21,8 @@ function customProperty(element: Element, name: string): string {
   return getComputedStyle(element).getPropertyValue(name).trim();
 }
 
-export function motionDuration(element: Element): number {
-  const value = customProperty(element, "--topic-motion-duration");
+export function motionDuration(element: Element, property = "--topic-motion-duration"): number {
+  const value = customProperty(element, property);
   const milliseconds = value.endsWith("s") && !value.endsWith("ms")
     ? Number.parseFloat(value) * 1000
     : Number.parseFloat(value);

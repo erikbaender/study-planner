@@ -32,7 +32,6 @@ export type CommandActions = {
   focusSoon: () => void;
   revealCourse: (course: Course) => void;
   revealTopic: (topic: Topic) => void;
-  toggleInspector: () => void;
   newSemester: () => void;
   newCourse: () => void;
   loadSampleData: () => void;
@@ -68,13 +67,6 @@ export function buildCommands(options: {
       title: "Outline",
       keywords: "topics table list",
       run: () => actions.setView("outline"),
-    },
-    {
-      id: "view:inspector",
-      group: "View",
-      title: "Toggle inspector",
-      keywords: "details panel sidebar",
-      run: actions.toggleInspector,
     },
     {
       id: "focus:all",
@@ -148,8 +140,8 @@ export function buildCommands(options: {
         id: `topic:${topic.id}`,
         group: "Topics",
         title: topic.name,
-        subtitle: topic.section ? `${course.name} · ${topic.section}` : course.name,
-        keywords: `${course.name} ${topic.section ?? ""}`,
+        subtitle: course.name,
+        keywords: course.name,
         run: () => actions.revealTopic(topic),
       });
     }
