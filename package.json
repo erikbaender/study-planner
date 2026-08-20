@@ -1,14 +1,27 @@
 {
   "name": "study-planner",
   "version": "0.1.0",
+  "description": "A local-first planner for courses, exams, study blocks, and progress.",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/erikbaender/study-planner.git"
+  },
+  "bugs": "https://github.com/erikbaender/study-planner/issues",
+  "homepage": "https://github.com/erikbaender/study-planner#readme",
+  "engines": {
+    "node": ">=22 <25"
+  },
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "check:all": "pnpm check && pnpm build",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "audit:prod": "pnpm audit --prod --audit-level=low",
     "usage": "python3 scripts/check-agent-usage.py",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -16,15 +29,15 @@
     "convex:deploy": "convex deploy"
   },
   "dependencies": {
-    "@auth/core": "^0.37.4",
-    "@convex-dev/auth": "^0.0.92",
+    "@auth/core": "^0.41.3",
+    "@convex-dev/auth": "^0.0.95",
     "clsx": "^2.1.1",
-    "convex": "^1.37.0",
+    "convex": "^1.44.0",
     "lucide-react": "^1.14.0",
-    "next": "16.2.4",
+    "next": "16.3.1",
     "radix-ui": "^1.6.7",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "zod": "^4.4.1",
     "zustand": "^5.0.14"
   },
@@ -37,7 +50,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "16.3.1",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",

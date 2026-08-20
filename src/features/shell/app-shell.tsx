@@ -22,9 +22,10 @@
  * and until the repository has answered it is one the app cannot make.
  */
 
-import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { Plus } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useId, useMemo, useRef, useState } from "react";
+import { usePlannerAuth } from "@/auth/use-planner-auth";
 import { usePlannerErrors, usePlannerState, useRepository } from "@/data/use-repository";
 import {
   DEFAULT_PREFERENCES,
@@ -39,10 +40,10 @@ import {
 } from "@/domain";
 import {
   exportFilename,
-  ImportError,
-  parsePlannerJson,
+  MAX_PLANNER_IMPORT_BYTES,
+  MAX_PLANNER_IMPORT_MIB,
   serializePlans,
-} from "@/lib/import-export";
+} from "@/lib/planner-transfer";
 import { Button, EmptyState, Spinner } from "@/ui";
 import { AppSidebar } from "./app-sidebar";
 import { AppToolbar } from "./app-toolbar";
@@ -57,9 +58,7 @@ import {
   NewPlanSheet,
   SampleDataSheet,
 } from "./sheets";
-import { ViewFade } from "./view-fade";
-import { OutlineView } from "@/features/outline/outline-view";
-import { TimelineView } from "@/features/timeline/timeline-view";
+import { useViewFadeHold, ViewFade } from "./view-fade";
 import { TodayView } from "@/features/today/today-view";
 import { buildCommands } from "@/features/workspace/commands";
 import {
@@ -70,6 +69,29 @@ import {
   type ResolvedSelection,
 } from "@/features/workspace/scope";
 import { toggleRevealSelection, revealSelection, useWorkspace } from "@/features/workspace/store";
+
+function ViewLoadingFallback({ label }: { label: string }) {
+  // The hook releases its hold when this fallback unmounts, so a loaded view
+  // enters through the existing ViewFade instead of replacing a visible spinner.
+  useViewFadeHold();
+
+  return (
+    <div aria-busy="true" className="flex h-full min-h-64 w-full items-center justify-center">
+      <Spinner label={label} />
+    </div>
+  );
+}
+
+const TimelineView = dynamic(
+  () =>
+    import("@/features/timeline/timeline-view").then(({ TimelineView }) => TimelineView),
+  { loading: () => <ViewLoadingFallback label="Loading timeline" /> },
+);
+
+const OutlineView = dynamic(
+  () => import("@/features/outline/outline-view").then(({ OutlineView }) => OutlineView),
+  { loading: () => <ViewLoadingFallback label="Loading outline" /> },
+);
 
 /**
  * What a click has to land on to leave the selection alone.
@@ -101,8 +123,7 @@ export function AppShell() {
   const state = usePlannerState();
   const snapshot = state.status === "ready" ? state.snapshot : EMPTY_SNAPSHOT;
   const { error, run, clear } = usePlannerErrors();
-  const { isAuthenticated } = useConvexAuth();
-  const { signIn, signOut } = useAuthActions();
+  const auth = usePlannerAuth();
   const today = useToday();
 
   const contentId = useId();
@@ -191,14 +212,23 @@ export function AppShell() {
   };
 
   const importJson = (file: File) => {
+    if (file.size > MAX_PLANNER_IMPORT_BYTES) {
+      run(Promise.reject(new Error(`Planner files must be ${MAX_PLANNER_IMPORT_MIB} MiB or smaller.`)));
+      return;
+    }
+
     run(
-      file.text().then(async (contents) => {
+      (async () => {
+        const [{ ImportError, parsePlannerJson }, contents] = await Promise.all([
+          import("@/lib/import-export"),
+          file.text(),
+        ]);
         try {
           await repository.importPlans(parsePlannerJson(contents));
         } catch (cause) {
           throw cause instanceof ImportError ? cause : new Error(String(cause));
         }
-      }),
+      })(),
     );
   };
 
@@ -319,9 +349,9 @@ export function AppShell() {
         onExport={exportJson}
         onImport={importJson}
         canExport={snapshot.plans.length > 0}
-        isAuthenticated={isAuthenticated}
-        onSignIn={() => void signIn("github")}
-        onSignOut={() => void signOut()}
+        authStatus={auth.status}
+        onSignIn={() => void auth.signIn()}
+        onSignOut={() => void auth.signOut()}
       />
 
       {error ? (
@@ -330,9 +360,11 @@ export function AppShell() {
           className="flex items-center gap-3 border-b border-separator bg-negative/10 px-4 py-2 text-body"
         >
           <span className="text-negative">{error.message}</span>
-          <Button size="sm" variant="plain" className="ml-auto" onClick={clear}>
-            Dismiss
-          </Button>
+          {state.status !== "error" ? (
+            <Button size="sm" variant="plain" className="ml-auto" onClick={clear}>
+              Dismiss
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -377,6 +409,12 @@ export function AppShell() {
             <div className="flex h-full items-center justify-center">
               <Spinner label="Loading your plan" />
             </div>
+          ) : state.status === "error" ? (
+            <EmptyState
+              title="Couldn’t load your plan"
+              description="Your data has not been changed. Check this browser’s storage access or your sync connection, then try again."
+              action={<Button onClick={() => window.location.reload()}>Reload</Button>}
+            />
           ) : !plan ? (
             <EmptyState
               title="No semesters yet"

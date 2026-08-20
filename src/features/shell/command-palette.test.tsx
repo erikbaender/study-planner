@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -30,6 +30,8 @@ describe("CommandPalette", () => {
 
     const field = screen.getByRole("combobox");
     expect(field).toHaveFocus();
+    expect(field).toHaveAttribute("aria-autocomplete", "list");
+    expect(field).toHaveAttribute("aria-haspopup", "listbox");
     expect(field).toHaveAttribute("aria-activedescendant", options()[0].id);
     expect(options()[0]).toHaveAttribute("aria-selected", "true");
   });
@@ -57,6 +59,27 @@ describe("CommandPalette", () => {
 
     await user.keyboard("{ArrowDown}");
     expect(options()[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("leaves text-editing keys to the combobox", async () => {
+    const user = userEvent.setup();
+    render(<Harness onRun={vi.fn()} />);
+
+    const field = screen.getByRole("combobox");
+    const firstOption = field.getAttribute("aria-activedescendant");
+    await user.keyboard("{End}");
+
+    expect(field).toHaveAttribute("aria-activedescendant", firstOption);
+  });
+
+  it("does not run a command while an input method is composing text", () => {
+    const onRun = vi.fn();
+    render(<Harness onRun={onRun} />);
+
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter", isComposing: true });
+
+    expect(onRun).not.toHaveBeenCalled();
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
   it("runs the highlighted command on Enter and closes", async () => {
@@ -107,7 +130,8 @@ describe("CommandPalette", () => {
     await user.type(screen.getByRole("combobox"), "zzzz");
 
     expect(screen.queryAllByRole("option")).toHaveLength(0);
-    expect(screen.getByText(/Nothing matches/)).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "Results" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/Nothing matches/);
     // With nothing to point at, the field must not claim an active descendant.
     expect(screen.getByRole("combobox")).not.toHaveAttribute("aria-activedescendant");
   });

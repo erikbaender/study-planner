@@ -1,73 +1,94 @@
 # Study Planner
 
-Study Planner is a Next.js, TypeScript, Tailwind, Ionic, and Convex web app for planning course topics and milestones on an interactive Gantt chart.
+Study Planner is a local-first web app for turning course material and exam dates into a practical study schedule. It tracks topics by workload, records progress, and can regenerate future study blocks without overwriting work placed manually.
 
-## Current Status
+The project uses Next.js, React, TypeScript, Tailwind CSS, Convex, and Convex Auth. It is designed to remain useful without signing in: signed-out data is stored in the browser, while authenticated data is synchronized through Convex.
 
-The MVP implementation includes:
+> **Publication note:** this repository does not yet contain a license. Source being visible is not the same as being open source. A maintainer must choose and add a license before the first public release.
 
-- Next.js App Router project scaffolded with pnpm.
-- Apple-inspired responsive planner UI.
-- Semester, course, topic, exam, and study-block data structures.
-- Interactive timeline blocks that can be created, dragged, or resized by day.
-- Versioned JSON export and create-only JSON import helpers.
-- Authenticated Convex persistence with local fallback for development.
-- GitHub OAuth via Convex Auth.
-- Planner CRUD for semesters, courses, topics, exams, study blocks, and within-course dependencies.
-- Delete confirmations and empty states for sparse or freshly reset accounts.
-- Built-in sample semesters for exploring the planner without entering data first.
+## Highlights
 
-## Development
+- Today, timeline, and outline views over one shared planning model
+- Workload-aware scheduling with priorities, dependencies, study days, blackout dates, and manual-block preservation
+- Bulk topic entry and deterministic synthetic sample data
+- Local IndexedDB persistence and optional GitHub-authenticated Convex sync
+- Versioned, validated JSON backup and restore
+- Keyboard navigation, reduced-motion support, and accessible overlay primitives
+- Pure domain modules with a broad Vitest suite
+
+## Quick start
+
+Prerequisites:
+
+- Node.js 22–24
+- pnpm 10.33 or a compatible pnpm 10 release
 
 ```bash
-pnpm install
+corepack enable
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-The local app runs at:
+Open <http://localhost:3000>. No environment file or backend process is required: the app starts in local-only mode and stores data in this browser.
 
-```text
-http://localhost:3000
-```
+When `NEXT_PUBLIC_CONVEX_URL` is absent, the app does not construct or connect a Convex client. The configured Convex React and Auth stack is loaded through a separate client chunk only when sync is configured.
 
-## Verification
+Cloud sync and sign-in are optional. To enable them, copy `.env.example` to `.env.local`, run `pnpm exec convex dev --once`, and follow [authentication and sync](docs/authentication.md). Use `pnpm convex:dev` in a second terminal when actively changing Convex functions.
 
-```bash
-pnpm lint
-pnpm typecheck
-pnpm build
-pnpm exec convex dev --once --typecheck disable
-```
+Do not commit `.env.local`, OAuth secrets, JWT keys, exported planner files containing personal data, or Convex deployment credentials.
 
-## Convex
-
-A Convex dev deployment has been configured for this Codespace. The generated `.env.local` is intentionally ignored by git.
-
-For local OAuth redirects, the Convex `SITE_URL` env var has been set to:
-
-```text
-http://localhost:3000
-```
-
-## GitHub OAuth Setup
-
-Create a GitHub OAuth app for local development and configure its callback URL to match the Convex HTTP actions URL:
-
-```text
-https://<convex-site-url>/api/auth/callback/github
-```
-
-The Convex HTTP actions URL is available in `.env.local` as `NEXT_PUBLIC_CONVEX_SITE_URL` and in the Convex dashboard deployment settings.
-
-Then set the following Convex environment variables:
+## Common commands
 
 ```bash
-pnpm exec convex env set AUTH_GITHUB_ID <github-oauth-client-id>
-pnpm exec convex env set AUTH_GITHUB_SECRET <github-oauth-client-secret>
+pnpm dev          # Next.js development server
+pnpm test         # Vitest suite
+pnpm test:watch   # Vitest in watch mode
+pnpm lint         # ESLint, including React and accessibility rules
+pnpm typecheck    # TypeScript without emitting files
+pnpm check        # lint + typecheck + tests
+pnpm build        # production build
+pnpm audit:prod   # production dependency audit
+pnpm convex:dev   # sync Convex functions and generated types in development
 ```
 
-Convex Auth also requires JWT signing environment variables before production OAuth is complete. Follow the Convex Auth manual setup guide to set `JWT_PRIVATE_KEY` and `JWKS` on the Convex deployment.
+## Project map
 
-## Reports
+```text
+convex/              authenticated API, ownership checks, schema, auth
+src/app/             Next.js entry points and global styles
+src/auth/            provider-neutral application auth surface
+src/data/            local and Convex repository implementations
+src/domain/          pure types, dates, metrics, validation, scheduling
+src/features/        product views and feature-specific components
+src/lib/             JSON transfer format and other application utilities
+src/ui/              shared controls, overlays, motion, and appearance
+docs/                architecture, auth, data format, and audit notes
+```
 
-Development progress reports are stored in [reports](reports).
+The UI depends on the `PlannerRepository` interface rather than IndexedDB or Convex directly. Domain logic stays framework-free. More detail is in [the architecture guide](docs/architecture.md).
+
+## Data and authentication
+
+Signed-out and signed-in data currently live in separate stores:
+
+- **This device:** IndexedDB in the current browser profile
+- **Synced:** records owned by the authenticated Convex user
+
+Signing in changes which store is visible; it does not silently upload or merge local plans. Export a JSON backup before changing storage modes. An explicit migration flow is required before treating sign-in as seamless data transfer.
+
+The current exporter writes transfer format v3. Import accepts v3 and unambiguous v2 files, appends plans and study history with fresh IDs, and leaves preferences unchanged; it is not a deduplicating or account-merge operation. See [the format specification](docs/data-format.md) before building another producer or a destructive replacement flow.
+
+GitHub is the only configured OAuth provider. Google is planned, but automatic account merging by matching email is intentionally disabled. The required rollout and account-linking model are documented in [authentication and sync](docs/authentication.md).
+
+## Documentation
+
+- [Contributing](CONTRIBUTING.md)
+- [Architecture](docs/architecture.md)
+- [Authentication and sync](docs/authentication.md)
+- [Planner JSON format](docs/data-format.md)
+- [Quality, performance, and security audit](docs/quality-security-audit.md)
+- [Security policy](SECURITY.md)
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Small, focused changes with tests are easiest to review. Generated Convex files should be regenerated through the Convex CLI, not edited manually.

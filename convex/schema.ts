@@ -94,6 +94,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_topic", ["topicId"])
+    .index("by_topic_and_source", ["topicId", "source"])
     .index("by_source", ["source"]),
 
   /** Logged sessions. The raw material for velocity, streaks and projections. */

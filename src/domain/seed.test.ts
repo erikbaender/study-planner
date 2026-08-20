@@ -99,6 +99,13 @@ describe("generateSeedData", () => {
     }
   });
 
+  it("gives topics unique names within each course for portable legacy exports", () => {
+    for (const course of generateSeedData({ today: TODAY }).plan.courses) {
+      const names = course.topics.map((topic) => topic.name);
+      expect(new Set(names).size).toBe(names.length);
+    }
+  });
+
   it("places some manual blocks, so reflow has something to preserve from run one", () => {
     const blocks = allTopics(generateSeedData({ today: TODAY })).flatMap((topic) => topic.blocks);
     expect(blocks.length).toBeGreaterThan(0);

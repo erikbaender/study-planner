@@ -11,23 +11,24 @@
  * an impossible plan silently is the worst outcome for someone whose actual
  * problem is not knowing she is behind until it is too late.
  *
- * Both actions go through `replaceAutoBlocks`, which swaps only blocks the
- * scheduler owns. A hand-placed block is a commitment its owner made and is
- * never moved, never overwritten, and never regenerated.
+ * Both actions go through one atomic repository operation that swaps only
+ * scheduler-owned blocks and saves the capacity used to calculate them. A
+ * hand-placed block is a commitment its owner made and is never moved, never
+ * overwritten, and never regenerated.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarSync, Wand2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   describeShortfall,
   FALLBACK_CAPACITY_UNITS,
-  schedule,
   type Course,
   type IsoDate,
   type PlannerSnapshot,
 } from "@/domain";
 import { Badge, Button, Sheet, Stepper } from "@/ui";
+import { createPlanningPreview, type PlanningPreview } from "./planning-summary";
 
 export function PlanningActions({
   courses,
@@ -111,25 +112,50 @@ function PlanSheet({
     setCapacity(stored ?? FALLBACK_CAPACITY_UNITS);
   }
 
-  // The what-if: the plan is recomputed at whatever the stepper says, and
-  // nothing is written until Apply. Trying a capacity is meant to be free.
-  const result = schedule({
-    courses,
-    today,
-    calendar: snapshot.preferences,
-    dailyCapacityUnits: capacity,
-  });
+  // Closed sheets remain mounted so Radix can play their exit animation. Keep
+  // the last preview for that animation, but do no scheduling or summarising
+  // until the sheet is actually open.
+  const currentPreview = useMemo(
+    () =>
+      open
+        ? createPlanningPreview({
+            courses,
+            today,
+            calendar: snapshot.preferences,
+            dailyCapacityUnits: capacity,
+          })
+        : null,
+    [capacity, courses, open, snapshot.preferences, today],
+  );
+  const [retainedPreview, setRetainedPreview] = useState<{
+    preview: PlanningPreview;
+    capacity: number;
+  } | null>(null);
+  if (currentPreview && retainedPreview?.preview !== currentPreview) {
+    setRetainedPreview({ preview: currentPreview, capacity });
+  }
 
-  const topicIds = courses.flatMap((course) => course.topics.map((topic) => topic.id));
-  const days = new Set(result.blocks.flatMap((block) => [block.startDate, block.endDate])).size;
+  const visiblePreview = currentPreview
+    ? { preview: currentPreview, capacity }
+    : retainedPreview;
+  const result = visiblePreview?.preview.result;
+  const visibleCapacity = visiblePreview?.capacity ?? capacity;
 
   const apply = () => {
-    run(repository.replaceAutoBlocks(topicIds, result.blocks));
+    if (!visiblePreview) return;
+
     // The capacity you planned at becomes the capacity you have. Leaving them
     // to disagree would make every later pace figure describe a plan nobody made.
-    if (capacity !== stored) {
-      run(repository.savePreferences({ ...snapshot.preferences, dailyCapacityUnits: capacity }));
-    }
+    run(
+      repository.applySchedule(
+        visiblePreview.preview.topicIds,
+        visiblePreview.preview.result.blocks,
+        {
+          ...snapshot.preferences,
+          dailyCapacityUnits: visibleCapacity,
+        },
+      ),
+    );
     onOpenChange(false);
   };
 
@@ -142,7 +168,7 @@ function PlanSheet({
       footer={
         <>
           <Button onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="accent" onClick={apply} disabled={result.blocks.length === 0}>
+          <Button variant="accent" onClick={apply} disabled={!result || result.blocks.length === 0}>
             Apply plan
           </Button>
         </>
@@ -154,7 +180,7 @@ function PlanSheet({
             <span className="text-callout font-medium text-secondary">Units per study day</span>
             <Stepper
               label="Units per study day"
-              value={capacity}
+              value={visibleCapacity}
               onValueChange={setCapacity}
               step={5}
               min={1}
@@ -168,16 +194,16 @@ function PlanSheet({
         <dl className="flex flex-wrap gap-x-8 gap-y-2">
           <div>
             <dt className="text-caption tracking-wide text-tertiary uppercase">Blocks</dt>
-            <dd className="text-title3 tabular-nums">{result.blocks.length}</dd>
+            <dd className="text-title3 tabular-nums">{result?.blocks.length ?? 0}</dd>
           </div>
           <div>
             <dt className="text-caption tracking-wide text-tertiary uppercase">Days touched</dt>
-            <dd className="text-title3 tabular-nums">{days}</dd>
+            <dd className="text-title3 tabular-nums">{visiblePreview?.preview.days ?? 0}</dd>
           </div>
           <div>
             <dt className="text-caption tracking-wide text-tertiary uppercase">Fits</dt>
             <dd>
-              {result.shortfalls.length === 0 ? (
+              {!result || result.shortfalls.length === 0 ? (
                 <Badge tone="positive">Everything fits</Badge>
               ) : (
                 <Badge tone="negative">
@@ -188,12 +214,12 @@ function PlanSheet({
           </div>
         </dl>
 
-        {result.shortfalls.length > 0 ? (
+        {result && result.shortfalls.length > 0 ? (
           <div className="flex flex-col gap-1.5 rounded-control bg-negative/10 p-3">
             <h3 className="text-body font-semibold text-negative">This plan does not fit</h3>
             <ul className="flex flex-col gap-1 text-body">
               {result.shortfalls.map((shortfall) => (
-                <li key={shortfall.courseId}>{describeShortfall(shortfall, capacity)}</li>
+                <li key={shortfall.courseId}>{describeShortfall(shortfall, visibleCapacity)}</li>
               ))}
             </ul>
             <p className="text-footnote text-secondary">

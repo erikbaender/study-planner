@@ -23,8 +23,10 @@ import {
   Eye,
   EyeOff,
   Layers,
+  Pencil,
   Plus,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -109,11 +111,11 @@ export function AppSidebar({
             onSelect: () => onSelectPlan(candidate.id),
           })),
           ...(plans.length > 0 ? [{ type: "separator" as const }] : []),
-          { label: "New semester…", icon: <Plus />, onSelect: onNewPlan },
+          { label: "New", icon: <Plus />, onSelect: onNewPlan },
           ...(plan
             ? [
-                { label: "Edit semester…", onSelect: onEditPlan },
-                { label: "Delete semester…", danger: true, onSelect: onDeletePlan },
+                { label: "Edit", icon: <Pencil />, onSelect: onEditPlan },
+                { label: "Delete", icon: <Trash2 />, danger: true, onSelect: onDeletePlan },
               ]
             : []),
         ]}
@@ -261,22 +263,24 @@ function CourseFilterRow({
     <li
       data-course-id={course.id}
       data-course-completed={completed ? "true" : undefined}
-      tabIndex={0}
-      aria-current={selected ? "true" : undefined}
       className={clsx(
-        "course-completion-row group/row flex cursor-default flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill",
+        "course-completion-row group/row relative flex cursor-default flex-col gap-1 rounded-control px-2 py-1 hover:bg-fill",
         selected && "bg-accent-soft text-label hover:bg-accent-soft",
       )}
       style={{ "--topic-completion-color": courseColorValue(course.color) } as CSSProperties}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
     >
-      <span className="flex min-w-0 items-center gap-1.5">
+      {/* The selection control covers the row without wrapping the progressbar
+          or the separate visibility action. That gives each action native
+          button behavior without nesting interactive elements. */}
+      <button
+        type="button"
+        aria-label={`Inspect ${course.name}`}
+        aria-current={selected ? "page" : undefined}
+        onClick={onSelect}
+        className="absolute inset-0 rounded-control focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+      />
+
+      <span className="pointer-events-none relative flex min-w-0 items-center gap-1.5">
         <span
           aria-hidden="true"
           className={clsx("size-2.5 shrink-0 rounded-full", off && "opacity-40")}
@@ -304,20 +308,17 @@ function CourseFilterRow({
 
           <span className="flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity] duration-100 ease-mac pointer-events-none group-hover/row:w-control group-hover/row:opacity-100 group-hover/row:pointer-events-auto group-focus-within/row:w-control group-focus-within/row:opacity-100 group-focus-within/row:pointer-events-auto">
             <IconButton
-                size="sm"
-                label={hidden ? `Show ${course.name}` : `Hide ${course.name}`}
-                icon={hidden ? <Eye /> : <EyeOff />}
-                // A pointer click gives the button DOM focus. If it keeps that
-                // focus, the keyboard-only `focus-within` reveal survives long
-                // after the pointer leaves this row. Pointer users already
-                // have hover; keyboard activation does not fire pointer-up and
-                // therefore keeps the action visible as intended.
-                onPointerUp={(event) => event.currentTarget.blur()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggleHidden();
-                }}
-              />
+              size="sm"
+              label={hidden ? `Show ${course.name}` : `Hide ${course.name}`}
+              icon={hidden ? <Eye /> : <EyeOff />}
+              // A pointer click gives the button DOM focus. If it keeps that
+              // focus, the keyboard-only `focus-within` reveal survives long
+              // after the pointer leaves this row. Pointer users already
+              // have hover; keyboard activation does not fire pointer-up and
+              // therefore keeps the action visible as intended.
+              onPointerUp={(event) => event.currentTarget.blur()}
+              onClick={onToggleHidden}
+            />
           </span>
         </span>
       </span>
@@ -327,7 +328,7 @@ function CourseFilterRow({
         label={`${course.name} progress`}
         size="sm"
         tint={courseColorValue(course.color)}
-        className={off ? "opacity-40" : undefined}
+        className={clsx("pointer-events-none relative", off && "opacity-40")}
       />
     </li>
   );

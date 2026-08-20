@@ -15,6 +15,11 @@
 import {
   DEFAULT_PREFERENCES,
   EMPTY_SNAPSHOT,
+  EXAM_KINDS,
+  EXAM_STATUSES,
+  PRIORITIES,
+  TOPIC_STATUSES,
+  UNITS,
   type Course,
   type EntityId,
   type Exam,
@@ -28,12 +33,28 @@ import {
 import { resolveCourseColorId } from "@/domain/palette";
 import {
   buildDependencyGraph,
+  PLANNER_LIMITS,
   requireAcyclic,
+  requireAllowedValue,
+  requireBoundedArray,
+  requireBoundedText,
+  requireCompleteReorder,
+  requireDistinctBoundedArray,
+  requireFiniteBoundedNumber,
   requireOrderedDates,
+  requirePlannedUnits,
+  requireTrimmedBoundedText,
+  requireValidAutoBlockReplacement,
+  requireValidDate,
+  requireValidPreferences,
   requireValidProgress,
+  requireValidScheduleApplication,
   ValidationError,
 } from "@/domain/validation";
-import { toPlans, type PlannerExport } from "@/lib/import-export";
+import {
+  materializePlannerTransfer,
+  type PlannerTransferDocument,
+} from "@/lib/planner-transfer";
 import { createId as defaultCreateId, type IdFactory } from "./ids";
 import type {
   CourseInput,
@@ -59,6 +80,7 @@ const DB_NAME = "study-planner";
 const DB_VERSION = 1;
 const STORE = "snapshot";
 const KEY = "current";
+const BLOCK_SOURCES = ["auto", "manual"] as const;
 
 export function indexedDbStorage(): SnapshotStorage {
   let handle: Promise<IDBDatabase> | null = null;
@@ -82,8 +104,21 @@ export function indexedDbStorage(): SnapshotStorage {
     return await new Promise<T>((resolve, reject) => {
       const transaction = db.transaction(STORE, mode);
       const request = action(transaction.objectStore(STORE));
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error("Local database write failed"));
+
+      // A request can succeed before the surrounding transaction commits.
+      // Resolving on `oncomplete` is what makes “saved before published” true
+      // when the browser aborts late (for example after a quota failure).
+      transaction.oncomplete = () => resolve(request.result);
+      let requestError: DOMException | null = null;
+      request.onerror = () => {
+        requestError = request.error;
+      };
+      const rejectTransaction = () =>
+        reject(
+          transaction.error ?? requestError ?? new Error("Local database transaction failed"),
+        );
+      transaction.onerror = rejectTransaction;
+      transaction.onabort = rejectTransaction;
     });
   };
 
@@ -216,6 +251,63 @@ function normalizeSnapshotColors(snapshot: PlannerSnapshot): PlannerSnapshot {
   return changed ? { ...snapshot, plans } : snapshot;
 }
 
+function withReplacedAutoBlocks(
+  snapshot: PlannerSnapshot,
+  topicIds: readonly EntityId[],
+  blocks: readonly GeneratedBlock[],
+  createId: IdFactory,
+): PlannerSnapshot {
+  const scope = new Set(topicIds);
+  const byTopic = new Map<EntityId, GeneratedBlock[]>();
+
+  const scopedTopics = topicIds.map((topicId) => findTopic(snapshot, topicId).topic);
+  const existingAutoBlocks = scopedTopics.reduce(
+    (count, topic) => count + topic.blocks.filter((block) => block.source === "auto").length,
+    0,
+  );
+  if (existingAutoBlocks > PLANNER_LIMITS.reflowBlocks) {
+    throw new ValidationError("Existing generated schedule exceeds the replacement limit");
+  }
+
+  for (const block of blocks) {
+    byTopic.set(block.topicId, [...(byTopic.get(block.topicId) ?? []), block]);
+  }
+
+  return {
+    ...snapshot,
+    plans: snapshot.plans.map((plan) => ({
+      ...plan,
+      courses: plan.courses.map((course) =>
+        course.topics.some((topic) => scope.has(topic.id))
+          ? {
+              ...course,
+              topics: course.topics.map((topic) =>
+                scope.has(topic.id)
+                  ? {
+                      ...topic,
+                      blocks: [
+                        ...topic.blocks.filter((block) => block.source === "manual"),
+                        ...(byTopic.get(topic.id) ?? []).map(
+                          (block): StudyBlock => ({
+                            id: createId("block"),
+                            topicId: topic.id,
+                            startDate: block.startDate,
+                            endDate: block.endDate,
+                            plannedUnits: block.plannedUnits,
+                            source: "auto",
+                          }),
+                        ),
+                      ],
+                    }
+                  : topic,
+              ),
+            }
+          : course,
+      ),
+    })),
+  };
+}
+
 export type LocalRepositoryOptions = {
   storage?: SnapshotStorage;
   createId?: IdFactory;
@@ -227,6 +319,7 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
   let state: RepositoryState = { status: "loading" };
   const listeners = new Set<(state: RepositoryState) => void>();
+  let mutationQueue: Promise<void> = Promise.resolve();
 
   const publish = (next: RepositoryState) => {
     state = next;
@@ -250,18 +343,25 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
   /**
    * Every mutation funnels through here: read the current snapshot, compute the
-   * next one, publish, persist. Publishing before the write lands keeps the UI
-   * responsive; a failed write surfaces as an error state rather than silently
-   * diverging from what is on screen.
+   * next one, persist, then publish. Mutations are serialized so each update is
+   * based on the last durable snapshot and a slower earlier save can never
+   * overwrite a later one. A rejected save leaves `state` untouched; keeping
+   * the queue itself fulfilled lets a later mutation retry normally.
    */
-  const commit = async (update: (snapshot: PlannerSnapshot) => PlannerSnapshot) => {
-    await loaded;
-    if (state.status !== "ready") {
-      throw new ValidationError("The local database is not available");
-    }
-    const next = update(state.snapshot);
-    publish({ status: "ready", snapshot: next });
-    await storage.save(next);
+  const commit = (update: (snapshot: PlannerSnapshot) => PlannerSnapshot): Promise<void> => {
+    const mutation = mutationQueue.then(async () => {
+      await loaded;
+      if (state.status !== "ready") {
+        throw new ValidationError("The local database is not available");
+      }
+
+      const next = update(state.snapshot);
+      await storage.save(next);
+      publish({ status: "ready", snapshot: next });
+    });
+
+    mutationQueue = mutation.catch(() => undefined);
+    return mutation;
   };
 
   /** `commit`, for the mutations that also have to return a freshly-made id. */
@@ -293,6 +393,16 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     createPlan(input: PlanInput) {
       return commitWithId((snapshot) => {
+        requireTrimmedBoundedText(
+          input.name,
+          "Plan name",
+          PLANNER_LIMITS.nameCharacters,
+        );
+        requireBoundedText(
+          input.notes ?? "",
+          "Plan notes",
+          PLANNER_LIMITS.notesCharacters,
+        );
         const plan: Plan = {
           id: createId("plan"),
           name: input.name,
@@ -305,6 +415,16 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     async updatePlan(planId, input) {
       await commit((snapshot) => {
+        requireTrimmedBoundedText(
+          input.name,
+          "Plan name",
+          PLANNER_LIMITS.nameCharacters,
+        );
+        requireBoundedText(
+          input.notes ?? "",
+          "Plan notes",
+          PLANNER_LIMITS.notesCharacters,
+        );
         return withPlans(
           snapshot,
           mapPlan(snapshot, planId, (plan) => ({
@@ -335,6 +455,23 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     createCourse(planId, input: CourseInput) {
       return commitWithId((snapshot) => {
+        requireTrimmedBoundedText(
+          input.name,
+          "Course name",
+          PLANNER_LIMITS.nameCharacters,
+        );
+        if (input.code !== undefined) {
+          requireTrimmedBoundedText(
+            input.code,
+            "Course code",
+            PLANNER_LIMITS.codeCharacters,
+          );
+        }
+        requireBoundedText(
+          input.notes ?? "",
+          "Course notes",
+          PLANNER_LIMITS.notesCharacters,
+        );
         const courseId = createId("course");
         const plans = mapPlan(snapshot, planId, (plan) => ({
           ...plan,
@@ -358,8 +495,21 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
     },
 
     async updateCourse(courseId, input) {
-      await commit((snapshot) =>
-        withPlans(
+      await commit((snapshot) => {
+        requireTrimmedBoundedText(
+          input.name,
+          "Course name",
+          PLANNER_LIMITS.nameCharacters,
+        );
+        if (input.code !== undefined) {
+          requireTrimmedBoundedText(
+            input.code,
+            "Course code",
+            PLANNER_LIMITS.codeCharacters,
+          );
+        }
+        requireBoundedText(input.notes, "Course notes", PLANNER_LIMITS.notesCharacters);
+        return withPlans(
           snapshot,
           mapCourse(snapshot, courseId, (course) => ({
             ...course,
@@ -368,8 +518,8 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
             notes: input.notes,
             color: resolveCourseColorId(input.color),
           })),
-        ),
-      );
+        );
+      });
     },
 
     async deleteCourse(courseId) {
@@ -396,10 +546,12 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
         withPlans(
           snapshot,
           mapPlan(snapshot, planId, (plan) => {
+            requireCompleteReorder(
+              plan.courses.map((course) => course.id),
+              courseIds,
+              "Course ids",
+            );
             const positions = new Map(courseIds.map((id, index) => [id, index]));
-            if (positions.size !== plan.courses.length) {
-              throw new ValidationError("Reorder must list every course in the plan exactly once");
-            }
             return {
               ...plan,
               courses: [...plan.courses]
@@ -422,14 +574,12 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
         withPlans(
           snapshot,
           mapCourse(snapshot, courseId, (course) => {
+            requireCompleteReorder(
+              course.topics.map((topic) => topic.id),
+              topicIds,
+              "Topic ids",
+            );
             const positions = new Map(topicIds.map((id, index) => [id, index]));
-            // The whole course, or nothing. A partial list would leave two
-            // topics claiming the same position, and the order they then render
-            // in would depend on the sort's stability rather than on anything
-            // the user asked for.
-            if (positions.size !== course.topics.length) {
-              throw new ValidationError("Reorder must list every topic in the course exactly once");
-            }
             return {
               ...course,
               topics: [...course.topics]
@@ -451,7 +601,21 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     createExam(courseId, input: ExamInput) {
       return commitWithId((snapshot) => {
-        if (input.endDate) requireOrderedDates(input.startDate, input.endDate);
+        requireTrimmedBoundedText(
+          input.name,
+          "Exam name",
+          PLANNER_LIMITS.nameCharacters,
+        );
+        requireBoundedText(
+          input.notes ?? "",
+          "Exam notes",
+          PLANNER_LIMITS.notesCharacters,
+        );
+        requireOrderedDates(input.startDate, input.endDate);
+        const kind = input.kind ?? "exam";
+        const status = input.status ?? (input.endDate ? "provisional" : "confirmed");
+        requireAllowedValue(kind, EXAM_KINDS, "Exam kind");
+        requireAllowedValue(status, EXAM_STATUSES, "Exam status");
         const examId = createId("exam");
         const plans = mapCourse(snapshot, courseId, (course) => ({
           ...course,
@@ -461,12 +625,12 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
               id: examId,
               courseId,
               name: input.name,
-              kind: input.kind ?? "exam",
+              kind,
               startDate: input.startDate,
               endDate: input.endDate,
               // An end date without an explicit status means a window was
               // given, which is exactly what "provisional" describes.
-              status: input.status ?? (input.endDate ? "provisional" : "confirmed"),
+              status,
               notes: input.notes ?? "",
               order: nextOrder(course.exams),
             } satisfies Exam,
@@ -478,7 +642,15 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     async updateExam(examId, input) {
       await commit((snapshot) => {
-        if (input.endDate) requireOrderedDates(input.startDate, input.endDate);
+        requireTrimmedBoundedText(
+          input.name,
+          "Exam name",
+          PLANNER_LIMITS.nameCharacters,
+        );
+        requireBoundedText(input.notes, "Exam notes", PLANNER_LIMITS.notesCharacters);
+        requireOrderedDates(input.startDate, input.endDate);
+        requireAllowedValue(input.kind, EXAM_KINDS, "Exam kind");
+        requireAllowedValue(input.status, EXAM_STATUSES, "Exam status");
         const course = snapshot.plans
           .flatMap((plan) => plan.courses)
           .find((candidate) => candidate.exams.some((exam) => exam.id === examId));
@@ -527,7 +699,21 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     createTopic(courseId, input: TopicInput) {
       return commitWithId((snapshot) => {
+        requireTrimmedBoundedText(
+          input.name,
+          "Topic name",
+          PLANNER_LIMITS.nameCharacters,
+        );
+        requireBoundedText(
+          input.notes ?? "",
+          "Topic notes",
+          PLANNER_LIMITS.notesCharacters,
+        );
         const totalUnits = input.totalUnits ?? 0;
+        const unit = input.unit ?? "slides";
+        const priority = input.priority ?? "normal";
+        requireAllowedValue(unit, UNITS, "Topic unit");
+        requireAllowedValue(priority, PRIORITIES, "Topic priority");
         requireValidProgress(0, totalUnits);
         const topicId = createId("topic");
         const plans = mapCourse(snapshot, courseId, (course) => ({
@@ -538,11 +724,11 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
               id: topicId,
               courseId,
               name: input.name,
-              unit: input.unit ?? "slides",
+              unit,
               totalUnits,
               completedUnits: 0,
               status: "planned",
-              priority: input.priority ?? "normal",
+              priority,
               dependencyIds: [],
               color: resolveCourseColorId(input.color),
               notes: input.notes ?? "",
@@ -557,7 +743,14 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     createTopics(courseId, topics, color) {
       return commitWithId((snapshot) => {
+        requireBoundedArray(topics, "Topics", PLANNER_LIMITS.bulkTopics);
         const created = topics.map((topic) => {
+          requireTrimmedBoundedText(
+            topic.name,
+            "Topic name",
+            PLANNER_LIMITS.nameCharacters,
+          );
+          requireAllowedValue(topic.unit, UNITS, "Topic unit");
           requireValidProgress(0, topic.totalUnits);
           return { ...topic, id: createId("topic") };
         });
@@ -590,6 +783,15 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     async updateTopic(topicId, patch: TopicPatch) {
       await commit((snapshot) => {
+        requireTrimmedBoundedText(
+          patch.name,
+          "Topic name",
+          PLANNER_LIMITS.nameCharacters,
+        );
+        requireBoundedText(patch.notes, "Topic notes", PLANNER_LIMITS.notesCharacters);
+        requireAllowedValue(patch.unit, UNITS, "Topic unit");
+        requireAllowedValue(patch.status, TOPIC_STATUSES, "Topic status");
+        requireAllowedValue(patch.priority, PRIORITIES, "Topic priority");
         requireValidProgress(patch.completedUnits, patch.totalUnits);
         return withPlans(
           snapshot,
@@ -686,6 +888,11 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
     async setTopicDependencies(topicId, dependencyIds) {
       await commit((snapshot) => {
         const { course } = findTopic(snapshot, topicId);
+        requireDistinctBoundedArray(
+          dependencyIds,
+          "Dependency ids",
+          PLANNER_LIMITS.dependencyIds,
+        );
         const siblingIds = new Set(course.topics.map((topic) => topic.id));
         if (dependencyIds.some((id) => !siblingIds.has(id))) {
           throw new ValidationError("Dependencies must be topics in the same course");
@@ -707,6 +914,9 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
     createStudyBlock(input: StudyBlockInput) {
       return commitWithId((snapshot) => {
         requireOrderedDates(input.startDate, input.endDate);
+        requirePlannedUnits(input.plannedUnits);
+        const source = input.source ?? "manual";
+        requireAllowedValue(source, BLOCK_SOURCES, "Block source");
         const blockId = createId("block");
         const plans = mapTopic(snapshot, input.topicId, (topic) => ({
           ...topic,
@@ -719,7 +929,7 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
               endDate: input.endDate,
               plannedUnits: input.plannedUnits,
               // Anything created without an explicit source came from a gesture.
-              source: input.source ?? "manual",
+              source,
             } satisfies StudyBlock,
           ],
         }));
@@ -730,6 +940,7 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
     async updateStudyBlock(blockId, input) {
       await commit((snapshot) => {
         requireOrderedDates(input.startDate, input.endDate);
+        requirePlannedUnits(input.plannedUnits);
         const { topic } = findBlock(snapshot, blockId);
         return withPlans(
           snapshot,
@@ -768,49 +979,19 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     async replaceAutoBlocks(topicIds, blocks: GeneratedBlock[]) {
       await commit((snapshot) => {
-        const scope = new Set(topicIds);
-        const byTopic = new Map<EntityId, GeneratedBlock[]>();
-        for (const block of blocks) {
-          if (!scope.has(block.topicId)) {
-            throw new ValidationError("Cannot write blocks for a topic outside the reflow scope");
-          }
-          requireOrderedDates(block.startDate, block.endDate);
-          byTopic.set(block.topicId, [...(byTopic.get(block.topicId) ?? []), block]);
-        }
+        requireValidAutoBlockReplacement(topicIds, blocks);
+        return withReplacedAutoBlocks(snapshot, topicIds, blocks, createId);
+      });
+    },
 
-        return withPlans(
-          snapshot,
-          snapshot.plans.map((plan) => ({
-            ...plan,
-            courses: plan.courses.map((course) =>
-              course.topics.some((topic) => scope.has(topic.id))
-                ? {
-                    ...course,
-                    topics: course.topics.map((topic) =>
-                      scope.has(topic.id)
-                        ? {
-                            ...topic,
-                            blocks: [
-                              ...topic.blocks.filter((block) => block.source === "manual"),
-                              ...(byTopic.get(topic.id) ?? []).map(
-                                (block): StudyBlock => ({
-                                  id: createId("block"),
-                                  topicId: topic.id,
-                                  startDate: block.startDate,
-                                  endDate: block.endDate,
-                                  plannedUnits: block.plannedUnits,
-                                  source: "auto",
-                                }),
-                              ),
-                            ],
-                          }
-                        : topic,
-                    ),
-                  }
-                : course,
-            ),
-          })),
-        );
+    async applySchedule(topicIds, blocks, preferences) {
+      await commit((snapshot) => {
+        const nextPreferences = { ...DEFAULT_PREFERENCES, ...preferences };
+        requireValidScheduleApplication(topicIds, blocks, nextPreferences);
+        return {
+          ...withReplacedAutoBlocks(snapshot, topicIds, blocks, createId),
+          preferences: nextPreferences,
+        };
       });
     },
 
@@ -818,15 +999,27 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
 
     async logStudy(input: StudyLogInput) {
       await commit((snapshot) => {
-        if (!Number.isFinite(input.units)) {
-          throw new ValidationError("Units must be a number", "units");
-        }
         const { topic } = findTopic(snapshot, input.topicId);
+        requireValidDate(input.date, "Study date");
+        requireFiniteBoundedNumber(input.units, "Units", {
+          minimum: -PLANNER_LIMITS.units,
+          maximum: PLANNER_LIMITS.units,
+        });
+        if (input.minutes !== undefined) {
+          requireFiniteBoundedNumber(input.minutes, "Minutes", {
+            minimum: 0,
+            maximum: PLANNER_LIMITS.minutes,
+          });
+        }
+        if (input.note !== undefined) {
+          requireBoundedText(input.note, "Study note", PLANNER_LIMITS.logNoteCharacters);
+        }
         const raw = topic.completedUnits + input.units;
         const completedUnits = Math.max(
           0,
           topic.totalUnits > 0 ? Math.min(topic.totalUnits, raw) : raw,
         );
+        requireValidProgress(completedUnits, topic.totalUnits);
 
         const entry: StudyLogEntry = {
           id: createId("log"),
@@ -859,54 +1052,35 @@ export function createLocalRepository(options: LocalRepositoryOptions = {}): Pla
     /* ------------------------------------------------------- preferences */
 
     async savePreferences(preferences: Preferences) {
-      await commit((snapshot) => ({
-        ...snapshot,
-        preferences: { ...DEFAULT_PREFERENCES, ...preferences },
-      }));
+      await commit((snapshot) => {
+        const nextPreferences = { ...DEFAULT_PREFERENCES, ...preferences };
+        requireValidPreferences(nextPreferences);
+        return { ...snapshot, preferences: nextPreferences };
+      });
     },
 
     /* ----------------------------------------------------- import / seed */
 
-    async importPlans(document: PlannerExport) {
+    async importPlans(document: PlannerTransferDocument) {
       await commit((snapshot) => {
-        const { plans } = toPlans(document, createId);
-        return withPlans(snapshot, [...snapshot.plans, ...plans]);
+        const imported = materializePlannerTransfer(document, createId);
+        return {
+          ...snapshot,
+          plans: [...snapshot.plans, ...imported.plans],
+          studyLog: [...snapshot.studyLog, ...imported.studyLog].sort((left, right) =>
+            left.date < right.date ? -1 : left.date > right.date ? 1 : 0,
+          ),
+        };
       });
     },
 
-    async replaceAll(document: PlannerExport) {
+    async replaceAll(document: PlannerTransferDocument) {
       await commit((snapshot) => {
-        const { plans } = toPlans(document, createId);
-
-        // Log entries reference their topic by course and topic name, because
-        // ids do not exist until the document has been materialised.
-        const topicIdsByPath = new Map<string, EntityId>();
-        for (const plan of plans) {
-          for (const course of plan.courses) {
-            for (const topic of course.topics) {
-              topicIdsByPath.set(`${course.name}\0${topic.name}`, topic.id);
-            }
-          }
-        }
+        const imported = materializePlannerTransfer(document, createId);
 
         return {
-          plans,
-          studyLog: document.studyLog.flatMap((entry): StudyLogEntry[] => {
-            const topicId = topicIdsByPath.get(`${entry.courseName}\0${entry.topicName}`);
-            // Skipped rather than thrown: an entry pointing at a topic that is
-            // not in the document is stale data, not a reason to fail the seed.
-            if (!topicId) return [];
-            return [
-              {
-                id: createId("log"),
-                topicId,
-                date: entry.date,
-                units: entry.units,
-                minutes: entry.minutes,
-                note: entry.note,
-              },
-            ];
-          }),
+          plans: imported.plans,
+          studyLog: imported.studyLog,
           preferences: snapshot.preferences,
         };
       });

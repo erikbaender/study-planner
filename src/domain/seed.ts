@@ -217,7 +217,10 @@ export function generateSeedData(options: SeedOptions): SeedData {
     let previousTopicId: string | undefined;
     for (let index = 0; index < blueprint.topicCount; index += 1) {
       const topicId = `topic_${slug(blueprint.code)}_${order}`;
-      const name = `${TOPIC_NAMES[(order + courseIndex) % TOPIC_NAMES.length]}`;
+      // Prefix every generated topic with its course-local sequence number.
+      // Besides making a large outline easier to scan, this keeps names unique
+      // for older (v2) exports whose dependency references used topic names.
+      const name = `${order + 1}. ${TOPIC_NAMES[(order + courseIndex) % TOPIC_NAMES.length]}`;
       const totalUnits = sizeFor(blueprint.unit, random);
 
       // Completion tapers across the course so early material looks worked
@@ -305,7 +308,7 @@ export function generateSeedData(options: SeedOptions): SeedData {
     plan: {
       id: planId,
       name: "Winter semester",
-      notes: "Seeded development data.",
+      notes: "Synthetic sample data.",
       courses,
     },
     studyLog,
