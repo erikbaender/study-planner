@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { serializePlans, type PlannerExport } from "@/lib/import-export";
+import {
+  serializePlans,
+  type PlannerTransferDocument,
+} from "@/lib/planner-transfer";
 import { sequentialIdFactory } from "./ids";
 import {
   createLocalRepository,
@@ -9,12 +12,21 @@ import {
 import type { PlannerRepository, RepositoryState } from "./repository";
 import { generateSeedData } from "@/domain/seed";
 import { DEFAULT_PREFERENCES, type PlannerSnapshot } from "@/domain/types";
+import { PLANNER_LIMITS } from "@/domain/validation";
 
 const TODAY = "2026-07-29";
 
 function setup(storage: SnapshotStorage = memoryStorage()) {
   const repository = createLocalRepository({ storage, createId: sequentialIdFactory() });
   return { repository, storage };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
 }
 
 /**
@@ -129,7 +141,7 @@ describe("persistence", () => {
     expect(snapshot.plans[0].courses[0].name).toBe("Biochemistry");
   });
 
-  it("keeps the UI ahead of the write, and the write faithful to the UI", async () => {
+  it("publishes the same snapshot that was durably written", async () => {
     const saved: PlannerSnapshot[] = [];
     const storage: SnapshotStorage = {
       load: async () => null,
@@ -143,9 +155,123 @@ describe("persistence", () => {
     expect(saved).toHaveLength(1);
     expect(saved[0]).toEqual(await read(repository));
   });
+
+  it("serializes saves even when storage could finish a later write first", async () => {
+    let durable: PlannerSnapshot | null = null;
+    const firstSaveStarted = deferred();
+    const releaseFirstSave = deferred();
+    const saves: PlannerSnapshot[] = [];
+    const storage: SnapshotStorage = {
+      load: async () => durable,
+      save: async (snapshot) => {
+        const saveIndex = saves.push(snapshot) - 1;
+        if (saveIndex === 0) {
+          firstSaveStarted.resolve();
+          await releaseFirstSave.promise;
+        }
+        // This storage performs no serialization of its own. Without the
+        // repository queue, save 2 can land before the delayed save 1 and then
+        // be overwritten by stale data when save 1 resumes.
+        durable = snapshot;
+      },
+    };
+    const { repository } = setup(storage);
+    await read(repository);
+
+    const first = repository.createPlan({ name: "First" });
+    await firstSaveStarted.promise;
+    const second = repository.createPlan({ name: "Second" });
+    await Promise.resolve();
+
+    expect(saves).toHaveLength(1);
+    releaseFirstSave.resolve();
+
+    const ids = await Promise.all([first, second]);
+    expect(ids).toEqual(["plan_1", "plan_2"]);
+    expect(saves.map((snapshot) => snapshot.plans.map((plan) => plan.name))).toEqual([
+      ["First"],
+      ["First", "Second"],
+    ]);
+    expect(durable).toBe(saves[1]);
+    expect(await read(repository)).toBe(durable);
+  });
+
+  it("keeps the last durable snapshot and sends no phantom update when saving fails", async () => {
+    const storage: SnapshotStorage = {
+      load: async () => null,
+      save: async () => {
+        throw new Error("Disk full");
+      },
+    };
+    const { repository } = setup(storage);
+    const durable = await read(repository);
+    const listener = vi.fn();
+    repository.subscribe(listener);
+    listener.mockClear();
+
+    await expect(repository.createPlan({ name: "Never saved" })).rejects.toThrow("Disk full");
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(await read(repository)).toBe(durable);
+    expect((await read(repository)).plans).toEqual([]);
+  });
+
+  it("accepts a retry after a failed save and returns the persisted id", async () => {
+    let durable: PlannerSnapshot | null = null;
+    let failNextSave = true;
+    const storage: SnapshotStorage = {
+      load: async () => durable,
+      save: async (snapshot) => {
+        if (failNextSave) {
+          failNextSave = false;
+          throw new Error("Temporary failure");
+        }
+        durable = snapshot;
+      },
+    };
+    const { repository } = setup(storage);
+    await read(repository);
+
+    await expect(repository.createPlan({ name: "First attempt" })).rejects.toThrow(
+      "Temporary failure",
+    );
+    const planId = await repository.createPlan({ name: "Retry" });
+
+    expect(planId).toBe("plan_2");
+    const persisted = await storage.load();
+    expect(persisted?.plans).toEqual([expect.objectContaining({ id: planId, name: "Retry" })]);
+    expect(await read(repository)).toBe(persisted);
+  });
 });
 
 describe("plans", () => {
+  it("rejects non-canonical names and oversized notes before saving", async () => {
+    let durable: PlannerSnapshot | null = null;
+    const save = vi.fn(async (next: PlannerSnapshot) => {
+      durable = next;
+    });
+    const { repository } = setup({ load: async () => durable, save });
+    const planId = await repository.createPlan({ name: "Winter semester" });
+    const before = await read(repository);
+    const listener = vi.fn();
+    repository.subscribe(listener);
+    listener.mockClear();
+    save.mockClear();
+
+    await expect(repository.createPlan({ name: " Padded" })).rejects.toThrow("whitespace");
+    await expect(
+      repository.updatePlan(planId, {
+        name: "Winter semester",
+        notes: "x".repeat(PLANNER_LIMITS.notesCharacters + 1),
+      }),
+    ).rejects.toThrow("Plan notes cannot exceed");
+
+    expect(save).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+    expect(await read(repository)).toBe(before);
+    expect(durable).toBe(before);
+  });
+
   it("takes the study log down with the plan", async () => {
     const { repository } = setup();
     const { planId, courseId } = await withCourse(repository);
@@ -168,6 +294,29 @@ describe("plans", () => {
 });
 
 describe("courses", () => {
+  it("validates course names, codes, and notes", async () => {
+    const { repository } = setup();
+    const { planId, courseId } = await withCourse(repository);
+
+    await expect(
+      repository.createCourse(planId, { name: "Other", code: " BAD ", color: "rose" }),
+    ).rejects.toThrow("Course code");
+    await expect(
+      repository.updateCourse(courseId, {
+        name: "Bio\0chemistry",
+        color: "violet",
+        notes: "",
+      }),
+    ).rejects.toThrow("control characters");
+    await expect(
+      repository.updateCourse(courseId, {
+        name: "Biochemistry",
+        color: "violet",
+        notes: "x".repeat(PLANNER_LIMITS.notesCharacters + 1),
+      }),
+    ).rejects.toThrow("Course notes cannot exceed");
+  });
+
   it("orders a new course after the highest existing one, not by count", async () => {
     // `siblings.length` ties with an existing order as soon as anything is
     // deleted, and two courses sharing an order sort unpredictably.
@@ -202,12 +351,69 @@ describe("courses", () => {
     await repository.createCourse(planId, { name: "Second", color: "#0f0" });
 
     await expect(repository.reorderCourses(planId, [courseId])).rejects.toThrow(
-      "Reorder must list every course in the plan exactly once",
+      "Course ids must contain every sibling exactly once",
     );
+  });
+
+  it("rejects duplicate and oversized reorder lists", async () => {
+    const { repository } = setup();
+    const { planId, courseId } = await withCourse(repository);
+
+    await expect(repository.reorderCourses(planId, [courseId, courseId])).rejects.toThrow(
+      "duplicates",
+    );
+    await expect(
+      repository.reorderCourses(
+        planId,
+        Array.from({ length: PLANNER_LIMITS.reorderItems + 1 }, (_, index) => `course_${index}`),
+      ),
+    ).rejects.toThrow(`more than ${PLANNER_LIMITS.reorderItems}`);
   });
 });
 
 describe("exams", () => {
+  it("validates text, enums, and a standalone start date", async () => {
+    const { repository } = setup();
+    const { courseId } = await withCourse(repository);
+
+    await expect(
+      repository.createExam(courseId, { name: " Final ", startDate: "2026-12-10" }),
+    ).rejects.toThrow("whitespace");
+    await expect(
+      repository.createExam(courseId, { name: "Final", startDate: "2026-02-31" }),
+    ).rejects.toThrow("Start date must be a valid date");
+    await expect(
+      repository.createExam(courseId, {
+        name: "Final",
+        kind: "quiz" as never,
+        startDate: "2026-12-10",
+      }),
+    ).rejects.toThrow("Exam kind is invalid");
+
+    const examId = await repository.createExam(courseId, {
+      name: "Final",
+      startDate: "2026-12-10",
+    });
+    await expect(
+      repository.updateExam(examId, {
+        name: "Final",
+        kind: "exam",
+        startDate: "2026-12-10",
+        status: "cancelled" as never,
+        notes: "",
+      }),
+    ).rejects.toThrow("Exam status is invalid");
+    await expect(
+      repository.updateExam(examId, {
+        name: "Final",
+        kind: "exam",
+        startDate: "2026-12-10",
+        status: "confirmed",
+        notes: "x".repeat(PLANNER_LIMITS.notesCharacters + 1),
+      }),
+    ).rejects.toThrow("Exam notes cannot exceed");
+  });
+
   it("infers provisional from the presence of a window", async () => {
     const { repository } = setup();
     const { courseId } = await withCourse(repository);
@@ -236,6 +442,58 @@ describe("exams", () => {
 });
 
 describe("topics", () => {
+  it("validates individual and bulk topic inputs", async () => {
+    const { repository } = setup();
+    const { courseId } = await withCourse(repository);
+
+    await expect(
+      repository.createTopic(courseId, { name: " Topic ", color: "violet" }),
+    ).rejects.toThrow("whitespace");
+    await expect(
+      repository.createTopic(courseId, {
+        name: "Topic",
+        totalUnits: PLANNER_LIMITS.units + 1,
+        color: "violet",
+      }),
+    ).rejects.toThrow(`Total units cannot exceed ${PLANNER_LIMITS.units}`);
+    await expect(
+      repository.createTopics(
+        courseId,
+        Array.from({ length: PLANNER_LIMITS.bulkTopics + 1 }, (_, index) => ({
+          name: `Topic ${index}`,
+          unit: "slides" as const,
+          totalUnits: 1,
+        })),
+        "violet",
+      ),
+    ).rejects.toThrow(`more than ${PLANNER_LIMITS.bulkTopics}`);
+    await expect(
+      repository.createTopics(
+        courseId,
+        [{ name: "Bad\0name", unit: "slides", totalUnits: 1 }],
+        "violet",
+      ),
+    ).rejects.toThrow("control characters");
+
+    const topicId = await repository.createTopic(courseId, {
+      name: "Topic",
+      color: "violet",
+    });
+    const current = (await read(repository)).plans[0].courses[0].topics[0];
+    await expect(
+      repository.updateTopic(topicId, {
+        name: current.name,
+        unit: "chapters" as never,
+        totalUnits: current.totalUnits,
+        completedUnits: current.completedUnits,
+        status: current.status,
+        priority: current.priority,
+        notes: current.notes,
+        color: current.color,
+      }),
+    ).rejects.toThrow("Topic unit is invalid");
+  });
+
   it("creates a batch in outline order", async () => {
     const { repository } = setup();
     const { courseId } = await withCourse(repository);
@@ -269,6 +527,20 @@ describe("topics", () => {
 
     const orders = (await read(repository)).plans[0].courses[0].topics.map((topic) => topic.order);
     expect(orders).toEqual([0, 1, 2]);
+  });
+
+  it("requires each existing topic exactly once when reordering", async () => {
+    const { repository } = setup();
+    const { courseId } = await withCourse(repository);
+    const first = await repository.createTopic(courseId, { name: "First", color: "violet" });
+    await repository.createTopic(courseId, { name: "Second", color: "rose" });
+
+    await expect(repository.reorderTopics(courseId, [first])).rejects.toThrow(
+      "Topic ids must contain every sibling exactly once",
+    );
+    await expect(repository.reorderTopics(courseId, [first, first])).rejects.toThrow(
+      "duplicates",
+    );
   });
 
   it("rejects completing more than a topic holds", async () => {
@@ -425,6 +697,22 @@ describe("dependencies", () => {
     );
   });
 
+  it("rejects duplicate and oversized dependency lists", async () => {
+    const { repository } = setup();
+    const { a, b } = await chain(repository);
+
+    await expect(repository.setTopicDependencies(b, [a, a])).rejects.toThrow("duplicates");
+    await expect(
+      repository.setTopicDependencies(
+        b,
+        Array.from(
+          { length: PLANNER_LIMITS.dependencyIds + 1 },
+          (_, index) => `topic_${index}`,
+        ),
+      ),
+    ).rejects.toThrow(`more than ${PLANNER_LIMITS.dependencyIds}`);
+  });
+
   it("leaves the graph untouched when it rejects", async () => {
     const { repository } = setup();
     const { a, c } = await chain(repository);
@@ -531,6 +819,144 @@ describe("study blocks", () => {
     ).rejects.toThrow("Cannot write blocks for a topic outside the reflow scope");
   });
 
+  it("validates block scalars, sources, duplicate ranges, and scoped topic ids", async () => {
+    const { repository } = setup();
+    const { topicId } = await withTopic(repository);
+
+    await expect(
+      repository.createStudyBlock({
+        topicId,
+        startDate: "2026-08-01",
+        endDate: "2026-08-02",
+        plannedUnits: -1,
+      }),
+    ).rejects.toThrow("Planned units must be at least 0");
+    await expect(
+      repository.createStudyBlock({
+        topicId,
+        startDate: "2026-08-01",
+        endDate: "2026-08-02",
+        source: "generated" as never,
+      }),
+    ).rejects.toThrow("Block source is invalid");
+
+    const blockId = await repository.createStudyBlock({
+      topicId,
+      startDate: "2026-08-01",
+      endDate: "2026-08-02",
+    });
+    await expect(
+      repository.updateStudyBlock(blockId, {
+        startDate: "2026-08-03",
+        endDate: "2026-08-04",
+        plannedUnits: Infinity,
+      }),
+    ).rejects.toThrow("finite number");
+
+    const generated = { topicId, startDate: "2026-08-10", endDate: "2026-08-11" };
+    await expect(repository.replaceAutoBlocks([topicId], [generated, generated])).rejects.toThrow(
+      "Generated blocks cannot contain duplicates",
+    );
+    await expect(repository.replaceAutoBlocks(["topic_missing"], [])).rejects.toThrow(
+      "Topic not found",
+    );
+  });
+
+  it("rejects an invalid atomic schedule before saving or publishing either branch", async () => {
+    let durable: PlannerSnapshot | null = null;
+    const save = vi.fn(async (next: PlannerSnapshot) => {
+      durable = next;
+    });
+    const { repository } = setup({ load: async () => durable, save });
+    const { topicId } = await withTopic(repository);
+    const before = await read(repository);
+    const listener = vi.fn();
+    repository.subscribe(listener);
+    listener.mockClear();
+    save.mockClear();
+
+    await expect(
+      repository.applySchedule(
+        [topicId],
+        [{ topicId, startDate: "2026-08-20", endDate: "2026-08-21" }],
+        { ...DEFAULT_PREFERENCES, blackoutDates: ["2026-02-31"] },
+      ),
+    ).rejects.toThrow("Blackout date must be a valid date");
+
+    expect(save).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+    expect(await read(repository)).toBe(before);
+    expect(durable).toBe(before);
+  });
+
+  it("applies generated blocks and preferences in one durable commit", async () => {
+    let durable: PlannerSnapshot | null = null;
+    const save = vi.fn(async (next: PlannerSnapshot) => {
+      durable = next;
+    });
+    const { repository } = setup({ load: async () => durable, save });
+    const { topicId } = await withTopic(repository);
+    await repository.createStudyBlock({
+      topicId,
+      startDate: "2026-08-10",
+      endDate: "2026-08-11",
+      source: "manual",
+    });
+    await repository.replaceAutoBlocks(
+      [topicId],
+      [{ topicId, startDate: "2026-08-01", endDate: "2026-08-02" }],
+    );
+    save.mockClear();
+
+    await repository.applySchedule(
+      [topicId],
+      [{ topicId, startDate: "2026-08-20", endDate: "2026-08-21", plannedUnits: 30 }],
+      { ...DEFAULT_PREFERENCES, dailyCapacityUnits: 65 },
+    );
+
+    const applied = await read(repository);
+    expect(save).toHaveBeenCalledOnce();
+    expect(save).toHaveBeenCalledWith(applied);
+    expect(applied.preferences.dailyCapacityUnits).toBe(65);
+    expect(applied.plans[0].courses[0].topics[0].blocks).toEqual([
+      expect.objectContaining({ source: "manual", startDate: "2026-08-10" }),
+      expect.objectContaining({ source: "auto", startDate: "2026-08-20", plannedUnits: 30 }),
+    ]);
+  });
+
+  it("publishes neither schedule nor preferences when the durable commit fails", async () => {
+    let durable: PlannerSnapshot | null = null;
+    let failWrites = false;
+    const storage: SnapshotStorage = {
+      load: async () => durable,
+      save: async (next) => {
+        if (failWrites) throw new Error("Disk full");
+        durable = next;
+      },
+    };
+    const { repository } = setup(storage);
+    const { topicId } = await withTopic(repository);
+    await repository.replaceAutoBlocks(
+      [topicId],
+      [{ topicId, startDate: "2026-08-01", endDate: "2026-08-02" }],
+    );
+    const before = await read(repository);
+    failWrites = true;
+
+    await expect(
+      repository.applySchedule(
+        [topicId],
+        [{ topicId, startDate: "2026-08-20", endDate: "2026-08-21" }],
+        { ...DEFAULT_PREFERENCES, dailyCapacityUnits: 65 },
+      ),
+    ).rejects.toThrow("Disk full");
+
+    expect(await read(repository)).toBe(before);
+    expect(durable).toBe(before);
+    expect(before.preferences.dailyCapacityUnits).toBeUndefined();
+    expect(before.plans[0].courses[0].topics[0].blocks[0].startDate).toBe("2026-08-01");
+  });
+
   it("rejects a block whose dates run backwards", async () => {
     const { repository } = setup();
     const { topicId } = await withTopic(repository);
@@ -596,6 +1022,44 @@ describe("logStudy", () => {
     expect(await topicOf(repository)).toMatchObject({ completedUnits: 0, status: "planned" });
   });
 
+  it("rejects invalid dates, bounded values, minutes, and notes", async () => {
+    const { repository } = setup();
+    const topicId = await withTopic(repository, 100);
+
+    await expect(
+      repository.logStudy({ topicId, date: "2026-02-31", units: 1 }),
+    ).rejects.toThrow("Study date must be a valid date");
+    await expect(
+      repository.logStudy({ topicId, date: TODAY, units: PLANNER_LIMITS.units + 1 }),
+    ).rejects.toThrow(`Units cannot exceed ${PLANNER_LIMITS.units}`);
+    await expect(
+      repository.logStudy({ topicId, date: TODAY, units: -1, minutes: -1 }),
+    ).rejects.toThrow("Minutes must be at least 0");
+    await expect(
+      repository.logStudy({
+        topicId,
+        date: TODAY,
+        units: -1,
+        note: "x".repeat(PLANNER_LIMITS.logNoteCharacters + 1),
+      }),
+    ).rejects.toThrow("Study note cannot exceed");
+  });
+
+  it("rejects a log whose derived untracked progress would exceed the unit bound", async () => {
+    const { repository } = setup();
+    const topicId = await withTopic(repository, 0);
+    await repository.logStudy({ topicId, date: TODAY, units: PLANNER_LIMITS.units });
+    const before = await read(repository);
+
+    await expect(
+      repository.logStudy({ topicId, date: TODAY, units: 1 }),
+    ).rejects.toThrow(`Completed units cannot exceed ${PLANNER_LIMITS.units}`);
+
+    expect(await read(repository)).toBe(before);
+    expect((await topicOf(repository)).completedUnits).toBe(PLANNER_LIMITS.units);
+    expect((await read(repository)).studyLog).toHaveLength(1);
+  });
+
   it("keeps the log in date order", async () => {
     const { repository } = setup();
     const topicId = await withTopic(repository, 500);
@@ -615,7 +1079,7 @@ describe("logStudy", () => {
     const topicId = await withTopic(repository, 100);
     await expect(
       repository.logStudy({ topicId, date: TODAY, units: Number.NaN }),
-    ).rejects.toThrow("Units must be a number");
+    ).rejects.toThrow("Units must be a finite number");
   });
 });
 
@@ -634,10 +1098,30 @@ describe("preferences", () => {
       studyDaysOfWeek: [1, 3, 5],
     });
   });
+
+  it("rejects invalid capacities, weekdays, dates, themes, and accent values", async () => {
+    const { repository } = setup();
+
+    await expect(
+      repository.savePreferences({ ...DEFAULT_PREFERENCES, dailyCapacityUnits: Infinity }),
+    ).rejects.toThrow("finite number");
+    await expect(
+      repository.savePreferences({ ...DEFAULT_PREFERENCES, studyDaysOfWeek: [1, 1] }),
+    ).rejects.toThrow("duplicates");
+    await expect(
+      repository.savePreferences({ ...DEFAULT_PREFERENCES, blackoutDates: ["2026-02-31"] }),
+    ).rejects.toThrow("Blackout date must be a valid date");
+    await expect(
+      repository.savePreferences({ ...DEFAULT_PREFERENCES, theme: "sepia" as never }),
+    ).rejects.toThrow("Theme is invalid");
+    await expect(
+      repository.savePreferences({ ...DEFAULT_PREFERENCES, accentColor: " blue " }),
+    ).rejects.toThrow("whitespace");
+  });
 });
 
 describe("import and replaceAll", () => {
-  const seedDocument = (): PlannerExport => {
+  const seedDocument = (): PlannerTransferDocument => {
     const seed = generateSeedData({ today: TODAY, courseLimit: 2 });
     return serializePlans(
       { plans: [seed.plan], studyLog: seed.studyLog, preferences: DEFAULT_PREFERENCES },
@@ -645,15 +1129,30 @@ describe("import and replaceAll", () => {
     );
   };
 
-  it("adds imported plans alongside what is already there", async () => {
+  it("adds imported plans and study log alongside what is already there", async () => {
     const { repository } = setup();
-    await repository.createPlan({ name: "Existing" });
-    await repository.importPlans(seedDocument());
+    const planId = await repository.createPlan({ name: "Existing" });
+    const courseId = await repository.createCourse(planId, {
+      name: "Existing course",
+      color: "blue",
+    });
+    const existingTopicId = await repository.createTopic(courseId, {
+      name: "Existing topic",
+      color: "blue",
+    });
+    await repository.logStudy({ topicId: existingTopicId, date: TODAY, units: 5 });
+    const document = seedDocument();
+    await repository.importPlans(document);
 
-    expect((await read(repository)).plans.map((plan) => plan.name)).toEqual([
+    const snapshot = await read(repository);
+    expect(snapshot.plans.map((plan) => plan.name)).toEqual([
       "Existing",
       "Winter semester",
     ]);
+    expect(snapshot.studyLog).toHaveLength(document.studyLog.length + 1);
+    expect(snapshot.studyLog).toContainEqual(
+      expect.objectContaining({ topicId: existingTopicId, units: 5 }),
+    );
   });
 
   it("drops everything else on replaceAll", async () => {
@@ -680,19 +1179,19 @@ describe("import and replaceAll", () => {
     expect(snapshot.studyLog.every((entry) => topicIds.has(entry.topicId))).toBe(true);
   });
 
-  it("skips a log entry whose topic is not in the document", async () => {
-    // Stale data in a hand-edited file is not a reason to refuse the whole import.
+  it("rejects a log entry whose topic key is not in the document", async () => {
     const { repository } = setup();
+    await repository.createPlan({ name: "Existing" });
+    const before = await read(repository);
     const document = seedDocument();
     document.studyLog.push({
-      courseName: "Nonexistent",
-      topicName: "Nowhere",
+      topicKey: "missing",
       date: TODAY,
       units: 10,
     });
 
-    await repository.replaceAll(document);
-    expect((await read(repository)).studyLog).toHaveLength(document.studyLog.length - 1);
+    await expect(repository.replaceAll(document)).rejects.toThrow("missing topic key");
+    expect(await read(repository)).toBe(before);
   });
 
   it("keeps preferences across a replaceAll", async () => {

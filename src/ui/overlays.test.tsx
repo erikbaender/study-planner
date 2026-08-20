@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { Button } from "./button";
@@ -112,9 +113,9 @@ describe("Sheet", () => {
 
 describe("DropdownMenu", () => {
   const items = [
-    { label: "Rename", onSelect: vi.fn() },
+    { label: "Rename", icon: <Pencil />, onSelect: vi.fn() },
     { type: "separator" as const },
-    { label: "Delete", onSelect: vi.fn(), danger: true },
+    { label: "Delete", icon: <Trash2 />, onSelect: vi.fn(), danger: true },
   ];
 
   it("opens as a menu and runs the chosen item", async () => {
@@ -123,7 +124,7 @@ describe("DropdownMenu", () => {
     render(
       <DropdownMenu
         trigger={<Button>Actions</Button>}
-        items={[{ label: "Rename", onSelect }, ...items.slice(1)]}
+        items={[{ label: "Rename", icon: <Pencil />, onSelect }, ...items.slice(1)]}
       />,
     );
 
@@ -137,7 +138,12 @@ describe("DropdownMenu", () => {
   it("is operable from the keyboard alone", async () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();
-    render(<DropdownMenu trigger={<Button>Actions</Button>} items={[{ label: "Rename", onSelect }]} />);
+    render(
+      <DropdownMenu
+        trigger={<Button>Actions</Button>}
+        items={[{ label: "Rename", icon: <Pencil />, onSelect }]}
+      />,
+    );
 
     await user.tab();
     await user.keyboard("{Enter}");
@@ -166,7 +172,7 @@ describe("DropdownMenu", () => {
     render(
       <DropdownMenu
         trigger={<Button>Actions</Button>}
-        items={[{ label: "Delete", onSelect, disabled: true }]}
+        items={[{ label: "Delete", icon: <Trash2 />, onSelect, disabled: true }]}
       />,
     );
 
@@ -181,13 +187,13 @@ describe("ContextMenu", () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();
     render(
-      <ContextMenu items={[{ label: "Delete course", onSelect }]}>
+      <ContextMenu items={[{ label: "Delete", icon: <Trash2 />, onSelect }]}>
         <div>Biochemistry</div>
       </ContextMenu>,
     );
 
     await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Biochemistry") });
-    await user.click(await screen.findByRole("menuitem", { name: "Delete course" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
 
     expect(onSelect).toHaveBeenCalledOnce();
   });

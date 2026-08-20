@@ -76,6 +76,37 @@ describe("schedule", () => {
     expect(first.topicId).toBe(soon.topics[0].id);
   });
 
+  it("never lets priority move a dependent ahead of its prerequisite", () => {
+    const prerequisite = makeTopic({
+      id: "prerequisite",
+      name: "Foundations",
+      totalUnits: 10,
+      priority: "low",
+      order: 0,
+    });
+    const dependent = makeTopic({
+      id: "dependent",
+      name: "Clinical application",
+      totalUnits: 10,
+      priority: "high",
+      dependencyIds: [prerequisite.id],
+      order: 1,
+    });
+
+    const result = plan([
+      makeCourse({
+        topics: [dependent, prerequisite],
+        exams: [makeExam({ startDate: "2026-06-01" })],
+      }),
+    ]);
+
+    expect(result.blocks.map((block) => block.topicId)).toEqual([
+      prerequisite.id,
+      dependent.id,
+    ]);
+    expect(result.blocks.map((block) => block.startDate)).toEqual([TODAY, "2026-05-05"]);
+  });
+
   it("does not plan the same day twice across courses", () => {
     const a = makeCourse({
       topics: [makeTopic({ totalUnits: 10 })],
@@ -197,6 +228,32 @@ describe("schedule", () => {
     const result = plan([makeCourse({ topics: [makeTopic({ totalUnits: 20 })], exams: [] })]);
     expect(result.blocks.length).toBeGreaterThan(0);
     expect(result.shortfalls).toEqual([]);
+  });
+
+  it("uses the configured horizon in shortfall deadlines and capacity", () => {
+    const course = makeCourse({
+      name: "No exam yet",
+      topics: [makeTopic({ totalUnits: 30 })],
+      exams: [],
+    });
+
+    const result = schedule({
+      courses: [course],
+      today: TODAY,
+      calendar: { ...EVERY_DAY, studyDaysOfWeek: [...EVERY_DAY.studyDaysOfWeek] },
+      dailyCapacityUnits: 10,
+      horizonDays: 1,
+    });
+
+    expect(result.shortfalls).toEqual([
+      {
+        courseId: course.id,
+        courseName: "No exam yet",
+        deadline: "2026-05-05",
+        unscheduledUnits: 10,
+        requiredCapacity: 15,
+      },
+    ]);
   });
 
   it("is deterministic", () => {

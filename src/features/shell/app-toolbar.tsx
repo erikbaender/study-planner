@@ -44,7 +44,15 @@ import {
   ToolbarSpacer,
 } from "@/ui";
 import { VIEWS, VIEW_LABELS, type ViewId } from "@/features/workspace/store";
+import type { PlannerAuthStatus } from "@/auth/use-planner-auth";
 import { InputHintBar } from "./input-hints";
+
+const AUTH_STATUS_LABEL: Record<PlannerAuthStatus, string> = {
+  "local-only": "Local only",
+  loading: "Connecting",
+  local: "This device",
+  synced: "Synced",
+};
 
 export function AppToolbar(props: {
     view: ViewId;
@@ -59,7 +67,7 @@ export function AppToolbar(props: {
     onExport: () => void;
     onImport: (file: File) => void;
     canExport: boolean;
-    isAuthenticated: boolean;
+    authStatus: PlannerAuthStatus;
     onSignIn: () => void;
     onSignOut: () => void;
 }) {
@@ -182,16 +190,21 @@ export function AppToolbar(props: {
         }}
       />
 
-      <Badge tone={props.isAuthenticated ? "positive" : "neutral"}>
-        {props.isAuthenticated ? "Synced" : "This device"}
+      <Badge tone={props.authStatus === "synced" ? "positive" : "neutral"}>
+        {AUTH_STATUS_LABEL[props.authStatus]}
       </Badge>
 
-      {props.isAuthenticated ? (
+      {props.authStatus === "local-only" ? null : props.authStatus === "synced" ? (
         <Button size="sm" onClick={props.onSignOut}>
           Sign out
         </Button>
       ) : (
-        <Button size="sm" variant="accent" onClick={props.onSignIn}>
+        <Button
+          size="sm"
+          variant="accent"
+          disabled={props.authStatus === "loading"}
+          onClick={props.onSignIn}
+        >
           Sign in
         </Button>
       )}

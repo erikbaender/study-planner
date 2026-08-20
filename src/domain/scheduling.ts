@@ -13,15 +13,14 @@
  * persona's whole problem is not knowing she is behind until it is too late.
  *
  * The algorithm is forward-filling under a backwards-derived priority, not a
- * true backwards pass. Topics are ordered by the deadline they answer to, then
- * by priority, then by their dependencies; days are then filled from today
+ * true backwards pass. Topics are offered by deadline and priority as soon as
+ * their dependencies have been offered; days are then filled from today
  * forward at capacity. For a single deadline the two are equivalent, and this
  * one degrades sensibly when several courses compete for the same days — which
  * is the case that actually occurs here, with ten courses and ten exams.
  */
 
 import { addDays, isStudyDay, type StudyCalendar } from "./dates";
-import { topologicalOrder } from "./validation";
 import { effectiveDeadline } from "./metrics";
 import type { Course, IsoDate, Topic } from "./types";
 
@@ -155,7 +154,10 @@ export function schedule(options: {
     }
   }
 
-  return { blocks, shortfalls: shortfallsFor(courses, today, calendar, capacity, missed) };
+  return {
+    blocks,
+    shortfalls: shortfallsFor(courses, today, calendar, capacity, horizonDays, missed),
+  };
 }
 
 /**
@@ -171,32 +173,71 @@ function orderTopics(
   today: IsoDate,
   horizonDays: number,
 ): Array<{ topic: Topic; courseId: string; deadline: IsoDate }> {
+  let stableOrder = 0;
   const entries = courses.flatMap((course) => {
     const exam = course.exams
       .filter((candidate) => effectiveDeadline(candidate) >= today)
       .sort((left, right) => (effectiveDeadline(left) < effectiveDeadline(right) ? -1 : 1))[0];
     const deadline = exam ? effectiveDeadline(exam) : addDays(today, horizonDays);
 
-    // `topologicalOrder` puts a topic after everything it depends on, so a
-    // dependency chain is planned in the order it can actually be worked.
-    const ordered = topologicalOrder(course.topics);
-
-    return ordered.map((topic, index) => ({
+    return [...course.topics].sort((left, right) => left.order - right.order).map((topic) => ({
       topic,
       courseId: course.id,
       deadline,
-      // Kept so priority can reorder within a course without breaking the
-      // topological guarantee: a topic never overtakes one it depends on.
-      depth: index,
+      stableOrder: stableOrder++,
     }));
   });
 
-  return entries.sort(
-    (left, right) =>
-      (left.deadline < right.deadline ? -1 : left.deadline > right.deadline ? 1 : 0) ||
-      PRIORITY_RANK[left.topic.priority] - PRIORITY_RANK[right.topic.priority] ||
-      left.depth - right.depth,
-  );
+  const compare = (left: (typeof entries)[number], right: (typeof entries)[number]) =>
+    (left.deadline < right.deadline ? -1 : left.deadline > right.deadline ? 1 : 0) ||
+    PRIORITY_RANK[left.topic.priority] - PRIORITY_RANK[right.topic.priority] ||
+    left.stableOrder - right.stableOrder;
+
+  const topicsByCourse = new Map<string, Map<string, (typeof entries)[number]>>();
+  for (const entry of entries) {
+    const topics = topicsByCourse.get(entry.courseId) ?? new Map();
+    topics.set(entry.topic.id, entry);
+    topicsByCourse.set(entry.courseId, topics);
+  }
+
+  const dependencyCount = new Map(entries.map((entry) => [entry, 0]));
+  const dependents = new Map<(typeof entries)[number], (typeof entries)[number][]>();
+
+  for (const entry of entries) {
+    const courseTopics = topicsByCourse.get(entry.courseId)!;
+    for (const dependencyId of new Set(entry.topic.dependencyIds)) {
+      const dependency = courseTopics.get(dependencyId);
+      if (!dependency) continue;
+      dependencyCount.set(entry, dependencyCount.get(entry)! + 1);
+      dependents.set(dependency, [...(dependents.get(dependency) ?? []), entry]);
+    }
+  }
+
+  const ready = entries.filter((entry) => dependencyCount.get(entry) === 0);
+  const ordered: typeof entries = [];
+
+  // This is Kahn's topological sort with the product priorities as its ready
+  // queue. Priority can choose between work that is currently available, but
+  // it can never move a dependent ahead of the work that unlocks it.
+  while (ready.length > 0) {
+    ready.sort(compare);
+    const entry = ready.shift()!;
+    ordered.push(entry);
+
+    for (const dependent of dependents.get(entry) ?? []) {
+      const remaining = dependencyCount.get(dependent)! - 1;
+      dependencyCount.set(dependent, remaining);
+      if (remaining === 0) ready.push(dependent);
+    }
+  }
+
+  // Validation prevents cycles, but malformed imported data must not make the
+  // scheduler silently drop topics. There is no valid dependency order for a
+  // cycle, so retain every unresolved topic in deterministic product order.
+  const emitted = new Set(ordered);
+  ordered.push(...entries.filter((entry) => !emitted.has(entry)).sort(compare));
+
+  return ordered.map(({ topic, courseId, deadline }) => ({ topic, courseId, deadline }));
 }
 
 function spread(
@@ -225,6 +266,7 @@ function shortfallsFor(
   today: IsoDate,
   calendar: StudyCalendar,
   capacity: number,
+  horizonDays: number,
   missed: Map<string, number>,
 ): Shortfall[] {
   const shortfalls: Shortfall[] = [];
@@ -236,7 +278,7 @@ function shortfallsFor(
     const exam = course.exams
       .filter((candidate) => effectiveDeadline(candidate) >= today)
       .sort((left, right) => (effectiveDeadline(left) < effectiveDeadline(right) ? -1 : 1))[0];
-    const deadline = exam ? effectiveDeadline(exam) : addDays(today, 180);
+    const deadline = exam ? effectiveDeadline(exam) : addDays(today, horizonDays);
 
     let studyDays = 0;
     for (let cursor = today; cursor <= deadline; cursor = addDays(cursor, 1)) {

@@ -10,9 +10,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +40,9 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Production dependency audit
+        run: pnpm audit:prod
 
       - name: Build
         run: pnpm build

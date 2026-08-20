@@ -473,7 +473,7 @@ describe("TimelineView", () => {
     placeAt(lane, 0, 0, 1000, 24);
     fireEvent.contextMenu(lane, { clientX: 140, clientY: 10 });
 
-    fireEvent.click(screen.getByRole("menuitem", { name: /New block on/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add" }));
     expect(repository.createStudyBlock).toHaveBeenCalledWith(
       expect.objectContaining({ topicId: topic.id, source: "manual" }),
     );
@@ -491,7 +491,7 @@ describe("TimelineView", () => {
     chart([topic]);
 
     fireEvent.contextMenu(bar(/2026-05-04 to 2026-05-08/), { clientX: 100, clientY: 40 });
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete block" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
 
     expect(repository.deleteStudyBlock).toHaveBeenCalledWith("block_1");
   });

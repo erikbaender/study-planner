@@ -668,7 +668,7 @@ function TopicLane({
 
     chart.openMenu(event, [
       {
-        label: `New block on ${shortDate(date)}`,
+        label: "Add",
         icon: <Plus />,
         onSelect: () => {
           if (!chart.repository) return;

@@ -3,6 +3,23 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import {
+  assertAutoBlockReplacement,
+  assertBoundedArray,
+  assertBoundedText,
+  assertDistinctBoundedArray,
+  assertFiniteBoundedNumber,
+  assertImportPayload,
+  assertIsoDate,
+  assertOrderedIsoDates,
+  assertPlannedUnits,
+  assertPreferences,
+  assertProgress,
+  assertReorderComplete,
+  assertScheduleApplication,
+  assertTrimmedBoundedText,
+  PLANNER_LIMITS,
+} from "./plannerGuards";
 
 /**
  * Server-side planner API.
@@ -52,6 +69,108 @@ const courseColorValidator = v.union(
   v.literal("rose"),
 );
 
+const planDocumentFields = {
+  _id: v.id("plans"),
+  _creationTime: v.number(),
+  ownerId: v.id("users"),
+  name: v.string(),
+  notes: v.string(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+};
+const courseDocumentFields = {
+  _id: v.id("courses"),
+  _creationTime: v.number(),
+  planId: v.id("plans"),
+  name: v.string(),
+  code: v.optional(v.string()),
+  notes: v.string(),
+  color: v.string(),
+  order: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+};
+const examDocumentValidator = v.object({
+  _id: v.id("exams"),
+  _creationTime: v.number(),
+  courseId: v.id("courses"),
+  name: v.string(),
+  kind: examKindValidator,
+  startDate: v.string(),
+  endDate: v.optional(v.string()),
+  status: examStatusValidator,
+  notes: v.string(),
+  order: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+const topicDocumentFields = {
+  _id: v.id("topics"),
+  _creationTime: v.number(),
+  courseId: v.id("courses"),
+  name: v.string(),
+  section: v.optional(v.string()),
+  unit: unitValidator,
+  totalUnits: v.number(),
+  completedUnits: v.number(),
+  status: statusValidator,
+  priority: priorityValidator,
+  dependencyIds: v.array(v.id("topics")),
+  color: v.string(),
+  notes: v.string(),
+  order: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+};
+const studyBlockDocumentValidator = v.object({
+  _id: v.id("studyBlocks"),
+  _creationTime: v.number(),
+  topicId: v.id("topics"),
+  startDate: v.string(),
+  endDate: v.string(),
+  plannedUnits: v.optional(v.number()),
+  source: blockSourceValidator,
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+const studyLogDocumentValidator = v.object({
+  _id: v.id("studyLog"),
+  _creationTime: v.number(),
+  ownerId: v.id("users"),
+  topicId: v.id("topics"),
+  date: v.string(),
+  units: v.number(),
+  minutes: v.optional(v.number()),
+  note: v.optional(v.string()),
+  createdAt: v.number(),
+});
+const preferencesDocumentValidator = v.object({
+  _id: v.id("preferences"),
+  _creationTime: v.number(),
+  ownerId: v.id("users"),
+  dailyCapacityUnits: v.optional(v.number()),
+  studyDaysOfWeek: v.array(v.number()),
+  blackoutDates: v.array(v.string()),
+  theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")),
+  accentColor: v.string(),
+  updatedAt: v.number(),
+});
+const planTreeValidator = v.object({
+  ...planDocumentFields,
+  courses: v.array(
+    v.object({
+      ...courseDocumentFields,
+      exams: v.array(examDocumentValidator),
+      topics: v.array(
+        v.object({
+          ...topicDocumentFields,
+          blocks: v.array(studyBlockDocumentValidator),
+        }),
+      ),
+    }),
+  ),
+});
+
 async function requireUser(ctx: Parameters<typeof getAuthUserId>[0]) {
   const userId = await getAuthUserId(ctx);
   if (!userId) {
@@ -60,31 +179,46 @@ async function requireUser(ctx: Parameters<typeof getAuthUserId>[0]) {
   return userId;
 }
 
-async function assertPlanOwner(ctx: { db: PlannerDb }, planId: Id<"plans">, userId: Id<"users">) {
+async function assertPlanOwner(
+  ctx: { db: PlannerDb },
+  planId: Id<"plans">,
+  userId: Id<"users">,
+  notFoundMessage = "Plan not found",
+) {
   const plan = await ctx.db.get(planId);
   if (!plan || plan.ownerId !== userId) {
     // Deliberately indistinguishable from "does not exist", so the API cannot
     // be used to probe for other users' plan ids.
-    throw new Error("Plan not found");
+    throw new Error(notFoundMessage);
   }
   return plan;
 }
 
-async function assertCourseOwner(ctx: { db: PlannerDb }, courseId: Id<"courses">, userId: Id<"users">) {
+async function assertCourseOwner(
+  ctx: { db: PlannerDb },
+  courseId: Id<"courses">,
+  userId: Id<"users">,
+  notFoundMessage = "Course not found",
+) {
   const course = await ctx.db.get(courseId);
   if (!course) {
-    throw new Error("Course not found");
+    throw new Error(notFoundMessage);
   }
-  await assertPlanOwner(ctx, course.planId, userId);
+  await assertPlanOwner(ctx, course.planId, userId, notFoundMessage);
   return course;
 }
 
-async function assertTopicOwner(ctx: { db: PlannerDb }, topicId: Id<"topics">, userId: Id<"users">) {
+async function assertTopicOwner(
+  ctx: { db: PlannerDb },
+  topicId: Id<"topics">,
+  userId: Id<"users">,
+  notFoundMessage = "Topic not found",
+) {
   const topic = await ctx.db.get(topicId);
   if (!topic) {
-    throw new Error("Topic not found");
+    throw new Error(notFoundMessage);
   }
-  const course = await assertCourseOwner(ctx, topic.courseId, userId);
+  const course = await assertCourseOwner(ctx, topic.courseId, userId, notFoundMessage);
   return { topic, course };
 }
 
@@ -93,7 +227,7 @@ async function assertExamOwner(ctx: { db: PlannerDb }, examId: Id<"exams">, user
   if (!exam) {
     throw new Error("Exam not found");
   }
-  await assertCourseOwner(ctx, exam.courseId, userId);
+  await assertCourseOwner(ctx, exam.courseId, userId, "Exam not found");
   return exam;
 }
 
@@ -102,23 +236,8 @@ async function assertBlockOwner(ctx: { db: PlannerDb }, blockId: Id<"studyBlocks
   if (!block) {
     throw new Error("Study block not found");
   }
-  await assertTopicOwner(ctx, block.topicId, userId);
+  await assertTopicOwner(ctx, block.topicId, userId, "Study block not found");
   return block;
-}
-
-function assertOrderedDates(startDate: string, endDate?: string) {
-  if (endDate && endDate < startDate) {
-    throw new Error("End date cannot be before the start date");
-  }
-}
-
-function assertProgress(completedUnits: number, totalUnits: number) {
-  if (completedUnits < 0 || totalUnits < 0) {
-    throw new Error("Unit counts cannot be negative");
-  }
-  if (totalUnits > 0 && completedUnits > totalUnits) {
-    throw new Error("Completed units cannot exceed the total");
-  }
 }
 
 /**
@@ -136,6 +255,7 @@ function nextOrder(siblings: Array<{ order: number }>) {
 
 export const listPlanTrees = query({
   args: {},
+  returns: v.array(planTreeValidator),
   handler: async (ctx) => {
     const userId = await requireUser(ctx);
     const plans = await ctx.db.query("plans").withIndex("by_owner", (q) => q.eq("ownerId", userId)).collect();
@@ -148,9 +268,11 @@ export const listPlanTrees = query({
 
 export const listStudyLog = query({
   args: { since: v.optional(v.string()) },
+  returns: v.array(studyLogDocumentValidator),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const since = args.since;
+    if (since !== undefined) assertIsoDate(since, "Since date");
     const entries = since
       ? await ctx.db
           .query("studyLog")
@@ -164,6 +286,7 @@ export const listStudyLog = query({
 
 export const getPreferences = query({
   args: {},
+  returns: v.union(v.null(), preferencesDocumentValidator),
   handler: async (ctx) => {
     const userId = await requireUser(ctx);
     return await ctx.db.query("preferences").withIndex("by_owner", (q) => q.eq("ownerId", userId)).unique();
@@ -220,8 +343,11 @@ export const createPlan = mutation({
     name: v.string(),
     notes: v.optional(v.string()),
   },
+  returns: v.id("plans"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
+    assertTrimmedBoundedText(args.name, "Plan name", PLANNER_LIMITS.nameCharacters);
+    assertBoundedText(args.notes ?? "", "Plan notes", PLANNER_LIMITS.notesCharacters);
     const now = Date.now();
     return await ctx.db.insert("plans", {
       ownerId: userId,
@@ -239,23 +365,29 @@ export const updatePlan = mutation({
     name: v.string(),
     notes: v.string(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertPlanOwner(ctx, args.planId, userId);
+    assertTrimmedBoundedText(args.name, "Plan name", PLANNER_LIMITS.nameCharacters);
+    assertBoundedText(args.notes, "Plan notes", PLANNER_LIMITS.notesCharacters);
     await ctx.db.patch(args.planId, {
       name: args.name,
       notes: args.notes,
       updatedAt: Date.now(),
     });
+    return null;
   },
 });
 
 export const deletePlan = mutation({
   args: { planId: v.id("plans") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertPlanOwner(ctx, args.planId, userId);
     await deletePlanTree(ctx, args.planId);
+    return null;
   },
 });
 
@@ -269,9 +401,15 @@ export const createCourse = mutation({
     notes: v.optional(v.string()),
     color: courseColorValidator,
   },
+  returns: v.id("courses"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertPlanOwner(ctx, args.planId, userId);
+    assertTrimmedBoundedText(args.name, "Course name", PLANNER_LIMITS.nameCharacters);
+    if (args.code !== undefined) {
+      assertTrimmedBoundedText(args.code, "Course code", PLANNER_LIMITS.codeCharacters);
+    }
+    assertBoundedText(args.notes ?? "", "Course notes", PLANNER_LIMITS.notesCharacters);
     const existing = await ctx.db.query("courses").withIndex("by_plan", (q) => q.eq("planId", args.planId)).collect();
     const now = Date.now();
     return await ctx.db.insert("courses", {
@@ -295,9 +433,15 @@ export const updateCourse = mutation({
     notes: v.string(),
     color: courseColorValidator,
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertCourseOwner(ctx, args.courseId, userId);
+    assertTrimmedBoundedText(args.name, "Course name", PLANNER_LIMITS.nameCharacters);
+    if (args.code !== undefined) {
+      assertTrimmedBoundedText(args.code, "Course code", PLANNER_LIMITS.codeCharacters);
+    }
+    assertBoundedText(args.notes, "Course notes", PLANNER_LIMITS.notesCharacters);
     await ctx.db.patch(args.courseId, {
       name: args.name,
       code: args.code,
@@ -305,6 +449,7 @@ export const updateCourse = mutation({
       color: args.color,
       updatedAt: Date.now(),
     });
+    return null;
   },
 });
 
@@ -319,6 +464,18 @@ export const migrateColorReferences = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
+    assertDistinctBoundedArray(
+      args.courses,
+      "Course color references",
+      PLANNER_LIMITS.colorReferences,
+      (course) => course.courseId,
+    );
+    assertDistinctBoundedArray(
+      args.topics,
+      "Topic color references",
+      PLANNER_LIMITS.colorReferences,
+      (topic) => topic.topicId,
+    );
     const now = Date.now();
 
     for (const course of args.courses) {
@@ -335,42 +492,58 @@ export const migrateColorReferences = mutation({
 
 export const deleteCourse = mutation({
   args: { courseId: v.id("courses") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertCourseOwner(ctx, args.courseId, userId);
     await deleteCourseTree(ctx, args.courseId);
+    return null;
   },
 });
 
 export const reorderCourses = mutation({
   args: { planId: v.id("plans"), courseIds: v.array(v.id("courses")) },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertPlanOwner(ctx, args.planId, userId);
+    const existing = await ctx.db
+      .query("courses")
+      .withIndex("by_plan", (q) => q.eq("planId", args.planId))
+      .collect();
+    assertReorderComplete(
+      existing.map((course) => course._id),
+      args.courseIds,
+      "Course ids",
+    );
     const now = Date.now();
     for (const [index, courseId] of args.courseIds.entries()) {
-      const course = await assertCourseOwner(ctx, courseId, userId);
-      if (course.planId !== args.planId) {
-        throw new Error("Course does not belong to that plan");
-      }
       await ctx.db.patch(courseId, { order: index, updatedAt: now });
     }
+    return null;
   },
 });
 
 export const reorderTopics = mutation({
   args: { courseId: v.id("courses"), topicIds: v.array(v.id("topics")) },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertCourseOwner(ctx, args.courseId, userId);
+    const existing = await ctx.db
+      .query("topics")
+      .withIndex("by_course", (q) => q.eq("courseId", args.courseId))
+      .collect();
+    assertReorderComplete(
+      existing.map((topic) => topic._id),
+      args.topicIds,
+      "Topic ids",
+    );
     const now = Date.now();
     for (const [index, topicId] of args.topicIds.entries()) {
-      const { topic } = await assertTopicOwner(ctx, topicId, userId);
-      if (topic.courseId !== args.courseId) {
-        throw new Error("Topic does not belong to that course");
-      }
       await ctx.db.patch(topicId, { order: index, updatedAt: now });
     }
+    return null;
   },
 });
 
@@ -386,10 +559,13 @@ export const createExam = mutation({
     status: v.optional(examStatusValidator),
     notes: v.optional(v.string()),
   },
+  returns: v.id("exams"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertCourseOwner(ctx, args.courseId, userId);
-    assertOrderedDates(args.startDate, args.endDate);
+    assertTrimmedBoundedText(args.name, "Exam name", PLANNER_LIMITS.nameCharacters);
+    assertBoundedText(args.notes ?? "", "Exam notes", PLANNER_LIMITS.notesCharacters);
+    assertOrderedIsoDates(args.startDate, args.endDate);
     const existing = await ctx.db.query("exams").withIndex("by_course", (q) => q.eq("courseId", args.courseId)).collect();
     const now = Date.now();
     return await ctx.db.insert("exams", {
@@ -419,10 +595,13 @@ export const updateExam = mutation({
     status: examStatusValidator,
     notes: v.string(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertExamOwner(ctx, args.examId, userId);
-    assertOrderedDates(args.startDate, args.endDate);
+    assertTrimmedBoundedText(args.name, "Exam name", PLANNER_LIMITS.nameCharacters);
+    assertBoundedText(args.notes, "Exam notes", PLANNER_LIMITS.notesCharacters);
+    assertOrderedIsoDates(args.startDate, args.endDate);
     await ctx.db.patch(args.examId, {
       name: args.name,
       kind: args.kind,
@@ -432,15 +611,18 @@ export const updateExam = mutation({
       notes: args.notes,
       updatedAt: Date.now(),
     });
+    return null;
   },
 });
 
 export const deleteExam = mutation({
   args: { examId: v.id("exams") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertExamOwner(ctx, args.examId, userId);
     await ctx.db.delete(args.examId);
+    return null;
   },
 });
 
@@ -456,9 +638,12 @@ export const createTopic = mutation({
     notes: v.optional(v.string()),
     color: courseColorValidator,
   },
+  returns: v.id("topics"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertCourseOwner(ctx, args.courseId, userId);
+    assertTrimmedBoundedText(args.name, "Topic name", PLANNER_LIMITS.nameCharacters);
+    assertBoundedText(args.notes ?? "", "Topic notes", PLANNER_LIMITS.notesCharacters);
     const totalUnits = args.totalUnits ?? 0;
     assertProgress(0, totalUnits);
     const existing = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", args.courseId)).collect();
@@ -494,15 +679,20 @@ export const createTopics = mutation({
     ),
     color: courseColorValidator,
   },
+  returns: v.array(v.id("topics")),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertCourseOwner(ctx, args.courseId, userId);
+    assertBoundedArray(args.topics, "Topics", PLANNER_LIMITS.bulkTopics);
+    for (const topic of args.topics) {
+      assertTrimmedBoundedText(topic.name, "Topic name", PLANNER_LIMITS.nameCharacters);
+      assertProgress(0, topic.totalUnits);
+    }
     const existing = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", args.courseId)).collect();
     const now = Date.now();
     const ids: Id<"topics">[] = [];
 
     for (const [index, topic] of args.topics.entries()) {
-      assertProgress(0, topic.totalUnits);
       ids.push(
         await ctx.db.insert("topics", {
           courseId: args.courseId,
@@ -538,9 +728,12 @@ export const updateTopic = mutation({
     notes: v.string(),
     color: courseColorValidator,
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertTopicOwner(ctx, args.topicId, userId);
+    assertTrimmedBoundedText(args.name, "Topic name", PLANNER_LIMITS.nameCharacters);
+    assertBoundedText(args.notes, "Topic notes", PLANNER_LIMITS.notesCharacters);
     assertProgress(args.completedUnits, args.totalUnits);
     await ctx.db.patch(args.topicId, {
       name: args.name,
@@ -553,16 +746,18 @@ export const updateTopic = mutation({
       color: args.color,
       updatedAt: Date.now(),
     });
+    return null;
   },
 });
 
 export const moveTopic = mutation({
   args: { topicId: v.id("topics"), courseId: v.id("courses") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const { topic, course: oldCourse } = await assertTopicOwner(ctx, args.topicId, userId);
     const targetCourse = await assertCourseOwner(ctx, args.courseId, userId);
-    if (oldCourse._id === targetCourse._id) return;
+    if (oldCourse._id === targetCourse._id) return null;
     if (oldCourse.planId !== targetCourse.planId) {
       throw new Error("A topic can only move within its plan");
     }
@@ -588,23 +783,32 @@ export const moveTopic = mutation({
         });
       }
     }
+    return null;
   },
 });
 
 export const deleteTopic = mutation({
   args: { topicId: v.id("topics") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const { topic } = await assertTopicOwner(ctx, args.topicId, userId);
     await deleteTopicTree(ctx, topic);
+    return null;
   },
 });
 
 export const updateTopicDependencies = mutation({
   args: { topicId: v.id("topics"), dependencyIds: v.array(v.id("topics")) },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const { topic } = await assertTopicOwner(ctx, args.topicId, userId);
+    assertDistinctBoundedArray(
+      args.dependencyIds,
+      "Dependency ids",
+      PLANNER_LIMITS.dependencyIds,
+    );
 
     const dependencies = await Promise.all(args.dependencyIds.map((id) => ctx.db.get(id)));
     if (dependencies.some((dependency) => !dependency || dependency.courseId !== topic.courseId)) {
@@ -615,6 +819,7 @@ export const updateTopicDependencies = mutation({
     }
 
     await ctx.db.patch(args.topicId, { dependencyIds: args.dependencyIds, updatedAt: Date.now() });
+    return null;
   },
 });
 
@@ -628,10 +833,12 @@ export const createStudyBlock = mutation({
     plannedUnits: v.optional(v.number()),
     source: v.optional(blockSourceValidator),
   },
+  returns: v.id("studyBlocks"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertTopicOwner(ctx, args.topicId, userId);
-    assertOrderedDates(args.startDate, args.endDate);
+    assertOrderedIsoDates(args.startDate, args.endDate);
+    assertPlannedUnits(args.plannedUnits);
     const now = Date.now();
     return await ctx.db.insert("studyBlocks", {
       topicId: args.topicId,
@@ -653,10 +860,12 @@ export const updateStudyBlock = mutation({
     endDate: v.string(),
     plannedUnits: v.optional(v.number()),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const block = await assertBlockOwner(ctx, args.blockId, userId);
-    assertOrderedDates(args.startDate, args.endDate);
+    assertOrderedIsoDates(args.startDate, args.endDate);
+    assertPlannedUnits(args.plannedUnits);
     await ctx.db.patch(args.blockId, {
       startDate: args.startDate,
       endDate: args.endDate,
@@ -666,15 +875,18 @@ export const updateStudyBlock = mutation({
       source: "manual",
       updatedAt: Date.now(),
     });
+    return null;
   },
 });
 
 export const deleteStudyBlock = mutation({
   args: { blockId: v.id("studyBlocks") },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertBlockOwner(ctx, args.blockId, userId);
     await ctx.db.delete(args.blockId);
+    return null;
   },
 });
 
@@ -685,46 +897,118 @@ export const deleteStudyBlock = mutation({
  * `source` exists. Scoped to explicit topic ids so a course-level reflow cannot
  * reach into another course.
  */
+const generatedBlockValidator = v.object({
+  topicId: v.id("topics"),
+  startDate: v.string(),
+  endDate: v.string(),
+  plannedUnits: v.optional(v.number()),
+});
+type GeneratedBlockInput = (typeof generatedBlockValidator)["type"];
+
+const preferenceFields = {
+  dailyCapacityUnits: v.optional(v.number()),
+  studyDaysOfWeek: v.array(v.number()),
+  blackoutDates: v.array(v.string()),
+  theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")),
+  accentColor: v.string(),
+};
+const preferenceValidator = v.object(preferenceFields);
+type PreferenceInput = (typeof preferenceValidator)["type"];
+
+async function assertScheduleTopicOwnership(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  topicIds: Id<"topics">[],
+): Promise<void> {
+  for (const topicId of topicIds) {
+    await assertTopicOwner(ctx, topicId, userId);
+  }
+}
+
+async function writeAutoBlockReplacement(
+  ctx: MutationCtx,
+  topicIds: Id<"topics">[],
+  blocks: GeneratedBlockInput[],
+): Promise<void> {
+  const existingAutoBlocks: Doc<"studyBlocks">[] = [];
+  for (const topicId of topicIds) {
+    const existing = await ctx.db
+      .query("studyBlocks")
+      .withIndex("by_topic_and_source", (q) =>
+        q.eq("topicId", topicId).eq("source", "auto"),
+      )
+      .take(PLANNER_LIMITS.reflowBlocks + 1);
+    existingAutoBlocks.push(...existing);
+    if (existingAutoBlocks.length > PLANNER_LIMITS.reflowBlocks) {
+      throw new Error("Existing generated schedule exceeds the replacement limit");
+    }
+  }
+  for (const block of existingAutoBlocks) {
+    await ctx.db.delete(block._id);
+  }
+
+  const now = Date.now();
+  for (const block of blocks) {
+    await ctx.db.insert("studyBlocks", {
+      ...block,
+      source: "auto",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+async function writePreferences(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  preferences: PreferenceInput,
+): Promise<Id<"preferences">> {
+  const existing = await ctx.db
+    .query("preferences")
+    .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+    .unique();
+  const patch = { ...preferences, updatedAt: Date.now() };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, patch);
+    return existing._id;
+  }
+  return await ctx.db.insert("preferences", { ownerId: userId, ...patch });
+}
+
 export const replaceAutoBlocks = mutation({
   args: {
     topicIds: v.array(v.id("topics")),
-    blocks: v.array(
-      v.object({
-        topicId: v.id("topics"),
-        startDate: v.string(),
-        endDate: v.string(),
-        plannedUnits: v.optional(v.number()),
-      }),
-    ),
+    blocks: v.array(generatedBlockValidator),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const allowed = new Set<string>();
-    for (const topicId of args.topicIds) {
-      await assertTopicOwner(ctx, topicId, userId);
-      allowed.add(topicId);
-    }
-    for (const block of args.blocks) {
-      if (!allowed.has(block.topicId)) {
-        throw new Error("Cannot write blocks for a topic outside the reflow scope");
-      }
-      assertOrderedDates(block.startDate, block.endDate);
-    }
+    assertAutoBlockReplacement(args.topicIds, args.blocks);
+    await assertScheduleTopicOwnership(ctx, userId, args.topicIds);
+    await writeAutoBlockReplacement(ctx, args.topicIds, args.blocks);
+    return null;
+  },
+});
 
-    for (const topicId of args.topicIds) {
-      const existing = await ctx.db
-        .query("studyBlocks")
-        .withIndex("by_topic", (q) => q.eq("topicId", topicId))
-        .collect();
-      for (const block of existing) {
-        if (block.source === "auto") await ctx.db.delete(block._id);
-      }
-    }
+/** Applies generated blocks and the preferences used to calculate them atomically. */
+export const applySchedule = mutation({
+  args: {
+    topicIds: v.array(v.id("topics")),
+    blocks: v.array(generatedBlockValidator),
+    preferences: preferenceValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    assertScheduleApplication(args.topicIds, args.blocks, args.preferences);
+    await assertScheduleTopicOwnership(ctx, userId, args.topicIds);
 
-    const now = Date.now();
-    for (const block of args.blocks) {
-      await ctx.db.insert("studyBlocks", { ...block, source: "auto", createdAt: now, updatedAt: now });
-    }
+    // Convex mutations are transactions: a failure in either writer rolls
+    // back both branches. All input is validated before the first write.
+    await writeAutoBlockReplacement(ctx, args.topicIds, args.blocks);
+    await writePreferences(ctx, userId, args.preferences);
+    return null;
   },
 });
 
@@ -744,15 +1028,31 @@ export const logStudy = mutation({
     minutes: v.optional(v.number()),
     note: v.optional(v.string()),
   },
+  returns: v.id("studyLog"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const { topic } = await assertTopicOwner(ctx, args.topicId, userId);
-    if (!Number.isFinite(args.units)) {
-      throw new Error("Units must be a number");
+    assertIsoDate(args.date, "Study date");
+    assertFiniteBoundedNumber(args.units, "Units", {
+      min: -PLANNER_LIMITS.units,
+      max: PLANNER_LIMITS.units,
+    });
+    if (args.minutes !== undefined) {
+      assertFiniteBoundedNumber(args.minutes, "Minutes", {
+        min: 0,
+        max: PLANNER_LIMITS.minutes,
+      });
+    }
+    if (args.note !== undefined) {
+      assertBoundedText(args.note, "Study note", PLANNER_LIMITS.logNoteCharacters);
     }
 
     const raw = topic.completedUnits + args.units;
     const completedUnits = Math.max(0, topic.totalUnits > 0 ? Math.min(topic.totalUnits, raw) : raw);
+    // Each log increment is bounded, but repeated increments on an untracked
+    // topic (`totalUnits === 0`) can still exceed the persisted/export limit.
+    // Reject before either write so progress and its log remain atomic.
+    assertProgress(completedUnits, topic.totalUnits);
 
     const now = Date.now();
     await ctx.db.patch(args.topicId, {
@@ -781,23 +1081,12 @@ export const logStudy = mutation({
 /* ------------------------------------------------------------ preferences */
 
 export const savePreferences = mutation({
-  args: {
-    dailyCapacityUnits: v.optional(v.number()),
-    studyDaysOfWeek: v.array(v.number()),
-    blackoutDates: v.array(v.string()),
-    theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")),
-    accentColor: v.string(),
-  },
+  args: preferenceFields,
+  returns: v.id("preferences"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const existing = await ctx.db.query("preferences").withIndex("by_owner", (q) => q.eq("ownerId", userId)).unique();
-    const patch = { ...args, updatedAt: Date.now() };
-
-    if (existing) {
-      await ctx.db.patch(existing._id, patch);
-      return existing._id;
-    }
-    return await ctx.db.insert("preferences", { ownerId: userId, ...patch });
+    assertPreferences(args);
+    return await writePreferences(ctx, userId, args);
   },
 });
 
@@ -807,9 +1096,10 @@ const importBlock = v.object({
   startDate: v.string(),
   endDate: v.string(),
   plannedUnits: v.optional(v.number()),
-  source: v.optional(blockSourceValidator),
+  source: blockSourceValidator,
 });
 const importTopic = v.object({
+  key: v.string(),
   name: v.string(),
   unit: unitValidator,
   totalUnits: v.number(),
@@ -818,7 +1108,7 @@ const importTopic = v.object({
   priority: priorityValidator,
   color: courseColorValidator,
   notes: v.string(),
-  /** Dependencies travel as names — ids are not stable across deployments. */
+  /** Dependencies travel as document-local keys — database ids are not portable. */
   dependencies: v.array(v.string()),
   blocks: v.array(importBlock),
 });
@@ -846,25 +1136,23 @@ const importPlan = v.object({
 
 type ImportPlanInput = (typeof importPlan)["type"];
 
-/**
- * Log entries reference their topic by course and topic name rather than by id,
- * because ids do not exist until the import has run. Names are unique within a
- * course by construction of the exporter.
- */
 const importLogEntry = v.object({
-  courseName: v.string(),
-  topicName: v.string(),
+  topicKey: v.string(),
   date: v.string(),
   units: v.number(),
   minutes: v.optional(v.number()),
   note: v.optional(v.string()),
 });
+type ImportLogInput = (typeof importLogEntry)["type"];
 
 export const importPlans = mutation({
-  args: { plans: v.array(importPlan) },
+  args: { plans: v.array(importPlan), studyLog: v.array(importLogEntry) },
+  returns: v.array(v.id("plans")),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const { planIds } = await insertPlans(ctx, userId, args.plans);
+    assertImportPayload(args.plans, args.studyLog);
+    const { planIds, topicIdsByKey } = await insertPlans(ctx, userId, args.plans);
+    await insertImportedLog(ctx, userId, args.studyLog, topicIdsByKey);
     return planIds;
   },
 });
@@ -877,9 +1165,11 @@ export const importPlans = mutation({
  * user's data even by mistake.
  */
 export const replaceAllPlans = mutation({
-  args: { plans: v.array(importPlan), studyLog: v.optional(v.array(importLogEntry)) },
+  args: { plans: v.array(importPlan), studyLog: v.array(importLogEntry) },
+  returns: v.array(v.id("plans")),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
+    assertImportPayload(args.plans, args.studyLog);
 
     const existing = await ctx.db.query("plans").withIndex("by_owner", (q) => q.eq("ownerId", userId)).collect();
     for (const plan of existing) {
@@ -890,24 +1180,8 @@ export const replaceAllPlans = mutation({
       await ctx.db.delete(entry._id);
     }
 
-    const { planIds, topicIdsByPath } = await insertPlans(ctx, userId, args.plans);
-
-    const now = Date.now();
-    for (const entry of args.studyLog ?? []) {
-      const topicId = topicIdsByPath.get(`${entry.courseName}\0${entry.topicName}`);
-      // Silently skipped rather than thrown: a log entry pointing at a topic
-      // that is not in the import is stale data, not a reason to fail the seed.
-      if (!topicId) continue;
-      await ctx.db.insert("studyLog", {
-        ownerId: userId,
-        topicId,
-        date: entry.date,
-        units: entry.units,
-        minutes: entry.minutes,
-        note: entry.note,
-        createdAt: now,
-      });
-    }
+    const { planIds, topicIdsByKey } = await insertPlans(ctx, userId, args.plans);
+    await insertImportedLog(ctx, userId, args.studyLog, topicIdsByKey);
 
     return planIds;
   },
@@ -916,8 +1190,7 @@ export const replaceAllPlans = mutation({
 async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportPlanInput[]) {
   const now = Date.now();
   const planIds: Id<"plans">[] = [];
-  /** Keyed `courseName\0topicName`, for resolving study-log references. */
-  const topicIdsByPath = new Map<string, Id<"topics">>();
+  const topicIdsByKey = new Map<string, Id<"topics">>();
 
   for (const planInput of plans) {
     const planId = await ctx.db.insert("plans", {
@@ -942,7 +1215,6 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
       });
 
       for (const [examIndex, examInput] of courseInput.exams.entries()) {
-        assertOrderedDates(examInput.startDate, examInput.endDate);
         await ctx.db.insert("exams", {
           courseId,
           ...examInput,
@@ -952,13 +1224,10 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
         });
       }
 
-      // Scoped per course: two courses may legitimately both have a topic
-      // called "Overview", and a shared map would cross-link them.
-      const topicIdsByName = new Map<string, Id<"topics">>();
+      const topicIdsByKeyInCourse = new Map<string, Id<"topics">>();
       const pendingDependencies: Array<{ topicId: Id<"topics">; dependencies: string[] }> = [];
 
       for (const [topicIndex, topicInput] of courseInput.topics.entries()) {
-        assertProgress(topicInput.completedUnits, topicInput.totalUnits);
         const topicId = await ctx.db.insert("topics", {
           courseId,
           name: topicInput.name,
@@ -975,18 +1244,17 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
           updatedAt: now,
         });
 
-        topicIdsByName.set(topicInput.name, topicId);
-        topicIdsByPath.set(`${courseInput.name}\0${topicInput.name}`, topicId);
+        topicIdsByKeyInCourse.set(topicInput.key, topicId);
+        topicIdsByKey.set(topicInput.key, topicId);
         pendingDependencies.push({ topicId, dependencies: topicInput.dependencies });
 
         for (const blockInput of topicInput.blocks) {
-          assertOrderedDates(blockInput.startDate, blockInput.endDate);
           await ctx.db.insert("studyBlocks", {
             topicId,
             startDate: blockInput.startDate,
             endDate: blockInput.endDate,
             plannedUnits: blockInput.plannedUnits,
-            source: blockInput.source ?? "manual",
+            source: blockInput.source,
             createdAt: now,
             updatedAt: now,
           });
@@ -994,9 +1262,15 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
       }
 
       for (const pending of pendingDependencies) {
-        const dependencyIds = pending.dependencies
-          .map((name) => topicIdsByName.get(name))
-          .filter((id): id is Id<"topics"> => id !== undefined && id !== pending.topicId);
+        const dependencyIds = pending.dependencies.map((key) => {
+          const dependencyId = topicIdsByKeyInCourse.get(key);
+          if (!dependencyId) {
+            // `assertImportPayload` runs before insertion. Keep this defensive
+            // branch so a future internal caller cannot silently lose an edge.
+            throw new Error(`Validated dependency ${key} is missing`);
+          }
+          return dependencyId;
+        });
         if (dependencyIds.length > 0) {
           await ctx.db.patch(pending.topicId, { dependencyIds, updatedAt: now });
         }
@@ -1004,7 +1278,31 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
     }
   }
 
-  return { planIds, topicIdsByPath };
+  return { planIds, topicIdsByKey };
+}
+
+async function insertImportedLog(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  studyLog: ImportLogInput[],
+  topicIdsByKey: ReadonlyMap<string, Id<"topics">>,
+) {
+  const now = Date.now();
+  for (const entry of studyLog) {
+    const topicId = topicIdsByKey.get(entry.topicKey);
+    if (!topicId) {
+      throw new Error(`Validated log topic ${entry.topicKey} is missing`);
+    }
+    await ctx.db.insert("studyLog", {
+      ownerId: userId,
+      topicId,
+      date: entry.date,
+      units: entry.units,
+      minutes: entry.minutes,
+      note: entry.note,
+      createdAt: now,
+    });
+  }
 }
 
 /* ------------------------------------------------------ cascade utilities */

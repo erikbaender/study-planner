@@ -1,212 +1,332 @@
 import { describe, expect, it } from "vitest";
-import { sequentialIdFactory } from "@/data/ids";
-import { course, plan, snapshot, topic } from "@/test/factories";
+import { ImportError, parsePlannerJson } from "./import-export";
 import {
   EXPORT_VERSION,
-  exportFilename,
-  ImportError,
-  parsePlannerJson,
-  serializePlans,
-  toPlans,
-} from "./import-export";
+  MAX_PLANNER_IMPORT_BYTES,
+  PLANNER_TRANSFER_LIMITS,
+  type PlannerTransferDocument,
+  type TransferredTopic,
+} from "./planner-transfer";
 
-const fixture = () =>
-  snapshot({
+function transferredTopic(
+  key: string,
+  overrides: Partial<TransferredTopic> = {},
+): TransferredTopic {
+  return {
+    key,
+    name: `Topic ${key}`,
+    unit: "slides",
+    totalUnits: 100,
+    completedUnits: 10,
+    status: "active",
+    priority: "normal",
+    color: "violet",
+    notes: "",
+    dependencies: [],
+    blocks: [],
+    ...overrides,
+  };
+}
+
+function v3Document(): PlannerTransferDocument {
+  return {
+    version: EXPORT_VERSION,
+    exportedAt: "2026-08-20T12:00:00.000Z",
     plans: [
-      plan({
-        id: "plan_a",
-        name: "Winter semester",
+      {
+        name: "Semester",
+        notes: "",
         courses: [
-          course({
-            id: "course_a",
-            name: "Biochemistry",
+          {
+            name: "Course",
             code: "BIO-201",
+            color: "violet",
+            notes: "",
             exams: [
               {
-                id: "exam_a",
-                courseId: "course_a",
                 name: "Final",
                 kind: "exam",
                 startDate: "2026-12-10",
                 endDate: "2026-12-17",
                 status: "provisional",
-                notes: "Window announced.",
-                order: 0,
+                notes: "",
               },
             ],
             topics: [
-              topic({
-                id: "topic_a",
-                courseId: "course_a",
-                name: "Glycolysis",
-                unit: "pages",
-                totalUnits: 120,
-                completedUnits: 30,
-                status: "active",
-                order: 0,
+              transferredTopic("foundations", {
+                name: "Foundations",
                 blocks: [
                   {
-                    id: "block_a",
-                    topicId: "topic_a",
-                    startDate: "2026-10-01",
-                    endDate: "2026-10-03",
-                    plannedUnits: 40,
+                    startDate: "2026-09-01",
+                    endDate: "2026-09-02",
+                    plannedUnits: 10,
                     source: "manual",
                   },
                 ],
               }),
-              topic({
-                id: "topic_b",
-                courseId: "course_a",
-                name: "Citric acid cycle",
-                unit: "pages",
-                totalUnits: 80,
-                order: 1,
-                dependencyIds: ["topic_a"],
+              transferredTopic("advanced", {
+                name: "Advanced",
+                dependencies: ["foundations"],
               }),
             ],
-          }),
+          },
         ],
-      }),
+      },
     ],
     studyLog: [
-      { id: "log_a", topicId: "topic_a", date: "2026-09-20", units: 30, minutes: 60 },
-      // Points at a topic that is not in the snapshot.
-      { id: "log_orphan", topicId: "topic_gone", date: "2026-09-21", units: 10 },
-    ],
-  });
-
-describe("serializePlans", () => {
-  it("carries dependencies as topic names, not ids", () => {
-    // Ids are account-scoped; names make a file importable anywhere.
-    const document = serializePlans(fixture());
-    expect(document.plans[0].courses[0].topics[1].dependencies).toEqual(["Glycolysis"]);
-    expect(JSON.stringify(document)).not.toContain("topic_a");
-  });
-
-  it("resolves log entries to a course and topic name", () => {
-    const document = serializePlans(fixture());
-    expect(document.studyLog).toEqual([
       {
-        courseName: "Biochemistry",
-        topicName: "Glycolysis",
-        date: "2026-09-20",
-        units: 30,
-        minutes: 60,
-        note: undefined,
+        topicKey: "foundations",
+        date: "2026-08-20",
+        units: 5,
+        minutes: 30,
+        note: "Review",
       },
-    ]);
-  });
+    ],
+  };
+}
 
-  it("takes the export timestamp as an argument rather than reading the clock", () => {
-    expect(serializePlans(fixture(), "2026-07-29T10:00:00Z").exportedAt).toBe(
-      "2026-07-29T10:00:00Z",
-    );
-  });
+function cloneDocument(): PlannerTransferDocument {
+  return JSON.parse(JSON.stringify(v3Document())) as PlannerTransferDocument;
+}
 
-  it("stamps the current format version", () => {
-    expect(serializePlans(fixture()).version).toBe(EXPORT_VERSION);
-    expect(JSON.stringify(serializePlans(fixture()))).not.toContain("section");
-  });
-});
+function v2Document() {
+  return {
+    version: 2,
+    exportedAt: "2026-08-20T12:00:00.000Z",
+    plans: [
+      {
+        name: "Semester",
+        courses: [
+          {
+            name: "Course",
+            color: "#5856d6",
+            topics: [
+              { name: "Foundations", section: "Basics" },
+              { name: "Advanced", dependencies: ["Foundations"] },
+            ],
+          },
+        ],
+      },
+    ],
+    studyLog: [
+      {
+        courseName: "Course",
+        topicName: "Foundations",
+        date: "2026-08-20",
+        units: 5,
+      },
+    ],
+  };
+}
 
 describe("parsePlannerJson", () => {
-  it("accepts a document this build wrote", () => {
-    const contents = JSON.stringify(serializePlans(fixture(), "2026-07-29T10:00:00Z"));
-    expect(parsePlannerJson(contents).plans[0].name).toBe("Winter semester");
+  it("strictly parses a canonical v3 document", () => {
+    const parsed = parsePlannerJson(JSON.stringify(v3Document()));
+    expect(parsed).toEqual(v3Document());
+
+    const withUnknownField = { ...v3Document(), unexpected: true };
+    expect(() => parsePlannerJson(JSON.stringify(withUnknownField))).toThrow("Unrecognized key");
   });
 
-  it("accepts and discards a legacy topic section", () => {
-    const document = serializePlans(fixture(), "2026-07-29T10:00:00Z");
-    const legacy = JSON.parse(JSON.stringify(document)) as {
-      plans: Array<{ courses: Array<{ topics: Array<Record<string, unknown>> }> }>;
-    };
-    legacy.plans[0].courses[0].topics[0].section = "Metabolism";
+  it("canonicalizes an unambiguous v2 document to v3 keys", () => {
+    const parsed = parsePlannerJson(JSON.stringify(v2Document()));
+    const [foundations, advanced] = parsed.plans[0].courses[0].topics;
 
-    const parsed = parsePlannerJson(JSON.stringify(legacy));
-    expect(parsed.plans[0].courses[0].topics[0]).not.toHaveProperty("section");
-    expect(toPlans(parsed, sequentialIdFactory()).plans[0].courses[0].topics[0]).not.toHaveProperty(
-      "section",
+    expect(parsed.version).toBe(EXPORT_VERSION);
+    expect(foundations).not.toHaveProperty("section");
+    expect(advanced.dependencies).toEqual([foundations.key]);
+    expect(parsed.studyLog[0].topicKey).toBe(foundations.key);
+    expect(foundations.color).toBe("violet");
+  });
+
+  it("rejects ambiguous v2 dependency names", () => {
+    const legacy = v2Document();
+    legacy.plans[0].courses[0].topics = [
+      { name: "Same", section: "One" },
+      { name: "Same", section: "Two" },
+      { name: "Consumer", dependencies: ["Same"] },
+    ];
+    legacy.studyLog = [];
+
+    expect(() => parsePlannerJson(JSON.stringify(legacy))).toThrow(ImportError);
+    expect(() => parsePlannerJson(JSON.stringify(legacy))).toThrow(
+      "dependency Same is ambiguous",
     );
   });
 
-  it("fills in every optional field with a default", () => {
-    const parsed = parsePlannerJson(
-      JSON.stringify({ version: EXPORT_VERSION, plans: [{ name: "Bare", courses: [] }] }),
+  it("rejects ambiguous v2 study-log paths across duplicate plans or courses", () => {
+    const legacy = v2Document();
+    legacy.plans.push(JSON.parse(JSON.stringify(legacy.plans[0])) as (typeof legacy.plans)[number]);
+
+    expect(() => parsePlannerJson(JSON.stringify(legacy))).toThrow(
+      "study log path Course / Foundations is ambiguous",
     );
-    expect(parsed.plans[0]).toMatchObject({ notes: "", courses: [] });
-    expect(parsed.studyLog).toEqual([]);
   });
 
-  it("rejects invalid JSON with a readable message", () => {
-    expect(() => parsePlannerJson("{not json")).toThrow(ImportError);
-    expect(() => parsePlannerJson("{not json")).toThrow("That file is not valid JSON.");
+  it("rejects missing v2 dependencies and study-log paths", () => {
+    const missingDependency = v2Document();
+    missingDependency.plans[0].courses[0].topics[1].dependencies = ["Nowhere"];
+    expect(() => parsePlannerJson(JSON.stringify(missingDependency))).toThrow(
+      "dependency Nowhere does not name a topic",
+    );
+
+    const missingLog = v2Document();
+    missingLog.studyLog[0].topicName = "Nowhere";
+    expect(() => parsePlannerJson(JSON.stringify(missingLog))).toThrow(
+      "study log path Course / Nowhere is missing",
+    );
   });
 
-  it("rejects a version this build cannot read", () => {
-    // Version 1 held no unit counts, so anything rebuilt from it would have to
-    // invent topic sizes.
+  it("rejects control-character legacy names instead of constructing path keys", () => {
+    const legacy = v2Document();
+    legacy.plans[0].courses[0].name = "Course\0Topic";
+    expect(() => parsePlannerJson(JSON.stringify(legacy))).toThrow("control characters");
+  });
+
+  it("does not support v1 or unknown versions", () => {
     expect(() => parsePlannerJson(JSON.stringify({ version: 1, plans: [] }))).toThrow(
       "Unsupported export version 1",
     );
+    expect(() => parsePlannerJson(JSON.stringify({ version: 4, plans: [] }))).toThrow(
+      "Unsupported export version 4",
+    );
   });
 
-  it("points at the offending field when the shape is wrong", () => {
-    const contents = JSON.stringify({
-      version: EXPORT_VERSION,
-      plans: [{ name: "Semester", courses: [{ name: "" }] }],
+  it("rejects duplicate, missing, cross-course, and unsafe topic keys", () => {
+    const duplicate = cloneDocument();
+    duplicate.plans[0].courses[0].topics[1].key = "foundations";
+    expect(() => parsePlannerJson(JSON.stringify(duplicate))).toThrow("duplicated");
+
+    const missing = cloneDocument();
+    missing.plans[0].courses[0].topics[1].dependencies = ["missing"];
+    expect(() => parsePlannerJson(JSON.stringify(missing))).toThrow("missing topic key missing");
+
+    const crossCourse = cloneDocument();
+    crossCourse.plans[0].courses.push({
+      name: "Other course",
+      color: "rose",
+      notes: "",
+      exams: [],
+      topics: [transferredTopic("other")],
     });
-    expect(() => parsePlannerJson(contents)).toThrow(/plans\.0\.courses\.0\.name/);
-  });
-});
+    crossCourse.plans[0].courses[0].topics[1].dependencies = ["other"];
+    expect(() => parsePlannerJson(JSON.stringify(crossCourse))).toThrow(
+      "dependency outside its course",
+    );
 
-describe("toPlans", () => {
-  it("restores dependencies from names, scoped to the course", () => {
-    const document = serializePlans(fixture());
-    const { plans } = toPlans(document, sequentialIdFactory());
-    const [glycolysis, krebs] = plans[0].courses[0].topics;
+    const unsafe = cloneDocument();
+    unsafe.plans[0].courses[0].topics[0].key = "unsafe.key";
+    expect(() => parsePlannerJson(JSON.stringify(unsafe))).toThrow("letters, numbers");
 
-    expect(krebs.dependencyIds).toEqual([glycolysis.id]);
-    expect(glycolysis.dependencyIds).toEqual([]);
-  });
-
-  it("drops a dependency naming a topic that is not in the file", () => {
-    const document = serializePlans(fixture());
-    document.plans[0].courses[0].topics[1].dependencies = ["Nowhere"];
-    const { plans } = toPlans(document, sequentialIdFactory());
-    expect(plans[0].courses[0].topics[1].dependencyIds).toEqual([]);
+    const unsafeName = cloneDocument();
+    unsafeName.plans[0].courses[0].topics[0].name = "Unsafe\0name";
+    expect(() => parsePlannerJson(JSON.stringify(unsafeName))).toThrow("control characters");
   });
 
-  it("never lets a topic depend on itself", () => {
-    const document = serializePlans(fixture());
-    document.plans[0].courses[0].topics[0].dependencies = ["Glycolysis"];
-    const { plans } = toPlans(document, sequentialIdFactory());
-    expect(plans[0].courses[0].topics[0].dependencyIds).toEqual([]);
+  it("rejects dependency cycles and dangling study-log references", () => {
+    const cycle = cloneDocument();
+    cycle.plans[0].courses[0].topics[0].dependencies = ["advanced"];
+    expect(() => parsePlannerJson(JSON.stringify(cycle))).toThrow("dependency cycle");
+
+    const missingLog = cloneDocument();
+    missingLog.studyLog[0].topicKey = "missing";
+    expect(() => parsePlannerJson(JSON.stringify(missingLog))).toThrow(
+      "references missing topic key missing",
+    );
   });
 
-  it("assigns order from position in the file", () => {
-    const { plans } = toPlans(serializePlans(fixture()), sequentialIdFactory());
-    expect(plans[0].courses[0].topics.map((item) => item.order)).toEqual([0, 1]);
+  it("rejects impossible, malformed, and reversed dates", () => {
+    const impossible = cloneDocument();
+    impossible.studyLog[0].date = "2026-02-29";
+    expect(() => parsePlannerJson(JSON.stringify(impossible))).toThrow("real date");
+
+    const malformed = cloneDocument();
+    malformed.studyLog[0].date = "2026-2-09";
+    expect(() => parsePlannerJson(JSON.stringify(malformed))).toThrow("real date");
+
+    const reversed = cloneDocument();
+    reversed.plans[0].courses[0].topics[0].blocks[0].endDate = "2026-08-31";
+    expect(() => parsePlannerJson(JSON.stringify(reversed))).toThrow(
+      "End date cannot be before the start date",
+    );
   });
 
-  it("round-trips everything except the ids", () => {
-    const original = fixture();
-    const { plans } = toPlans(serializePlans(original), sequentialIdFactory());
+  it("rejects non-finite and invalid progress numbers", () => {
+    const nonFiniteJson = JSON.stringify(v3Document()).replace('"units":5', '"units":1e999');
+    expect(() => parsePlannerJson(nonFiniteJson)).toThrow("finite number");
 
-    // Ids are reassigned on import by design, so they and every reference to
-    // them come out. That dependencies survive the trip is asserted above.
-    const ID_KEYS = new Set(["id", "planId", "courseId", "topicId", "dependencyIds"]);
-    const strip = (value: unknown) =>
-      JSON.parse(
-        JSON.stringify(value, (key, inner: unknown) => (ID_KEYS.has(key) ? undefined : inner)),
-      ) as unknown;
-
-    expect(strip(plans)).toEqual(strip(original.plans));
+    const invalidProgress = cloneDocument();
+    invalidProgress.plans[0].courses[0].topics[0].completedUnits = 101;
+    invalidProgress.plans[0].courses[0].topics[0].totalUnits = 100;
+    expect(() => parsePlannerJson(JSON.stringify(invalidProgress))).toThrow(
+      "Completed units cannot exceed the total",
+    );
   });
-});
 
-describe("exportFilename", () => {
-  it("names the file after the date", () => {
-    expect(exportFilename("2026-07-29")).toBe("study-planner-2026-07-29.json");
+  it("enforces field, array, and whole-file size limits", () => {
+    const longText = cloneDocument();
+    longText.plans[0].notes = "x".repeat(PLANNER_TRANSFER_LIMITS.notesCharacters + 1);
+    expect(() => parsePlannerJson(JSON.stringify(longText))).toThrow("Too big");
+
+    const longArray = cloneDocument();
+    longArray.studyLog = Array.from(
+      { length: PLANNER_TRANSFER_LIMITS.importEntities + 1 },
+      () => ({ topicKey: "foundations", date: "2026-08-20", units: 1 }),
+    );
+    expect(() => parsePlannerJson(JSON.stringify(longArray))).toThrow("Too big");
+
+    expect(() => parsePlannerJson(" ".repeat(MAX_PLANNER_IMPORT_BYTES + 1))).toThrow(
+      "5 MiB or smaller",
+    );
+  });
+
+  it("enforces aggregate entity, reference, and text budgets", () => {
+    const tooManyEntities = cloneDocument();
+    tooManyEntities.plans[0].courses[0].exams = [];
+    tooManyEntities.plans[0].courses[0].topics = Array.from(
+      { length: PLANNER_TRANSFER_LIMITS.importEntities },
+      (_, index) => transferredTopic(`entity_${index}`),
+    );
+    tooManyEntities.studyLog = [];
+    expect(() => parsePlannerJson(JSON.stringify(tooManyEntities))).toThrow("records");
+
+    const tooManyReferences = cloneDocument();
+    const foundations = Array.from({ length: 500 }, (_, index) =>
+      transferredTopic(`base_${index}`),
+    );
+    const dependents = Array.from({ length: 11 }, (_, index) =>
+      transferredTopic(`dependent_${index}`, {
+        dependencies: foundations.map((item) => item.key),
+      }),
+    );
+    tooManyReferences.plans[0].courses[0].exams = [];
+    tooManyReferences.plans[0].courses[0].topics = [...foundations, ...dependents];
+    tooManyReferences.studyLog = [];
+    expect(() => parsePlannerJson(JSON.stringify(tooManyReferences))).toThrow("references");
+
+    const tooMuchText = cloneDocument();
+    tooMuchText.plans = Array.from(
+      { length: PLANNER_TRANSFER_LIMITS.importPlans },
+      (_, index) => ({
+        name: `Plan ${index}`,
+        notes: "x".repeat(PLANNER_TRANSFER_LIMITS.notesCharacters),
+        courses: [],
+      }),
+    );
+    tooMuchText.studyLog = [];
+    expect(() => parsePlannerJson(JSON.stringify(tooMuchText))).toThrow(
+      "Import text cannot exceed",
+    );
+  });
+
+  it("reports invalid JSON and the first invalid field readably", () => {
+    expect(() => parsePlannerJson("{not json")).toThrow(ImportError);
+    expect(() => parsePlannerJson("{not json")).toThrow("That file is not valid JSON.");
+
+    const invalid = cloneDocument();
+    invalid.plans[0].courses[0].name = "";
+    expect(() => parsePlannerJson(JSON.stringify(invalid))).toThrow(
+      /plans\.0\.courses\.0\.name/,
+    );
   });
 });

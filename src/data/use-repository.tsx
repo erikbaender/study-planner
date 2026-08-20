@@ -5,11 +5,10 @@
  *
  * `StudyPlannerApp` used to hold two parallel sets of mutations and choose
  * between them at every call site. It now reads one repository out of context
- * and calls it; which implementation is behind the interface is decided once,
- * here, from the auth state.
+ * and calls it. The hosting provider decides which implementation is behind
+ * the interface, while this module stays independent of any sync vendor.
  */
 
-import { useConvex, useConvexAuth } from "convex/react";
 import {
   createContext,
   useCallback,
@@ -20,11 +19,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { createConvexRepository } from "./convex-repository";
 import { createLocalRepository } from "./local-repository";
 import type { PlannerRepository, RepositoryState } from "./repository";
 
-type ContextValue = {
+type RepositoryActions = {
   repository: PlannerRepository;
   /**
    * Fire-and-forget for a mutation, capturing the failure centrally.
@@ -35,43 +33,82 @@ type ContextValue = {
    * how the old code lost validation errors.
    */
   run: (action: Promise<unknown>) => void;
+};
+
+type RepositoryErrorState = {
   mutationError: Error | null;
   clearError: () => void;
 };
 
-const RepositoryContext = createContext<ContextValue | null>(null);
+const RepositoryContext = createContext<RepositoryActions | null>(null);
+const RepositoryStateContext = createContext<RepositoryState | null>(null);
+const RepositoryErrorContext = createContext<RepositoryErrorState | null>(null);
 
-export function RepositoryProvider({ children }: { children: ReactNode }) {
-  const convex = useConvex();
-  const { isAuthenticated } = useConvexAuth();
-  const [mutationError, setMutationError] = useState<Error | null>(null);
+const LOADING: RepositoryState = { status: "loading" };
 
-  const repository = useMemo(
-    () => (isAuthenticated ? createConvexRepository(convex) : createLocalRepository()),
-    [convex, isAuthenticated],
-  );
-
-  const run = useCallback((action: Promise<unknown>) => {
-    setMutationError(null);
-    void action.catch((cause: unknown) =>
-      setMutationError(cause instanceof Error ? cause : new Error(String(cause))),
-    );
-  }, []);
-
-  const clearError = useCallback(() => setMutationError(null), []);
-
-  const value = useMemo(
-    () => ({ repository, run, mutationError, clearError }),
-    [repository, run, mutationError, clearError],
-  );
-
-  return <RepositoryContext.Provider value={value}>{children}</RepositoryContext.Provider>;
+/** Stable IndexedDB-backed repository for an app with no Convex host at all. */
+export function LocalRepositoryProvider({ children }: { children: ReactNode }) {
+  const repository = useMemo(() => createLocalRepository(), []);
+  return <RepositoryStoreProvider repository={repository}>{children}</RepositoryStoreProvider>;
 }
 
-function usePlannerContext(): ContextValue {
+/**
+ * Owns the one subscription to a repository and distributes its latest state.
+ * Kept separate from auth selection so the lifecycle can be tested with a
+ * deterministic repository and reused by other hosts.
+ */
+export function RepositoryStoreProvider({
+  repository,
+  suspended = false,
+  children,
+}: {
+  repository: PlannerRepository;
+  suspended?: boolean;
+  children: ReactNode;
+}) {
+  const [failure, setFailure] = useState<{
+    repository: PlannerRepository;
+    error: Error;
+  } | null>(null);
+  const repositoryState = useRepositoryState(repository);
+  const mutationError = failure?.repository === repository ? failure.error : null;
+
+  const run = useCallback(
+    (action: Promise<unknown>) => {
+      setFailure(null);
+      void action.catch((cause: unknown) =>
+        setFailure({
+          repository,
+          error: cause instanceof Error ? cause : new Error(String(cause)),
+        }),
+      );
+    },
+    [repository],
+  );
+
+  const clearError = useCallback(() => setFailure(null), []);
+
+  const actions = useMemo(() => ({ repository, run }), [repository, run]);
+  const errors = useMemo(
+    () => ({ mutationError, clearError }),
+    [mutationError, clearError],
+  );
+
+  return (
+    <RepositoryContext.Provider value={actions}>
+      <RepositoryErrorContext.Provider value={errors}>
+        <RepositoryStateContext.Provider value={suspended ? LOADING : repositoryState}>
+          {children}
+        </RepositoryStateContext.Provider>
+      </RepositoryErrorContext.Provider>
+    </RepositoryContext.Provider>
+  );
+}
+
+function usePlannerContext(): RepositoryActions {
   const value = useContext(RepositoryContext);
   if (!value) {
-    throw new Error("Planner hooks must be used inside a <RepositoryProvider>");
+    throw new Error("Planner hooks must be used inside a repository provider");
   }
   return value;
 }
@@ -92,17 +129,14 @@ export function usePlannerRun(): (action: Promise<unknown>) => void {
   return usePlannerContext().run;
 }
 
-const LOADING: RepositoryState = { status: "loading" };
-
 /**
- * Subscribes to the repository.
+ * Subscribes to a repository once for the provider above it.
  *
  * `useSyncExternalStore` compares snapshots by reference and re-renders in a
  * loop if `getSnapshot` returns a fresh object, so the latest state is cached
  * in a ref and handed back unchanged until the repository pushes a new one.
  */
-export function usePlannerState(): RepositoryState {
-  const repository = useRepository();
+function useRepositoryState(repository: PlannerRepository): RepositoryState {
   const cache = useRef<{ repository: PlannerRepository; state: RepositoryState } | null>(null);
 
   const subscribe = useMemo(
@@ -122,19 +156,32 @@ export function usePlannerState(): RepositoryState {
   return useSyncExternalStore(subscribe, getSnapshot, () => LOADING);
 }
 
+/** Reads the provider-owned snapshot without creating another subscription. */
+export function usePlannerState(): RepositoryState {
+  const state = useContext(RepositoryStateContext);
+  if (!state) {
+    throw new Error("Planner hooks must be used inside a repository provider");
+  }
+  return state;
+}
+
 /**
  * The failure to show, if any: a mutation rejection, or the repository itself
  * being unreachable. Derived rather than mirrored into state, so there is no
  * render in which the two disagree.
  */
 export function usePlannerErrors() {
-  const { run, mutationError, clearError } = usePlannerContext();
+  const { run } = usePlannerContext();
+  const errors = useContext(RepositoryErrorContext);
+  if (!errors) {
+    throw new Error("Planner hooks must be used inside a repository provider");
+  }
   const state = usePlannerState();
 
   return {
     run,
-    error: mutationError ?? (state.status === "error" ? state.error : null),
+    error: errors.mutationError ?? (state.status === "error" ? state.error : null),
     /** No-op for a repository-level error: that one is not dismissible. */
-    clear: clearError,
+    clear: errors.clearError,
   };
 }
