@@ -32,14 +32,14 @@
     "@auth/core": "^0.41.3",
     "@convex-dev/auth": "^0.0.95",
     "clsx": "^2.1.1",
-    "convex": "^1.44.0",
-    "lucide-react": "^1.14.0",
-    "next": "16.3.1",
+    "convex": "^1.45.0",
+    "lucide-react": "^1.35.0",
+    "next": "16.3.3",
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "zod": "^4.4.1",
-    "zustand": "^5.0.14"
+    "zod": "^4.4.3",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
