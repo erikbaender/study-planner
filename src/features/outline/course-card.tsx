@@ -98,7 +98,7 @@ export function CourseCard({
   const run = usePlannerRun();
   const [adding, setAdding] = useState<"topic" | "exam" | null>(null);
   const [confirmingCompletion, setConfirmingCompletion] = useState(false);
-  const collapsed = useWorkspace((state) => state.collapsedCourseIds.includes(course.id));
+  const collapsed = useWorkspace((state) => !state.expandedCourseIds.includes(course.id));
   const progress = courseProgress(course);
   const tint = courseColorValue(course.color);
   // Memoized because `TopicList` animates arrivals and departures, and that

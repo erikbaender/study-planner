@@ -90,18 +90,8 @@ export type WorkspaceState = {
    */
   hiddenCourseIds: EntityId[];
   selection: Selection;
-  /**
-   * Courses the outline has been told to close.
-   *
-   * Stored as the *exception* rather than as the set of open ones, because the
-   * outline is where the material lives and a course that shows nothing until
-   * you ask is a filing cabinet. Kept here rather than in the view so that
-   * switching to the timeline and back does not silently reopen everything, and
-   * — the reason it moved out of the component at all — so that expansion
-   * cannot be derived from the selection: it used to be, and opening one course
-   * by hand then selecting another reversed it.
-   */
-  collapsedCourseIds: EntityId[];
+  /** Courses the outline has been told to open. New courses start folded. */
+  expandedCourseIds: EntityId[];
   /**
    * The outline's course order. View state rather than a preference: it lives
    * here so switching to the timeline and back does not silently reset it, the
@@ -169,7 +159,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   focus: { kind: "all" },
   hiddenCourseIds: [],
   selection: null,
-  collapsedCourseIds: [],
+  expandedCourseIds: [],
   courseSort: "name",
   revealBlockId: null,
   revealCourseId: null,
@@ -186,7 +176,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
       planId,
       focus: { kind: "all" },
       hiddenCourseIds: [],
-      collapsedCourseIds: [],
+      expandedCourseIds: [],
       selection: null,
       revealCourseId: null,
     }),
@@ -228,18 +218,18 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
   select: (selection) => set({ selection }),
   toggleCourseCollapsed: (courseId) =>
     set((state) => ({
-      collapsedCourseIds: state.collapsedCourseIds.includes(courseId)
-        ? state.collapsedCourseIds.filter((id) => id !== courseId)
-        : [...state.collapsedCourseIds, courseId],
+      expandedCourseIds: state.expandedCourseIds.includes(courseId)
+        ? state.expandedCourseIds.filter((id) => id !== courseId)
+        : [...state.expandedCourseIds, courseId],
     })),
   foldCourses: (courseIds) =>
-    set((state) => ({
-      collapsedCourseIds: [...new Set([...state.collapsedCourseIds, ...courseIds])],
-    })),
+    set((state) => {
+      const folded = new Set(courseIds);
+      return { expandedCourseIds: state.expandedCourseIds.filter((id) => !folded.has(id)) };
+    }),
   unfoldCourses: (courseIds) => {
-    const opened = new Set(courseIds);
     set((state) => ({
-      collapsedCourseIds: state.collapsedCourseIds.filter((id) => !opened.has(id)),
+      expandedCourseIds: [...new Set([...state.expandedCourseIds, ...courseIds])],
     }));
   },
   setCourseSort: (courseSort) => set({ courseSort }),
@@ -251,7 +241,7 @@ export const useWorkspace = create<WorkspaceState>((set) => ({
         : {
             view: "outline",
             revealCourseId,
-            collapsedCourseIds: state.collapsedCourseIds.filter((id) => id !== revealCourseId),
+            expandedCourseIds: [...new Set([...state.expandedCourseIds, revealCourseId])],
           },
     ),
   setRenameRequest: (renameRequestId) => set({ renameRequestId }),
