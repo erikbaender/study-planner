@@ -79,6 +79,7 @@ type ChartPositionOptions = {
   query: string;
   gutter: number;
   viewport: ViewportStore;
+  onInitialReady?: () => void;
 };
 
 export function useChartPosition({
@@ -87,6 +88,7 @@ export function useChartPosition({
   query,
   gutter,
   viewport,
+  onInitialReady,
 }: ChartPositionOptions): ChartPosition {
   const [zoom, setZoom] = useState<Zoom>("week");
   const zoomRef = useRef<Zoom>("week");
@@ -121,8 +123,14 @@ export function useChartPosition({
   const userNavigatedRef = useRef(false);
   /** Keep the first layout correction invisible until its final position is ready. */
   const initializingRef = useRef(true);
+  /** Whether the initial Today position has landed for the current range. */
+  const primedRef = useRef(false);
   /** React may restore the declarative initial attribute on the next commit. */
   const clearInitialRevealRef = useRef(false);
+  const onInitialReadyRef = useRef(onInitialReady);
+  useLayoutEffect(() => {
+    onInitialReadyRef.current = onInitialReady;
+  }, [onInitialReady]);
 
   const revealInitialChart = useCallback(() => {
     if (!initializingRef.current) return;
@@ -132,6 +140,7 @@ export function useChartPosition({
     // directly avoids reconciling the entire timeline on the first pointer
     // press while the initial chart is fading in.
     canvasRef.current?.removeAttribute("data-timeline-zooming");
+    onInitialReadyRef.current?.();
   }, []);
 
   // The canvas declares its initial hidden state so it is present on the first
@@ -212,10 +221,12 @@ export function useChartPosition({
     [gutter, range.start, today, zoom],
   );
 
-  const trackVisibleNowRef = useRef<(scrollLeft?: number) => void>(() => {});
+  const trackVisibleNowRef = useRef<
+    (scrollLeft?: number, allowInitialExtension?: boolean) => void
+  >(() => {});
   const visibleFrameRef = useRef<ReturnType<typeof createRafCoalescer<number>> | null>(null);
 
-  const trackVisibleNow = useCallback((scrollLeft?: number) => {
+  const trackVisibleNow = useCallback((scrollLeft?: number, allowInitialExtension = false) => {
     const element = scrollRef.current;
     if (!element) return;
     // Nothing while an animation owns the offset. Recomputing every lane's
@@ -223,7 +234,8 @@ export function useChartPosition({
     // expensive, and the answer is stale for 240ms rather than wrong: the
     // animation runs this once more when it lands.
     if (isScrollAnimating(element)) return;
-    const currentScrollLeft = scrollLeft ?? element.scrollLeft;
+    const liveScrollLeft = element.scrollLeft;
+    const currentScrollLeft = scrollLeft ?? liveScrollLeft;
     const from = dateAt(currentScrollLeft + gutter, range.start, zoom);
     const to = dateAt(currentScrollLeft + element.clientWidth, range.start, zoom);
     viewport.setSnapshot({ from, to });
@@ -242,15 +254,26 @@ export function useChartPosition({
     // laid out yet reports zero for both, which reads as "at both edges at
     // once"; a canvas with any width at all rules that out, and a real one
     // always has width — it is days times the width of a day.
-    if (element.scrollWidth > 0) {
+    // `scrollLeft` begins at zero while initial positioning is in progress.
+    // That temporary value is not navigation near the left edge. The initial
+    // Today prime opts in after writing its real offset, so needed padding is
+    // still added while the readiness gate keeps the view hidden.
+    if (
+      element.scrollWidth > 0 &&
+      (allowInitialExtension || userNavigatedRef.current)
+    ) {
       const chunkDays = Math.ceil(EXTEND_CHUNK_PX / PX_PER_DAY[zoom]);
-      if (currentScrollLeft < EXTEND_TRIGGER_PX && !extendingBeforeRef.current) {
+      // A coalesced scroll value is useful for publishing the viewport that
+      // produced the event, but it may predate an initial range correction.
+      // Edge growth must always use the live offset or that stale zero/near-
+      // zero value can enqueue another extension after settling has begun.
+      if (liveScrollLeft < EXTEND_TRIGGER_PX && !extendingBeforeRef.current) {
         extendingBeforeRef.current = true;
         pendingShiftRef.current += chunkDays * PX_PER_DAY[zoom];
         setExtraBefore((days) => days + chunkDays);
       }
       if (
-        element.scrollWidth - (currentScrollLeft + element.clientWidth) < EXTEND_TRIGGER_PX &&
+        element.scrollWidth - (liveScrollLeft + element.clientWidth) < EXTEND_TRIGGER_PX &&
         !extendingAfterRef.current
       ) {
         extendingAfterRef.current = true;
@@ -274,11 +297,11 @@ export function useChartPosition({
     };
   }, []);
 
-  const trackVisible = useCallback(() => {
+  const trackVisible = useCallback((allowInitialExtension = false) => {
     // Immediate callers own a meaningful moment in the interaction; discard a
     // queued scroll pass so it cannot publish an older viewport afterwards.
     visibleFrameRef.current?.cancel();
-    trackVisibleNow();
+    trackVisibleNow(undefined, allowInitialExtension);
   }, [trackVisibleNow]);
 
   const scheduleTrackVisible = useCallback(() => {
@@ -318,7 +341,7 @@ export function useChartPosition({
       } else {
         stopScrollAnimation(element);
         element.scrollLeft = target;
-        trackVisible();
+        trackVisible(true);
       }
     },
     [revealInitialChart, todayOffset, trackVisible],
@@ -359,7 +382,6 @@ export function useChartPosition({
    * So it waits for a plan and then runs exactly once. Re-running after that
    * would yank the canvas back to today while someone is reading elsewhere.
    */
-  const primedRef = useRef(false);
   /** The range used for the last initial-prime check, before live data settles. */
   const primedContentRangeRef = useRef<{ start: IsoDate; end: IsoDate } | null>(null);
   /** The rendered range for which the initial scroll target was calculated. */
@@ -443,52 +465,97 @@ export function useChartPosition({
 
   // Edge and Chromium-based browsers can restore a previous horizontal
   // scrollLeft after the first layout pass. Give that restoration two frames
-  // to finish, then make the initial Today position authoritative. Leave a few
-  // more frames for a range extension and its layout correction to commit
-  // before fading in; a fixed timeout can reveal the chart in between those two
-  // writes and make it jump immediately after the fade. This pass is
-  // intentionally skipped after the user has touched the chart.
+  // to finish, then make the initial Today position authoritative. Do not
+  // reveal after an arbitrary number of frames: mounting a large plan can make
+  // those frames very long while range growth and its scroll correction are
+  // still queued. Instead, wait until the actual canvas geometry and viewport
+  // have remained unchanged. This pass is intentionally skipped after the user
+  // has touched the chart.
   useEffect(() => {
-    if (courses.length === 0) return;
+    if (courses.length === 0 || !initializingRef.current) return;
+    let started = false;
     let secondFrame = 0;
-    let revealFrame = 0;
-    // Background/collaborative tabs can throttle animation frames. Keep a
-    // guarded fallback so the chart cannot remain hidden forever there; in a
-    // visible tab the settled frame sequence below reveals it first.
-    const revealTimeout = window.setTimeout(revealInitialChart, 700);
-    if (typeof requestAnimationFrame === "undefined") {
-      return () => window.clearTimeout(revealTimeout);
-    }
-    const firstFrame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => {
-        if (userNavigatedRef.current) return;
-        primedRef.current = false;
-        primeToday();
-        // `primeToday` can grow the range. Wait a few frames so that the
-        // resulting layout and scroll correction are committed before fading
-        // the chart into view.
-        let remaining = 4;
-        const waitForSettling = () => {
-          if (!initializingRef.current || userNavigatedRef.current) return;
-          if (remaining-- === 0) {
-            revealInitialChart();
-            return;
-          }
-          revealFrame = requestAnimationFrame(waitForSettling);
-        };
-        revealFrame = requestAnimationFrame(waitForSettling);
-      });
-    });
-    return () => {
-      cancelAnimationFrame(firstFrame);
-      cancelAnimationFrame(secondFrame);
-      cancelAnimationFrame(revealFrame);
-      window.clearTimeout(revealTimeout);
+    let settleFrame = 0;
+    let settleTimer = 0;
+    const scheduleSettlingPass = (pass: () => void) => {
+      // Collaborative/background previews may never receive an animation
+      // frame. Timers still let React commit and let us verify the same DOM
+      // stability rather than bypassing it.
+      if (typeof requestAnimationFrame === "function" && document.visibilityState === "visible") {
+        settleFrame = requestAnimationFrame(pass);
+      } else {
+        settleTimer = window.setTimeout(pass, 50);
+      }
     };
-    // This is the mount/data-load settling pass; zoom and range changes have
-    // their own positioning paths and must not reframe an active chart.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courses.length]);
+    const beginSettling = () => {
+      if (started || !initializingRef.current || userNavigatedRef.current) return;
+      started = true;
+      window.clearTimeout(startFallback);
+      primedRef.current = false;
+      primeToday();
+
+      let previous = "";
+      let stablePasses = 0;
+      const waitForSettling = () => {
+        if (!initializingRef.current || userNavigatedRef.current) return;
+        const element = scrollRef.current;
+        const canvas = canvasRef.current;
+        if (!element || !canvas || element.clientWidth === 0 || element.scrollWidth === 0) {
+          previous = "";
+          stablePasses = 0;
+          scheduleSettlingPass(waitForSettling);
+          return;
+        }
+        const signature = [
+          element.scrollWidth,
+          element.clientWidth,
+          element.scrollLeft.toFixed(2),
+          canvas.getBoundingClientRect().width.toFixed(2),
+          rangeRef.current.start,
+          rangeRef.current.end,
+        ].join(":");
+        if (
+          signature === previous &&
+          pendingShiftRef.current === 0 &&
+          !extendingBeforeRef.current &&
+          !extendingAfterRef.current
+        ) {
+          stablePasses += 1;
+        } else {
+          stablePasses = 0;
+        }
+        previous = signature;
+        if (stablePasses >= 3) {
+          revealInitialChart();
+          return;
+        }
+        scheduleSettlingPass(waitForSettling);
+      };
+      scheduleSettlingPass(waitForSettling);
+    };
+
+    // Timers are only an alternate route into the same stability check. They
+    // never reveal by themselves, so a long mount cannot expose queued work.
+    const startFallback = window.setTimeout(beginSettling, 100);
+    const firstFrame =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame(() => {
+            secondFrame = requestAnimationFrame(beginSettling);
+          })
+        : 0;
+    return () => {
+      if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(firstFrame);
+        cancelAnimationFrame(secondFrame);
+        cancelAnimationFrame(settleFrame);
+      }
+      window.clearTimeout(startFallback);
+      window.clearTimeout(settleTimer);
+    };
+    // During initialization, a range extension restarts this check with the
+    // newly committed geometry and the latest Today target. Once revealed,
+    // the ref guard keeps later zoom/range work out of this mount-only path.
+  }, [courses.length, primeToday, range.end, range.start, revealInitialChart]);
 
   // And the canvas keeps growing without being scrolled. Extension used to be
   // driven only by `onScroll`, which cannot start: a canvas that is not yet

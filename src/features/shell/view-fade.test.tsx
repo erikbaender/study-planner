@@ -39,4 +39,19 @@ describe("ViewFade", () => {
 
     expect(fade).toHaveAttribute("data-view-fade", "in");
   });
+
+  it("does not let the background fallback overrule an unfinished hold", () => {
+    vi.useFakeTimers();
+    const { container, getByRole } = render(
+      <ViewFade view="timeline" render={() => <HoldingView />} />,
+    );
+    const fade = container.firstElementChild!;
+
+    act(() => vi.advanceTimersByTime(700));
+    expect(fade).toHaveAttribute("data-view-fade", "out");
+
+    fireEvent.click(getByRole("button", { name: "Release" }));
+    expect(fade).toHaveAttribute("data-view-fade", "in");
+    vi.useRealTimers();
+  });
 });
