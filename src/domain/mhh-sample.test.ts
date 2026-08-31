@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { addDays } from "./dates";
 import { assessCourse, studyStreak } from "./metrics";
 import { generateMhhSampleData, generateMhhShowcaseData } from "./mhh-sample";
 import { generateSampleDataset, SAMPLE_DATASETS } from "./sample-datasets";
@@ -8,7 +9,7 @@ const TODAY = "2026-08-02";
 
 describe("generateMhhSampleData", () => {
   it("captures the importable GitHub Project data", () => {
-    const data = generateMhhSampleData();
+    const data = generateMhhSampleData(TODAY);
     const topics = data.plan.courses.flatMap((course) => course.topics);
     const blocks = topics.flatMap((topic) => topic.blocks);
 
@@ -20,7 +21,7 @@ describe("generateMhhSampleData", () => {
   });
 
   it("stores palette references throughout the sample", () => {
-    const data = generateMhhSampleData();
+    const data = generateMhhSampleData(TODAY);
     const references = data.plan.courses.flatMap((course) => [
       course.color,
       ...course.topics.map((topic) => topic.color),
@@ -28,24 +29,24 @@ describe("generateMhhSampleData", () => {
     expect(references.every(isCourseColorId)).toBe(true);
   });
 
-  it("preserves source names, statuses, dates and milestone deadlines", () => {
-    const data = generateMhhSampleData();
+  it("preserves source names, statuses and relative milestone deadlines", () => {
+    const data = generateMhhSampleData(TODAY);
     const biochemie = data.plan.courses.find((course) => course.name === "Biochemie")!;
     const einfuehrung = biochemie.topics.find((topic) => topic.name === "Einführung")!;
     const wiederholung = biochemie.topics.find((topic) => topic.name === "Wiederholung")!;
 
-    expect(biochemie.exams[0].startDate).toBe("2026-07-16");
+    expect(biochemie.exams[0].startDate).toBe("2026-10-18");
     expect(einfuehrung).toMatchObject({ status: "done", completedUnits: 1 });
     expect(einfuehrung.blocks[0]).toMatchObject({
-      startDate: "2026-03-16",
-      endDate: "2026-03-22",
+      startDate: "2026-06-18",
+      endDate: "2026-06-24",
       source: "manual",
     });
     expect(wiederholung).toMatchObject({ status: "planned", completedUnits: 0 });
   });
 
   it("gives every captured entity a unique id", () => {
-    const data = generateMhhSampleData();
+    const data = generateMhhSampleData(TODAY);
     const ids = [
       data.plan.id,
       ...data.plan.courses.flatMap((course) => [
@@ -57,11 +58,32 @@ describe("generateMhhSampleData", () => {
 
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it("rebases the whole schedule whenever it is loaded", () => {
+    const laterToday = "2026-08-12";
+    const initial = generateMhhSampleData(TODAY);
+    const later = generateMhhSampleData(laterToday);
+    const initialDates = initial.plan.courses.flatMap((course) => [
+      ...course.exams.map((exam) => exam.startDate),
+      ...course.topics.flatMap((topic) =>
+        topic.blocks.flatMap((block) => [block.startDate, block.endDate]),
+      ),
+    ]);
+    const laterDates = later.plan.courses.flatMap((course) => [
+      ...course.exams.map((exam) => exam.startDate),
+      ...course.topics.flatMap((topic) =>
+        topic.blocks.flatMap((block) => [block.startDate, block.endDate]),
+      ),
+    ]);
+
+    expect(laterDates).toEqual(initialDates.map((date) => addDays(date, 10)));
+    expect(later.plan.courses.every((course) => course.exams[0].startDate > laterToday)).toBe(true);
+  });
 });
 
 describe("generateMhhShowcaseData", () => {
   it("keeps the real course and topic outline", () => {
-    const source = generateMhhSampleData();
+    const source = generateMhhSampleData(TODAY);
     const showcase = generateMhhShowcaseData(TODAY);
 
     expect(showcase.plan.courses.map((course) => course.name)).toEqual(
@@ -92,6 +114,23 @@ describe("generateMhhShowcaseData", () => {
     expect(topics.some((topic) => topic.blocks.length === 0 && topic.status === "planned")).toBe(
       true,
     );
+
+    const overdue = topics.filter(
+      (topic) =>
+        topic.completedUnits < topic.totalUnits &&
+        topic.blocks.some((block) => block.endDate < TODAY),
+    );
+    expect(overdue).toHaveLength(2);
+    expect(new Set(overdue.map((topic) => topic.status))).toEqual(new Set(["active", "planned"]));
+    expect(new Set(overdue.flatMap((topic) => topic.blocks.map((block) => block.source)))).toEqual(
+      new Set(["manual", "auto"]),
+    );
+    expect(
+      topics.some(
+        (topic) =>
+          topic.status === "done" && topic.blocks.some((block) => block.endDate < TODAY),
+      ),
+    ).toBe(true);
   });
 
   it("creates a believable current scenario with most courses on track", () => {
@@ -130,13 +169,11 @@ describe("generateMhhShowcaseData", () => {
 });
 
 describe("sample dataset registry", () => {
-  it("keeps both existing fixtures and offers the showcase beside them", () => {
+  it("offers the real MHH fixture and its feature showcase", () => {
     expect(SAMPLE_DATASETS.map((dataset) => dataset.id)).toEqual([
-      "generated",
       "mhh-lernplan",
       "mhh-showcase",
     ]);
-    expect(generateSampleDataset("generated", "2026-07-29").plan.courses).toHaveLength(10);
     expect(generateSampleDataset("mhh-lernplan", "2026-07-29").plan.courses).toHaveLength(7);
     expect(generateSampleDataset("mhh-showcase", "2026-07-29").plan.courses).toHaveLength(7);
   });

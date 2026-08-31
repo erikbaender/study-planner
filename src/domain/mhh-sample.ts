@@ -10,7 +10,7 @@
  * local mode and without granting the browser access to a private repository.
  */
 
-import { addDays, weekdayOf } from "./dates";
+import { addDays, differenceInDays, weekdayOf } from "./dates";
 import { coursePalette } from "./palette";
 import type { SeedData } from "./seed";
 import type {
@@ -170,7 +170,18 @@ const COURSES: readonly CourseBlueprint[] = [
   },
 ];
 
-export function generateMhhSampleData(): SeedData {
+/**
+ * The date when the source project was captured. Rebasing every captured date
+ * around `today` keeps the original spacing and progress context while making
+ * the nearest exam 26 days away whenever the sample is loaded.
+ */
+const SOURCE_SNAPSHOT_DATE: IsoDate = "2026-04-30";
+
+function rebaseSourceDate(date: IsoDate, today: IsoDate): IsoDate {
+  return addDays(today, differenceInDays(SOURCE_SNAPSHOT_DATE, date));
+}
+
+export function generateMhhSampleData(today: IsoDate): SeedData {
   const planId = "plan_sample_mhh";
   const courses: Course[] = COURSES.map((blueprint, courseIndex) => {
     const courseId = `course_sample_mhh_${courseIndex}`;
@@ -189,14 +200,14 @@ export function generateMhhSampleData(): SeedData {
           courseId,
           name: blueprint.name,
           kind: "exam",
-          startDate: blueprint.examDate,
+          startDate: rebaseSourceDate(blueprint.examDate, today),
           status: "confirmed",
           notes: "Milestone due date from erikbaender/mhh.",
           order: 0,
         },
       ],
       topics: blueprint.topics.map((topic, topicIndex) =>
-        buildTopic(courseId, color, topic, topicIndex),
+        buildTopic(courseId, color, topic, topicIndex, today),
       ),
     };
   });
@@ -273,6 +284,7 @@ export function generateMhhShowcaseData(today: IsoDate): SeedData {
         notes: `Demo workload based on https://github.com/erikbaender/mhh/issues/${issueNumber}`,
         order: topicIndex,
         blocks: showcaseBlocks({
+          courseIndex,
           topicId,
           topicIndex,
           completionPoint,
@@ -360,6 +372,7 @@ function showcaseSize(unit: Unit, issueNumber: number): number {
 }
 
 function showcaseBlocks(options: {
+  courseIndex: number;
   topicId: string;
   topicIndex: number;
   completionPoint: number;
@@ -369,8 +382,17 @@ function showcaseBlocks(options: {
   today: IsoDate;
   examDate: IsoDate;
 }): Topic["blocks"] {
-  const { topicId, topicIndex, completionPoint, status, totalUnits, completedUnits, today, examDate } =
-    options;
+  const {
+    courseIndex,
+    topicId,
+    topicIndex,
+    completionPoint,
+    status,
+    totalUnits,
+    completedUnits,
+    today,
+    examDate,
+  } = options;
 
   if (status === "done") {
     if (topicIndex % 2 !== 0) return [];
@@ -383,6 +405,25 @@ function showcaseBlocks(options: {
         endDate,
         plannedUnits: totalUnits,
         source: "manual",
+      },
+    ];
+  }
+
+  // Keep two different missed-work cases in the showcase: an untouched
+  // planned topic and a partially completed active topic. Historical blocks
+  // for completed topics remain in the past without being overdue.
+  const overdue =
+    (courseIndex === 0 && status === "planned" && topicIndex === Math.ceil(completionPoint)) ||
+    (courseIndex === 1 && status === "active");
+  if (overdue) {
+    return [
+      {
+        id: `block_${topicId}`,
+        topicId,
+        startDate: addDays(today, -5),
+        endDate: addDays(today, -2),
+        plannedUnits: Math.max(1, totalUnits - completedUnits),
+        source: status === "active" ? "manual" : "auto",
       },
     ];
   }
@@ -460,6 +501,7 @@ function buildTopic(
   color: string,
   [issueNumber, name, completed, startDate, endDate]: TopicBlueprint,
   order: number,
+  today: IsoDate,
 ): Topic {
   const topicId = `topic_sample_mhh_${issueNumber}`;
 
@@ -482,8 +524,8 @@ function buildTopic(
             {
               id: `block_sample_mhh_${issueNumber}`,
               topicId,
-              startDate,
-              endDate,
+              startDate: rebaseSourceDate(startDate, today),
+              endDate: rebaseSourceDate(endDate, today),
               source: "manual",
             },
           ]
