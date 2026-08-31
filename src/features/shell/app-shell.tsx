@@ -391,9 +391,6 @@ export function AppShell() {
           ) : (
             <ViewFade
               view={workspace.view}
-              // The chart runs its own reveal, and it is better at it than a
-              // fade that cannot see what the chart is still doing.
-              instant={["timeline"]}
               render={(view) =>
                 view === "today" ? (
                   <TodayView
