@@ -108,14 +108,11 @@ export function AppShell() {
   const contentId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   /**
-   * Both side panels start closed on a narrow window and open on a wide one.
-   * A 390px phone has room for exactly one column, and a sidebar that takes
-   * two-thirds of it is not a sidebar. CSS keeps both panels out of the compact
-   * layout entirely, including when a selection would open the inspector.
+   * The desktop sidebar starts open. Compact layouts hide both panels and the
+   * sidebar toggle entirely in CSS, so viewport-dependent state here would add
+   * no UI while making the server and hydration renders disagree.
    */
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => typeof window === "undefined" || window.innerWidth >= 1024,
-  );
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sampleDataOpen, setSampleDataOpen] = useState(false);
   const [editPlanOpen, setEditPlanOpen] = useState(false);
   const [deletePlanOpen, setDeletePlanOpen] = useState(false);
