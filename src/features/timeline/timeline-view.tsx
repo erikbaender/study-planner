@@ -80,6 +80,7 @@ import {
 } from "@/features/workspace/hints";
 import { useWorkspace } from "@/features/workspace/store";
 import { topicsForQuery } from "@/features/workspace/scope";
+import { useViewFadeHold } from "@/features/shell/view-fade";
 import {
   ExamMarkers,
   NoTimelineCourses,
@@ -173,6 +174,10 @@ function TimelineChart({
   const [menu, setMenu] = useState<{ x: number; y: number; items: readonly MenuItem[] } | null>(null);
   const repository = useRepository();
   const run = usePlannerRun();
+  // Keep the shell's incoming-view fade closed until the chart has finished
+  // its initial range growth and scroll corrections. Empty timelines have no
+  // positioning work and should use the shell's normal two-frame reveal.
+  const releaseViewFade = useViewFadeHold(courses.length > 0);
 
   // Independent of `everyTopic` below on purpose: that array is sorted for
   // display, this only needs to know which names are on screen.
@@ -216,7 +221,14 @@ function TimelineChart({
     handleScroll,
     changeZoom,
     reveal,
-  } = useChartPosition({ courses, today, query, gutter, viewport });
+  } = useChartPosition({
+    courses,
+    today,
+    query,
+    gutter,
+    viewport,
+    onInitialReady: releaseViewFade,
+  });
 
   // The shell recreates its tiny action closures when sidebar state changes.
   // Keep the latest one available without making the chart context — and every

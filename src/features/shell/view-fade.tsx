@@ -42,18 +42,18 @@ const noop = () => {};
  * before presentation has settled. The registration happens in a layout
  * effect so a hold is present before the first frame can open the gate.
  */
-export function useViewFadeHold(): () => void {
+export function useViewFadeHold(enabled = true): () => void {
   const gate = useContext(ViewFadeGateContext);
   const releaseRef = useRef<() => void>(noop);
   const release = useCallback(() => releaseRef.current(), []);
 
   useLayoutEffect(() => {
-    releaseRef.current = gate?.register() ?? noop;
+    releaseRef.current = enabled ? (gate?.register() ?? noop) : noop;
     return () => {
       releaseRef.current();
       releaseRef.current = noop;
     };
-  }, [gate]);
+  }, [enabled, gate]);
 
   return release;
 }
@@ -103,10 +103,10 @@ function ViewFadeGate({
     const firstFrame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(() => open());
     });
-    // Background tabs can throttle animation frames. This guarded fallback
-    // has the same purpose as the chart's timeout: do not stay hidden forever
-    // when a throttled tab never reaches the settled frame sequence.
-    const fallback = window.setTimeout(() => open(true), 700);
+    // Background tabs can throttle animation frames. The timeout may open an
+    // ordinary view, but it deliberately respects readiness holds: elapsed
+    // wall time must never overrule work the incoming view says is unfinished.
+    const fallback = window.setTimeout(() => open(), 700);
     return () => {
       cancelAnimationFrame(firstFrame);
       cancelAnimationFrame(secondFrame);
