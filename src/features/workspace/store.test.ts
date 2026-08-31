@@ -71,12 +71,12 @@ describe("the workspace store", () => {
   });
 
   it("opens a course and keeps its reveal request until the outline consumes it", () => {
-    useWorkspace.setState({ view: "today", collapsedCourseIds: ["course_1"] });
+    useWorkspace.setState({ view: "today", expandedCourseIds: [] });
 
     useWorkspace.getState().revealCourse("course_1");
     expect(useWorkspace.getState()).toMatchObject({
       view: "outline",
-      collapsedCourseIds: [],
+      expandedCourseIds: ["course_1"],
       revealCourseId: "course_1",
     });
 

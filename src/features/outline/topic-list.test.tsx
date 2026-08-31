@@ -32,7 +32,11 @@ const course = makeCourse({ name: "Biochemistry", topics });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useWorkspace.setState({ collapsedCourseIds: [], selection: null, courseSort: "name" });
+  useWorkspace.setState({
+    expandedCourseIds: ["course_1", "course_2"],
+    selection: null,
+    courseSort: "name",
+  });
 });
 
 function renderList({
@@ -266,6 +270,18 @@ describe("OutlineView course selection", () => {
     expect(label("Biochemistry")).not.toHaveAttribute("data-selection");
   });
 
+  it("folds courses by default", () => {
+    useWorkspace.setState({ expandedCourseIds: [] });
+
+    renderOutline();
+
+    expect(screen.getByRole("button", { name: "Expand Biochemistry" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Expand Anatomy" })).toBeInTheDocument();
+  });
+
   it("selects a course from its name without folding anything", async () => {
     const user = userEvent.setup();
     renderOutline();
@@ -320,7 +336,7 @@ describe("OutlineView course selection", () => {
   it("consumes a sidebar reveal only after its course card mounts", () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
-    useWorkspace.setState({ view: "today", collapsedCourseIds: ["course_2"] });
+    useWorkspace.setState({ view: "today", expandedCourseIds: [] });
     useWorkspace.getState().revealCourse("course_2");
 
     renderOutline();

@@ -141,7 +141,7 @@ export function OutlineView({
   const workspaceSelection = useWorkspace((state) => state.selection);
   const courseSort = useWorkspace((state) => state.courseSort);
   const setCourseSort = useWorkspace((state) => state.setCourseSort);
-  const collapsedCourseIds = useWorkspace((state) => state.collapsedCourseIds);
+  const expandedCourseIds = useWorkspace((state) => state.expandedCourseIds);
   const foldCourses = useWorkspace((state) => state.foldCourses);
   const unfoldCourses = useWorkspace((state) => state.unfoldCourses);
   const revealCourseId = useWorkspace((state) => state.revealCourseId);
@@ -161,8 +161,8 @@ export function OutlineView({
     () => EMPTY_COURSE_SELECTION,
   );
   const visibleCourseIds = useMemo(() => courses.map((course) => course.id), [courses]);
-  const everyCourseFolded = visibleCourseIds.every((id) => collapsedCourseIds.includes(id));
-  const everyCourseUnfolded = visibleCourseIds.every((id) => !collapsedCourseIds.includes(id));
+  const everyCourseFolded = visibleCourseIds.every((id) => !expandedCourseIds.includes(id));
+  const everyCourseUnfolded = visibleCourseIds.every((id) => expandedCourseIds.includes(id));
 
   // Sidebar navigation can request this before ViewFade mounts the outline.
   // Consume the request only once its card exists, so neither the unfold nor
