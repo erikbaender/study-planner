@@ -1,14 +1,14 @@
 import { defineConfig } from "vitest/config";
 
 /**
- * Two projects, because the suite has two genuinely different shapes.
+ * Three projects, because the suite has three genuinely different shapes.
  *
  * `domain` is pure — dates, metrics, parsing, and a repository running against
  * `memoryStorage()`. It has no business paying for a DOM, and keeping it in
  * node keeps the fast half of the suite fast.
  *
- * `ui` needs one. Its setup file supplies the browser APIs jsdom omits but
- * Radix's overlays require.
+ * `ui` and the React repository bridge need one. Their setup file supplies the
+ * browser APIs jsdom omits but Radix's overlays require.
  *
  * `features` is the same environment as `ui` but a different layer: primitives
  * versus the screens assembled from them. Kept apart so that "did I break a
@@ -25,7 +25,7 @@ export default defineConfig({
         test: {
           name: "domain",
           environment: "node",
-          include: ["src/{domain,data,lib}/**/*.test.ts"],
+          include: ["src/{domain,data,lib}/**/*.test.ts", "convex/**/*.test.ts"],
         },
       },
       {
@@ -33,7 +33,7 @@ export default defineConfig({
         test: {
           name: "ui",
           environment: "jsdom",
-          include: ["src/ui/**/*.test.tsx"],
+          include: ["src/ui/**/*.test.tsx", "src/data/**/*.test.tsx"],
           setupFiles: ["src/test/setup-dom.ts"],
         },
       },

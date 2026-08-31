@@ -119,7 +119,9 @@ export function CommandPalette({
             <input
               ref={inputRef}
               role="combobox"
-              aria-expanded="true"
+              aria-expanded={open}
+              aria-autocomplete="list"
+              aria-haspopup="listbox"
               aria-controls={listId}
               aria-activedescendant={activeCommand ? optionId(activeIndex) : undefined}
               aria-label="Search commands, courses and topics"
@@ -131,18 +133,17 @@ export function CommandPalette({
                 setActive(0);
               }}
               onKeyDown={(event) => {
+                // Arrow and Enter keys belong to the IME while text is being
+                // composed. Running a command here would submit a half-finished
+                // character instead of accepting it.
+                if (event.nativeEvent.isComposing) return;
+
                 if (event.key === "ArrowDown") {
                   event.preventDefault();
                   move(1);
                 } else if (event.key === "ArrowUp") {
                   event.preventDefault();
                   move(-1);
-                } else if (event.key === "Home") {
-                  event.preventDefault();
-                  setActive(0);
-                } else if (event.key === "End") {
-                  event.preventDefault();
-                  setActive(matches.length - 1);
                 } else if (event.key === "Enter") {
                   event.preventDefault();
                   run(activeCommand);
@@ -152,30 +153,27 @@ export function CommandPalette({
             />
           </div>
 
-          {matches.length === 0 ? (
-            <p className="px-3 py-6 text-center text-body text-secondary">
-              Nothing matches “{query.trim()}”.
-            </p>
-          ) : (
-            <ul
-              ref={listRef}
-              id={listId}
-              role="listbox"
-              aria-label="Results"
-              className="max-h-[min(24rem,50vh)] overflow-y-auto p-1.5"
-            >
-              {groups.map(([group, items]) => (
-                <li key={group}>
-                  {/* A group heading is not selectable, so it is not an option.
-                      Wrapping it in a nested list keeps the listbox's children
-                      options-only, which is what the pattern requires. */}
+          <ul
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            aria-label="Results"
+            className={clsx(
+              "max-h-[min(24rem,50vh)] overflow-y-auto",
+              matches.length > 0 && "p-1.5",
+            )}
+          >
+            {groups.map(([group, items], groupIndex) => {
+              const groupId = `${listId}-group-${groupIndex}`;
+              return (
+                <li key={group} role="group" aria-labelledby={groupId}>
                   <p
-                    aria-hidden="true"
+                    id={groupId}
                     className="px-2 pt-2 pb-1 text-caption font-semibold tracking-wide text-tertiary uppercase"
                   >
                     {group}
                   </p>
-                  <ul role="group" aria-label={group}>
+                  <ul role="presentation">
                     {items.map((command) => {
                       const index = matches.indexOf(command);
                       const isActive = index === activeIndex;
@@ -185,10 +183,15 @@ export function CommandPalette({
                           id={optionId(index)}
                           role="option"
                           aria-selected={isActive}
+                          aria-label={
+                            command.subtitle
+                              ? `${command.title}, ${command.subtitle}`
+                              : command.title
+                          }
                           // Selection follows the pointer, as it does in every
                           // macOS menu: the row under the cursor is the row
                           // Enter would run.
-                          onMouseMove={() => setActive(index)}
+                          onPointerMove={() => setActive(index)}
                           onClick={() => run(command)}
                           className={clsx(
                             "flex h-8 cursor-default items-center gap-2 rounded-control px-2 select-none",
@@ -211,9 +214,15 @@ export function CommandPalette({
                     })}
                   </ul>
                 </li>
-              ))}
-            </ul>
-          )}
+              );
+            })}
+          </ul>
+
+          {matches.length === 0 ? (
+            <p role="status" className="px-3 py-6 text-center text-body text-secondary">
+              Nothing matches “{query.trim()}”.
+            </p>
+          ) : null}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

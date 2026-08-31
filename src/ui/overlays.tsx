@@ -185,7 +185,15 @@ const MENU_ITEM = clsx(
 );
 
 export type MenuItem =
-  | { type?: "item"; label: string; onSelect: () => void; icon?: ReactNode; shortcut?: string; disabled?: boolean; danger?: boolean }
+  | {
+      type?: "item";
+      label: string;
+      onSelect: () => void;
+      icon: ReactNode;
+      shortcut?: string;
+      disabled?: boolean;
+      danger?: boolean;
+    }
   | { type: "checkbox"; label: string; checked: boolean; onSelect: () => void; disabled?: boolean }
   | { type: "separator" };
 
@@ -227,7 +235,7 @@ function renderItems(
         onSelect={item.onSelect}
         className={clsx(MENU_ITEM, item.danger && "text-negative data-highlighted:bg-negative")}
       >
-        {item.icon ? <span aria-hidden="true">{item.icon}</span> : null}
+        <span aria-hidden="true">{item.icon}</span>
         {item.label}
         {item.shortcut ? (
           <span className="ml-auto pl-4 text-callout opacity-60">{item.shortcut}</span>

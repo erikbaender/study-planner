@@ -1118,13 +1118,10 @@ span:has(> .topic-progress-thumb) {
   --spacing-control: 22px;
   --spacing-control-lg: 28px;
 
-  /**
-   * SF Pro cannot be licensed for the web, so the stack resolves to the real
-   * thing on Apple hardware and to Inter — which shares SF's proportions far
-   * more closely than any other webfont — everywhere else.
-   */
+  /** Prefer the native UI face. Keeping this stack local makes production
+   * builds reproducible and avoids contacting a third-party font service. */
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-inter), "Inter Variable",
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", Inter,
     system-ui, sans-serif;
   --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
 

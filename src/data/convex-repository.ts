@@ -27,7 +27,7 @@ import {
   type Topic,
   type Weekday,
 } from "@/domain/types";
-import type { PlannerExport } from "@/lib/import-export";
+import type { PlannerTransferDocument } from "@/lib/planner-transfer";
 import { resolveCourseColorId } from "@/domain/palette";
 import type {
   CourseInput,
@@ -50,6 +50,8 @@ import type {
  */
 type PlanTree = FunctionReturnType<typeof api.planner.listPlanTrees>[number];
 type PreferencesRow = FunctionReturnType<typeof api.planner.getPreferences>;
+type CourseTree = PlanTree["courses"][number];
+type TopicTree = CourseTree["topics"][number];
 
 function toStudyBlock(block: Doc<"studyBlocks">): StudyBlock {
   return {
@@ -62,7 +64,7 @@ function toStudyBlock(block: Doc<"studyBlocks">): StudyBlock {
   };
 }
 
-function toTopic(topic: PlanTree["courses"][number]["topics"][number]): Topic {
+function toTopic(topic: TopicTree, blocks: StudyBlock[]): Topic {
   return {
     id: topic._id,
     courseId: topic.courseId,
@@ -76,7 +78,7 @@ function toTopic(topic: PlanTree["courses"][number]["topics"][number]): Topic {
     color: resolveCourseColorId(topic.color),
     notes: topic.notes,
     order: topic.order,
-    blocks: topic.blocks.map(toStudyBlock),
+    blocks,
   };
 }
 
@@ -94,7 +96,7 @@ function toExam(exam: Doc<"exams">): Exam {
   };
 }
 
-function toCourse(course: PlanTree["courses"][number]): Course {
+function toCourse(course: CourseTree, exams: Exam[], topics: Topic[]): Course {
   return {
     id: course._id,
     planId: course.planId,
@@ -103,17 +105,17 @@ function toCourse(course: PlanTree["courses"][number]): Course {
     color: resolveCourseColorId(course.color),
     notes: course.notes,
     order: course.order,
-    exams: course.exams.map(toExam),
-    topics: course.topics.map(toTopic),
+    exams,
+    topics,
   };
 }
 
-function toPlan(plan: PlanTree): Plan {
+function toPlan(plan: PlanTree, courses: Course[]): Plan {
   return {
     id: plan._id,
     name: plan.name,
     notes: plan.notes,
-    courses: plan.courses.map(toCourse),
+    courses,
   };
 }
 
@@ -128,8 +130,7 @@ function toLogEntry(entry: Doc<"studyLog">): StudyLogEntry {
   };
 }
 
-function toPreferences(row: PreferencesRow): Preferences {
-  if (!row) return DEFAULT_PREFERENCES;
+function toPreferences(row: NonNullable<PreferencesRow>): Preferences {
   return {
     dailyCapacityUnits: row.dailyCapacityUnits,
     // Stored as plain numbers because Convex has no narrower numeric type;
@@ -143,6 +144,106 @@ function toPreferences(row: PreferencesRow): Preferences {
   };
 }
 
+/** Memoizes a translated immutable Convex value by its source identity. */
+function memoizeSource<Source extends object, Result>(
+  translate: (source: Source) => Result,
+): (source: Source) => Result {
+  const cache = new WeakMap<Source, Result>();
+
+  return (source) => {
+    const cached = cache.get(source);
+    if (cached !== undefined) return cached;
+    const result = translate(source);
+    cache.set(source, result);
+    return result;
+  };
+}
+
+function sameItems<Item>(left: readonly Item[], right: readonly Item[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+/**
+ * Memoizes a query-result array and also shares it when Convex supplies a new
+ * outer array containing the same immutable source objects in the same order.
+ */
+function memoizeList<Source extends object, Result>(
+  translate: (source: Source) => Result,
+): (sources: readonly Source[]) => Result[] {
+  const cache = new WeakMap<readonly Source[], Result[]>();
+  let previous: Result[] | undefined;
+
+  return (sources) => {
+    const cached = cache.get(sources);
+    if (cached) {
+      previous = cached;
+      return cached;
+    }
+
+    const translated = sources.map(translate);
+    const result = previous && sameItems(previous, translated) ? previous : translated;
+    cache.set(sources, result);
+    previous = result;
+    return result;
+  };
+}
+
+/**
+ * Translates immutable Convex query results while preserving unchanged domain
+ * branches. Unrelated query updates therefore do not recreate every plan, and
+ * a changed parent can still reuse children whose raw source objects survived.
+ */
+function createSnapshotTranslator() {
+  const translateBlock = memoizeSource(toStudyBlock);
+  const translateBlocks = memoizeList(translateBlock);
+  const translateTopic = memoizeSource((topic: TopicTree) =>
+    toTopic(topic, translateBlocks(topic.blocks)),
+  );
+  const translateTopics = memoizeList(translateTopic);
+  const translateExam = memoizeSource(toExam);
+  const translateExams = memoizeList(translateExam);
+  const translateCourse = memoizeSource((course: CourseTree) =>
+    toCourse(course, translateExams(course.exams), translateTopics(course.topics)),
+  );
+  const translateCourses = memoizeList(translateCourse);
+  const translatePlan = memoizeSource((plan: PlanTree) =>
+    toPlan(plan, translateCourses(plan.courses)),
+  );
+  const translatePlans = memoizeList(translatePlan);
+  const translateLogEntry = memoizeSource(toLogEntry);
+  const translateStudyLog = memoizeList(translateLogEntry);
+  const translatePreferences = memoizeSource(toPreferences);
+  let previous: PlannerSnapshot | undefined;
+
+  return (
+    plans: PlanTree[],
+    studyLog: Doc<"studyLog">[],
+    preferencesRow: PreferencesRow,
+  ): PlannerSnapshot => {
+    const translatedPlans = translatePlans(plans);
+    const translatedStudyLog = translateStudyLog(studyLog);
+    const preferences = preferencesRow
+      ? translatePreferences(preferencesRow)
+      : DEFAULT_PREFERENCES;
+
+    if (
+      previous &&
+      previous.plans === translatedPlans &&
+      previous.studyLog === translatedStudyLog &&
+      previous.preferences === preferences
+    ) {
+      return previous;
+    }
+
+    previous = {
+      plans: translatedPlans,
+      studyLog: translatedStudyLog,
+      preferences,
+    };
+    return previous;
+  };
+}
+
 /* ------------------------------------------------------------- repository */
 
 type Parts = {
@@ -153,8 +254,18 @@ type Parts = {
 };
 
 export function createConvexRepository(client: ConvexReactClient): PlannerRepository {
+  const translateSnapshot = createSnapshotTranslator();
   const asId = <T extends "plans" | "courses" | "exams" | "topics" | "studyBlocks">(id: string) =>
     id as Id<T>;
+  const scheduleBlocks = (blocks: GeneratedBlock[]) =>
+    blocks.map((block) => ({ ...block, topicId: asId<"topics">(block.topicId) }));
+  const preferenceArgs = (preferences: Preferences) => ({
+    dailyCapacityUnits: preferences.dailyCapacityUnits,
+    studyDaysOfWeek: [...preferences.studyDaysOfWeek],
+    blackoutDates: [...preferences.blackoutDates],
+    theme: preferences.theme,
+    accentColor: preferences.accentColor,
+  });
 
   const subscribe = (listener: (state: RepositoryState) => void) => {
     const parts: Parts = {};
@@ -197,11 +308,7 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
 
       listener({
         status: "ready",
-        snapshot: {
-          plans: parts.plans.map(toPlan),
-          studyLog: parts.studyLog.map(toLogEntry),
-          preferences: toPreferences(parts.preferences ?? null),
-        } satisfies PlannerSnapshot,
+        snapshot: translateSnapshot(parts.plans, parts.studyLog, parts.preferences ?? null),
       });
     };
 
@@ -387,7 +494,14 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
     async replaceAutoBlocks(topicIds, blocks: GeneratedBlock[]) {
       await client.mutation(api.planner.replaceAutoBlocks, {
         topicIds: topicIds.map((id) => asId<"topics">(id)),
-        blocks: blocks.map((block) => ({ ...block, topicId: asId<"topics">(block.topicId) })),
+        blocks: scheduleBlocks(blocks),
+      });
+    },
+    async applySchedule(topicIds, blocks, preferences) {
+      await client.mutation(api.planner.applySchedule, {
+        topicIds: topicIds.map((id) => asId<"topics">(id)),
+        blocks: scheduleBlocks(blocks),
+        preferences: preferenceArgs(preferences),
       });
     },
 
@@ -399,19 +513,16 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
     },
 
     async savePreferences(preferences) {
-      await client.mutation(api.planner.savePreferences, {
-        dailyCapacityUnits: preferences.dailyCapacityUnits,
-        studyDaysOfWeek: [...preferences.studyDaysOfWeek],
-        blackoutDates: [...preferences.blackoutDates],
-        theme: preferences.theme,
-        accentColor: preferences.accentColor,
-      });
+      await client.mutation(api.planner.savePreferences, preferenceArgs(preferences));
     },
 
-    async importPlans(document: PlannerExport) {
-      await client.mutation(api.planner.importPlans, { plans: document.plans });
+    async importPlans(document: PlannerTransferDocument) {
+      await client.mutation(api.planner.importPlans, {
+        plans: document.plans,
+        studyLog: document.studyLog,
+      });
     },
-    async replaceAll(document: PlannerExport) {
+    async replaceAll(document: PlannerTransferDocument) {
       await client.mutation(api.planner.replaceAllPlans, {
         plans: document.plans,
         studyLog: document.studyLog,

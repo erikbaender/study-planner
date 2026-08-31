@@ -27,7 +27,7 @@ import type {
   TopicStatus,
   Unit,
 } from "@/domain/types";
-import type { PlannerExport } from "@/lib/import-export";
+import type { PlannerTransferDocument } from "@/lib/planner-transfer";
 
 export type PlanInput = {
   name: string;
@@ -154,13 +154,19 @@ export interface PlannerRepository {
   deleteStudyBlock(blockId: EntityId): Promise<void>;
   /** Swaps generated blocks for `topicIds`, leaving `manual` ones untouched. */
   replaceAutoBlocks(topicIds: EntityId[], blocks: GeneratedBlock[]): Promise<void>;
+  /** Atomically applies generated blocks and the preferences used to calculate them. */
+  applySchedule(
+    topicIds: EntityId[],
+    blocks: GeneratedBlock[],
+    preferences: Preferences,
+  ): Promise<void>;
 
   /** Records a session and advances the topic's completion together. */
   logStudy(input: StudyLogInput): Promise<void>;
 
   savePreferences(preferences: Preferences): Promise<void>;
 
-  importPlans(document: PlannerExport): Promise<void>;
+  importPlans(document: PlannerTransferDocument): Promise<void>;
   /** Destructive: drops everything and writes the supplied document. */
-  replaceAll(document: PlannerExport): Promise<void>;
+  replaceAll(document: PlannerTransferDocument): Promise<void>;
 }

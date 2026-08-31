@@ -45,13 +45,16 @@ describe("AppSidebar course visibility", () => {
       <AppSidebar {...shared} hiddenCourseIds={[]} />,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByText("Biochemistry"));
+    const courseButton = screen.getByRole("button", { name: "Inspect Biochemistry" });
+    courseButton.focus();
+    await user.keyboard("{Enter}");
     expect(onSelectCourse).toHaveBeenCalledWith(course);
     expect(screen.getByText("7d")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Hide Biochemistry" }).querySelector(".lucide-eye-off"),
     ).toBeInTheDocument();
     const hideButton = screen.getByRole("button", { name: "Hide Biochemistry" });
+    expect(courseButton).not.toContainElement(hideButton);
     await user.click(hideButton);
     expect(hideButton).not.toHaveFocus();
     expect(onSelectCourse).toHaveBeenCalledTimes(1);
@@ -65,6 +68,39 @@ describe("AppSidebar course visibility", () => {
     ).toBeInTheDocument();
     const row = screen.getByText("Biochemistry").closest("li");
     expect(within(row!).getByText("7d").closest(".opacity-40")).toBeInTheDocument();
+  });
+
+  it("marks the selected course on its native navigation button", () => {
+    const course = makeCourse({ name: "Biochemistry" });
+    const plan = makePlan({ courses: [course] });
+
+    render(
+      <AppSidebar
+        plans={[plan]}
+        plan={plan}
+        health={new Map()}
+        today={TODAY}
+        focus={{ kind: "all" }}
+        hiddenCourseIds={[]}
+        query=""
+        selectedCourseId={course.id}
+        onSelectPlan={vi.fn()}
+        onNewPlan={vi.fn()}
+        onEditPlan={vi.fn()}
+        onDeletePlan={vi.fn()}
+        onSetFocus={vi.fn()}
+        onSelectCourse={vi.fn()}
+        onToggleHidden={vi.fn()}
+        onHideAll={vi.fn()}
+        onShowAll={vi.fn()}
+        onNewCourse={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Inspect Biochemistry" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("sorts filtered courses alphabetically", () => {

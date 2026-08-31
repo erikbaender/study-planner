@@ -39,7 +39,7 @@ import {
 /** The one delete item, so the bar's menu and the lane's cannot disagree. */
 export function deleteBlockItem(chart: Chart, blockId: string): MenuItem {
   return {
-    label: "Delete block",
+    label: "Delete",
     icon: <Trash2 />,
     danger: true,
     onSelect: () => {
