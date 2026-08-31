@@ -12,4 +12,5 @@ export * from "./scheduling";
 export * from "./palette";
 export * from "./outline";
 export * from "./seed";
+export * from "./mhh-sample";
 export * from "./sample-datasets";

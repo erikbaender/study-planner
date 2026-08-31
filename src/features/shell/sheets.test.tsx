@@ -12,14 +12,16 @@ describe("SampleDataSheet", () => {
       <SampleDataSheet open onOpenChange={vi.fn()} hasData={false} onLoad={onLoad} />,
     );
 
-    expect(screen.getByRole("radio", { name: /Full medical semester/ })).toHaveAttribute(
+    expect(screen.getByRole("radio", { name: /Lernplan \(MHH\)/ })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    await user.click(screen.getByRole("radio", { name: /Compact medical semester/ }));
+    expect(screen.getByRole("radio", { name: /Lernplan feature showcase/ })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /Full medical|Compact medical/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Lernplan feature showcase/ }));
     await user.click(screen.getByRole("button", { name: "Load sample" }));
 
-    expect(onLoad).toHaveBeenCalledWith("compact");
+    expect(onLoad).toHaveBeenCalledWith("mhh-showcase");
   });
 
   it("makes replacement explicit when the planner already has data", () => {

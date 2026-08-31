@@ -49,7 +49,7 @@ The browser tracing integration needed for reliable production Core Web Vitals w
 - Inclusive planning-day summaries replace endpoint-only counting.
 - `applySchedule` commits generated blocks and the preferences used to calculate them together: one serialized snapshot commit locally and one Convex mutation transaction when synced.
 - Context-menu actions use consistent icon-first, action-only labels.
-- Sample datasets are deterministic, synthetic, and free of private-project provenance.
+- Sample datasets are deterministic and date-relative; they consist of the preserved MHH outline and a feature-showcase variant built from it.
 - Local persistence serializes concurrent mutations and resolves a save only when the IndexedDB transaction completes, not when its object-store request first succeeds. A failed or aborted transaction is not published to React.
 - JSON import validates relationships before destructive replacement and preserves study history.
 - Transfer v3 replaces database IDs and name-based links with document-local topic keys. Imports append fresh plans and study history without deduplication, while replacement replaces plans and history; both preserve preferences. Unambiguous v2 documents remain read-only migration inputs.

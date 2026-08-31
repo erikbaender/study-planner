@@ -6,7 +6,7 @@ Thank you for helping improve Study Planner. The project favors explicit domain 
 
 This repository does not yet include a license. Until a maintainer adds one, do not assume permission to redistribute or reuse the source. The missing license is tracked as a publication blocker.
 
-Never include real student records, private project reports, access tokens, OAuth credentials, deployment URLs that grant access, or exported planner backups in a contribution. Use the deterministic synthetic datasets in `src/domain/seed.ts`.
+Never include student records beyond the intentional MHH sample fixture, private project reports, access tokens, OAuth credentials, deployment URLs that grant access, or exported planner backups in a contribution.
 
 ## Set up the project
 
