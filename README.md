@@ -10,7 +10,7 @@ The project uses Next.js, React, TypeScript, Tailwind CSS, Convex, and Convex Au
 
 - Today, timeline, and outline views over one shared planning model
 - Workload-aware scheduling with priorities, dependencies, study days, blackout dates, and manual-block preservation
-- Bulk topic entry and deterministic synthetic sample data
+- Bulk topic entry and two adaptive MHH sample datasets: the original plan and a feature showcase
 - Local IndexedDB persistence and optional GitHub-authenticated Convex sync
 - Versioned, validated JSON backup and restore
 - Keyboard navigation, reduced-motion support, and accessible overlay primitives
