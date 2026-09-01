@@ -91,6 +91,8 @@ describe("TopicList", () => {
   });
 
   it("renders course topics in repository order", () => {
+    // Cards fold by default, and a folded card has no topic list to read.
+    useWorkspace.setState({ expandedCourseIds: [course.id] });
     render(
       <OutlineView
         courses={[course]}
@@ -106,7 +108,6 @@ describe("TopicList", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -140,7 +141,6 @@ describe("TopicList", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -249,7 +249,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
   }
@@ -374,7 +373,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -452,6 +450,8 @@ describe("OutlineView course selection", () => {
     const exam = makeExam({ name: "Final exam" });
     const course = makeCourse({ name: "Biochemistry", exams: [exam] });
     const onDeleteExam = vi.fn();
+    // The exam rows live inside the card, which is folded until it is opened.
+    useWorkspace.setState({ expandedCourseIds: [course.id] });
 
     render(
       <OutlineView
@@ -468,7 +468,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -530,7 +529,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -587,7 +585,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 

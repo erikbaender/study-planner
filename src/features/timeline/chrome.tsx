@@ -1,6 +1,5 @@
 import { clsx } from "clsx";
-import { CalendarRange } from "lucide-react";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { memo, useMemo, useState, useSyncExternalStore } from "react";
 import {
   addDays,
   courseColorValue,
@@ -10,7 +9,7 @@ import {
   type Course,
   type IsoDate,
 } from "@/domain";
-import { Button, EmptyState, SegmentedControl } from "@/ui";
+import { SegmentedControl } from "@/ui";
 import {
   bandsFor,
   daysCss,
@@ -33,22 +32,20 @@ import {
 } from "./layout";
 import { RULER_HINTS } from "./hints";
 import { hintTarget } from "@/features/workspace/hints";
-export function NoTimelineCourses({ onGoToOutline }: { onGoToOutline: () => void }) {
-  return (
-    <EmptyState
-      icon={<CalendarRange />}
-      title="Nothing to show"
-      description="No course matches the current focus. Widen it in the sidebar, or add material in the outline."
-      action={
-        <Button variant="accent" onClick={onGoToOutline}>
-          Open the outline
-        </Button>
-      }
-    />
-  );
-}
 
 /* ─── Chrome ────────────────────────────────────────────────────────────── */
+
+/**
+ * Everything below is memoized.
+ *
+ * One course being filtered now re-renders the chart four times — once for the
+ * click and once for each stage of the lane's departure — and the ruler, the
+ * weekend shading and the vertical rules are one element per tick across a
+ * whole semester. None of them can change while a lane closes, so rebuilding
+ * them was the largest remaining cost of the animation. Their props are values
+ * rather than handlers, which is what makes the default comparison the right
+ * one.
+ */
 
 /**
  * The zoom control, with its own idea of the value.
@@ -96,7 +93,7 @@ export function ZoomControl({ zoom, onChange }: { zoom: Zoom; onChange: (next: Z
  * halfway through March still says March instead of leaving the label off the
  * left edge with nothing to name the columns on screen.
  */
-export function Ruler({
+export const Ruler = memo(function Ruler({
   ticks,
   bands,
   range,
@@ -189,9 +186,9 @@ export function Ruler({
         </div>
     </div>
   );
-}
+});
 
-export function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; range: Range; zoom: Zoom }) {
+export const Rules = memo(function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFor>; range: Range; zoom: Zoom }) {
   const chart = useChart();
   const viewport = useSyncExternalStore(
     chart.viewport.subscribe,
@@ -246,7 +243,7 @@ export function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFo
       ))}
     </div>
   );
-}
+});
 
 /**
  * Weekends.
@@ -254,7 +251,7 @@ export function Rules({ ticks, range, zoom }: { ticks: ReturnType<typeof ticksFo
  * Only where a day is wide enough to be a column of its own: at Month and
  * Quarter a two-day stripe every 35 pixels is moiré, not information.
  */
-export function Weekends({ range, zoom }: { range: Range; zoom: Zoom }) {
+export const Weekends = memo(function Weekends({ range, zoom }: { range: Range; zoom: Zoom }) {
   if (zoom !== "day" && zoom !== "week") return null;
   const firstWeekday = weekdayOf(range.start);
   const weekend = "color-mix(in srgb, var(--mac-fill) 50%, transparent)";
@@ -276,9 +273,9 @@ export function Weekends({ range, zoom }: { range: Range; zoom: Zoom }) {
       }}
     />
   );
-}
+});
 
-export function TodayLine({ today, range }: { today: IsoDate; range: Range }) {
+export const TodayLine = memo(function TodayLine({ today, range }: { today: IsoDate; range: Range }) {
   return (
     <div
       // Announced, because "where am I now" is the first question asked of a
@@ -292,7 +289,7 @@ export function TodayLine({ today, range }: { today: IsoDate; range: Range }) {
       className="timeline-zoom-layer pointer-events-none absolute inset-y-0 z-30 w-px bg-accent"
     />
   );
-}
+});
 
 /**
  * Exams.
@@ -302,7 +299,7 @@ export function TodayLine({ today, range }: { today: IsoDate; range: Range }) {
  * told the exam falls somewhere in there, and drawing a line would state a day
  * nobody has. Planning still counts backwards from the start of the band.
  */
-export function ExamMarkers({ courses, range }: { courses: readonly Course[]; range: Range }) {
+export const ExamMarkers = memo(function ExamMarkers({ courses, range }: { courses: readonly Course[]; range: Range }) {
   return (
     <div
       aria-hidden="true"
@@ -348,4 +345,4 @@ export function ExamMarkers({ courses, range }: { courses: readonly Course[]; ra
       )}
     </div>
   );
-}
+});

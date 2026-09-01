@@ -60,7 +60,18 @@ const COURSE_HEADER_COLUMNS = [
   "sm:gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(5rem,9rem)_1.25rem]",
 ].join(" ");
 
-export function CourseCard({
+/**
+ * Memoized, and every callback names the course it is about so that it can be.
+ *
+ * A card used to be handed seven closures built in the outline's `map`, which
+ * are seven new functions per card per render. That is what a filter change
+ * costs now that it is animated: the view re-renders at each of the four
+ * stages, and each of those rebuilt every card in the outline — its header, its
+ * exam list and up to forty topic rows — while exactly one card was moving.
+ * Taking the course as an argument means one function serves every card, so the
+ * cards that are not moving do not re-render at all.
+ */
+export const CourseCard = memo(function CourseCard({
   course,
   health,
   today,
@@ -86,16 +97,27 @@ export function CourseCard({
   courseSelection: BarSelection;
   /** What the name does, published to the hint bar while it is pointed at. */
   labelHints: readonly InputHint[];
-  onSelectTopic: (topic: Topic) => void;
-  onSelectExam: (exam: Exam) => void;
-  onDeleteExam: (exam: Exam) => void;
-  onSelectCourse: (event: React.MouseEvent<HTMLButtonElement>) => void;
-  onDeleteTopic: (topic: Topic) => void;
-  onDeleteCourse: () => void;
-  onEditCourse: () => void;
+  onSelectTopic: (course: Course, topic: Topic) => void;
+  onSelectExam: (course: Course, exam: Exam) => void;
+  onDeleteExam: (course: Course, exam: Exam) => void;
+  onSelectCourse: (course: Course, event: React.MouseEvent<HTMLButtonElement>) => void;
+  onDeleteTopic: (course: Course, topic: Topic) => void;
+  onDeleteCourse: (course: Course) => void;
+  onEditCourse: (course: Course) => void;
 }) {
   const repository = useRepository();
   const run = usePlannerRun();
+  // Bound to this card's course, and stable, because the list and the exam
+  // list below are memoized on the handlers they are given.
+  const selectTopic = useStableCallback((topic: Topic) => onSelectTopic(course, topic));
+  const selectExam = useStableCallback((exam: Exam) => onSelectExam(course, exam));
+  const deleteExam = useStableCallback((exam: Exam) => onDeleteExam(course, exam));
+  const deleteTopic = useStableCallback((topic: Topic) => onDeleteTopic(course, topic));
+  const selectCourse = useStableCallback((event: React.MouseEvent<HTMLButtonElement>) =>
+    onSelectCourse(course, event),
+  );
+  const deleteCourse = useStableCallback(() => onDeleteCourse(course));
+  const editCourse = useStableCallback(() => onEditCourse(course));
   const [adding, setAdding] = useState<"topic" | "exam" | null>(null);
   const [confirmingCompletion, setConfirmingCompletion] = useState(false);
   const collapsed = useWorkspace((state) => !state.expandedCourseIds.includes(course.id));
@@ -196,8 +218,8 @@ export function CourseCard({
         { label: "Add topic", icon: <Plus />, onSelect: () => setAdding("topic") },
         { label: "Add exam", icon: <CalendarPlus />, onSelect: () => setAdding("exam") },
         { type: "separator" },
-        { label: "Edit", icon: <Pencil />, onSelect: onEditCourse },
-        { label: "Delete", icon: <Trash2 />, danger: true, onSelect: onDeleteCourse },
+        { label: "Edit", icon: <Pencil />, onSelect: editCourse },
+        { label: "Delete", icon: <Trash2 />, danger: true, onSelect: deleteCourse },
       ]}
     >
       <section
@@ -239,7 +261,7 @@ export function CourseCard({
                 <h2 className="flex min-w-0 text-title3 font-semibold">
                   <button
                     type="button"
-                    onClick={onSelectCourse}
+                    onClick={selectCourse}
                     data-selection={courseSelection ?? undefined}
                     aria-pressed={courseSelection !== null}
                     aria-label={`Select ${course.name}`}
@@ -338,8 +360,8 @@ export function CourseCard({
                 <ExamList
                   exams={exams}
                   selectedId={selectedId}
-                  onSelect={onSelectExam}
-                  onDelete={onDeleteExam}
+                  onSelect={selectExam}
+                  onDelete={deleteExam}
                 />
               </CardSection>
 
@@ -361,8 +383,8 @@ export function CourseCard({
                     topics={topics}
                     today={today}
                     selectedId={selectedId}
-                    onSelect={onSelectTopic}
-                    onDelete={onDeleteTopic}
+                    onSelect={selectTopic}
+                    onDelete={deleteTopic}
                   />
                 ) : (
                   <p className="p-2 text-callout text-tertiary">
@@ -417,7 +439,7 @@ export function CourseCard({
       </section>
     </ContextMenu>
   );
-}
+});
 
 /** Whether every sized topic in the course is finished, and there is one to finish. */
 function isCourseComplete(course: Course): boolean {

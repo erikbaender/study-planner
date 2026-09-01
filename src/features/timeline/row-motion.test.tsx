@@ -17,14 +17,42 @@ const topics = [
   makeTopic({ id: "topic_2", name: "Niere" }),
 ];
 const course = makeCourse({ name: "Physio", topics });
+// Given a block, so its lane draws a roll-up bar: the bar is what proves the
+// lane keeps its topics while it leaves rather than emptying itself first.
+const anatomy = makeCourse({
+  name: "Anatomie",
+  topics: [
+    makeTopic({
+      id: "topic_3",
+      name: "Bein",
+      blocks: [
+        {
+          id: "block_1",
+          topicId: "topic_3",
+          startDate: "2026-05-04",
+          endDate: "2026-05-06",
+          source: "auto" as const,
+        },
+      ],
+    }),
+  ],
+});
 const shared = {
   courses: [course],
   health: new Map(),
   today: "2026-05-01",
   selectedId: null,
   onSelectTopic: vi.fn(),
-  onGoToOutline: vi.fn(),
 };
+
+/** The box a course's whole lane arrives and leaves in. */
+function laneBoxFor(name: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>(".collapse-motion")].find((box) =>
+      box.textContent?.includes(name),
+    ) ?? null
+  );
+}
 
 /** The lane on the canvas for a topic in the combined lane. */
 function laneFor(name: string): HTMLElement {
@@ -79,5 +107,52 @@ describe("rows arriving and leaving", () => {
     // And only once the room exists does what goes in it appear.
     act(() => vi.advanceTimersByTime(HALF));
     expect(laneFor("Niere").style.opacity).toBe("1");
+  });
+});
+
+/**
+ * A course hidden in the sidebar used to leave the chart in a single frame,
+ * taking every lane below it up with it. It leaves the way the rows inside it
+ * do now: the same two stages, in the same order, on the same clock.
+ */
+describe("course lanes arriving and leaving", () => {
+  it("fades a filtered-out course's lane first, then collapses the room it took", () => {
+    const both = { ...shared, courses: [course, anatomy] };
+    const { rerender } = render(<TimelineView {...both} query="" />);
+    expect(laneBoxFor("Anatomie")).toHaveAttribute("data-phase", "shown");
+
+    rerender(<TimelineView {...both} courses={[course]} query="" />);
+
+    // Phase one: the lane is still there, still taking its room, fading — and
+    // it still draws the topics it had rather than emptying itself first.
+    const leaving = laneBoxFor("Anatomie")!;
+    expect(leaving).toHaveAttribute("data-phase", "fade");
+    expect(leaving).toHaveClass("opacity-0");
+    // Still drawing what it had: a lane that dropped its topics on the way out
+    // would fade out already blank.
+    expect(leaving.querySelector('[role="img"]')).not.toBeNull();
+
+    // Phase two: the room goes, once there is nothing visible in it.
+    act(() => vi.advanceTimersByTime(HALF));
+    expect(laneBoxFor("Anatomie")).toHaveAttribute("data-phase", "shrink");
+
+    act(() => vi.advanceTimersByTime(HALF));
+    expect(laneBoxFor("Anatomie")).toBeNull();
+  });
+
+  it("makes room for an arriving lane before it fades in", () => {
+    const { rerender } = render(<TimelineView {...shared} query="" />);
+
+    rerender(<TimelineView {...shared} courses={[course, anatomy]} query="" />);
+    const arriving = laneBoxFor("Anatomie")!;
+    expect(arriving).toHaveAttribute("data-phase", "enter");
+    expect(arriving.style.height).toBe("0px");
+
+    act(() => vi.advanceTimersByTime(34));
+    expect(laneBoxFor("Anatomie")).toHaveAttribute("data-phase", "grow");
+    expect(laneBoxFor("Anatomie")).toHaveClass("opacity-0");
+
+    act(() => vi.advanceTimersByTime(HALF));
+    expect(laneBoxFor("Anatomie")).toHaveAttribute("data-phase", "shown");
   });
 });

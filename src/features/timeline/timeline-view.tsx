@@ -27,6 +27,7 @@
  * The canvas stays opaque: `backdrop-filter` on a surface scrolling hundreds of
  * bars costs more than the effect is worth (§7.1).
  */
+import { clsx } from "clsx";
 import {
   CalendarDays,
 } from "lucide-react";
@@ -48,12 +49,23 @@ import {
   type IsoDate,
   type Topic,
 } from "@/domain";
-import { Button, ContextMenuAt, useKeyboardMode, type MenuItem } from "@/ui";
+import {
+  Button,
+  Collapse,
+  ContextMenuAt,
+  Fade,
+  isHandedOver,
+  useKeyboardMode,
+  useListPresence,
+  usePresence,
+  type MenuItem,
+} from "@/ui";
 import {
   daysCss,
   DAY_WIDTH_PROPERTY,
   PX_PER_DAY,
 } from "./geometry";
+import type { Range } from "./layout";
 import type { BarTarget } from "./selection";
 import {
   ChartContext,
@@ -80,10 +92,10 @@ import {
 } from "@/features/workspace/hints";
 import { useWorkspace } from "@/features/workspace/store";
 import { topicsForQuery } from "@/features/workspace/scope";
+import { EmptyFocus } from "@/features/workspace/empty-focus";
 import { useViewFadeHold } from "@/features/shell/view-fade";
 import {
   ExamMarkers,
-  NoTimelineCourses,
   Ruler,
   Rules,
   TodayLine,
@@ -93,6 +105,9 @@ import {
 import { MemoAllTopicsLane, MemoCourseLane } from "./lanes";
 import { firstBlockStart } from "./spans";
 import { useChartPosition } from "./use-chart-position";
+/** A lane is identified by its course, across the whole of its departure. */
+const courseKey = (course: Course) => course.id;
+
 type TimelineProps = {
   courses: readonly Course[];
   health: Map<string, CourseHealth>;
@@ -102,7 +117,6 @@ type TimelineProps = {
   onSelectTopic: (course: Course, topic: Topic) => void;
   /** Selection is a mode you can leave: see `selectTopic` below. */
   onClearSelection?: () => void;
-  onGoToOutline: () => void;
 };
 
 /**
@@ -114,6 +128,14 @@ type TimelineProps = {
  * Retaining the last non-empty chart, hidden and inert, makes the visible state
  * change a small overlay update; the chart is ready to reappear when courses
  * are shown again.
+ *
+ * That retention is also why the two do not trade places the way the outline's
+ * cards do. A course leaving the chart on its own closes its lane and the lanes
+ * below travel up; the *last* course leaving cannot, because the chart it would
+ * leave behind is the one being kept. So emptying the timeline is a handover
+ * instead: the canvas fades out over the first half of the shared duration and
+ * the message fades in over the second, which is the same clock and the same
+ * order, and reversing it brings the chart back into a canvas that never moved.
  */
 export function TimelineView(props: TimelineProps) {
   const [retainedCourses, setRetainedCourses] = useState<readonly Course[]>(props.courses);
@@ -127,24 +149,29 @@ export function TimelineView(props: TimelineProps) {
 
   const chartCourses = props.courses.length > 0 ? props.courses : retainedCourses;
   const chart = <MemoTimelineChart {...props} courses={chartCourses} />;
-  const keepChart = props.courses.length === 0 && retainedCourses.length > 0;
+  const emptyPhase = usePresence(props.courses.length === 0);
+  const handedOver = isHandedOver(emptyPhase);
 
   // The wrapper and chart stay at the same tree position in both states. A
   // changed parent shape would itself unmount the expensive child before the
-  // memo comparator had a chance to protect it.
+  // memo comparator had a chance to protect it. The message is what overlays,
+  // rather than the chart being taken out of the flow underneath it: a chart
+  // that changed from static to absolute halfway through its own fade would
+  // relayout the whole canvas in the middle of the one frame it cannot spare.
   return (
     <div className="relative h-full">
       <div
-        className={keepChart ? "pointer-events-none invisible absolute inset-0" : "h-full"}
-        aria-hidden={keepChart || undefined}
+        className={clsx("presence-fade h-full", handedOver ? "opacity-0" : "opacity-100")}
+        data-visible={handedOver ? "false" : "true"}
+        aria-hidden={handedOver || undefined}
       >
         {chart}
       </div>
-      {keepChart ? (
-        <div className="relative flex h-full items-center justify-center">
-          <NoTimelineCourses onGoToOutline={props.onGoToOutline} />
-        </div>
-      ) : null}
+      {emptyPhase === null ? null : (
+        <Fade phase={emptyPhase} className="absolute inset-0 flex items-center justify-center">
+          <EmptyFocus />
+        </Fade>
+      )}
     </div>
   );
 }
@@ -157,7 +184,6 @@ function TimelineChart({
   selectedId,
   onSelectTopic,
   onClearSelection,
-  onGoToOutline,
 }: TimelineProps) {
   const [viewport] = useState(createViewportStore);
   const [selection] = useState(createSelectionStore);
@@ -184,10 +210,6 @@ function TimelineChart({
   const visibleCourseTopics = useMemo(
     () => courses.map((course) => ({ course, topics: topicsForQuery(query, course) })),
     [courses, query],
-  );
-  const topicsByCourse = useMemo(
-    () => new Map(visibleCourseTopics.map(({ course, topics }) => [course, topics] as const)),
-    [visibleCourseTopics],
   );
 
   const gutter = useMemo(() => {
@@ -383,9 +405,11 @@ function TimelineChart({
     return () => cancelAnimationFrame(frame);
   }, [revealBlockId, reveal, selection]);
 
-  if (courses.length === 0) {
-    return <NoTimelineCourses onGoToOutline={onGoToOutline} />;
-  }
+  // Only reachable before the chart has ever had a course to retain; from then
+  // on `TimelineView` keeps the last non-empty list on the canvas and puts the
+  // message over the top of it. Nothing to draw, and nothing to say either —
+  // the message is the wrapper's, so that it is the same one in both cases.
+  if (courses.length === 0) return null;
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-separator px-4 py-2">
@@ -480,18 +504,15 @@ function TimelineChart({
               selectedId={selectedId}
               onSelectTopic={selectTopic}
             />
-            {courses.map((course) => (
-              <MemoCourseLane
-                key={course.id}
-                course={course}
-                health={health.get(course.id)}
-                topics={topicsByCourse.get(course) ?? []}
-                range={range}
-                today={today}
-                selectedId={selectedId}
-                onSelectTopic={(topic) => selectTopic(course, topic)}
-              />
-            ))}
+            <MemoCourseLanes
+              courses={courses}
+              health={health}
+              query={query}
+              range={range}
+              today={today}
+              selectedId={selectedId}
+              onSelectTopic={selectTopic}
+            />
           </div>
         </div>
       </div>
@@ -516,6 +537,69 @@ function TimelineChart({
     </div>
   );
 }
+/**
+ * The course lanes, including the ones on their way off the canvas.
+ *
+ * A course hidden in the sidebar used to leave in a single frame, and every
+ * lane below it moved up in that same frame — the one change on the chart that
+ * said nothing about what had happened. It now leaves the way a topic row
+ * inside it does: the lane fades, and then the height it occupied closes, so
+ * the lanes below travel into the space rather than appear in it.
+ *
+ * Its own component, and memoized, because that departure is four renders and
+ * the chart is the most expensive thing in the app to render. Held in
+ * `TimelineChart`, each of those four would have re-run the whole positioning
+ * hook and rebuilt a ruler that spans the semester, to move one lane. Here,
+ * three of the four reach nothing but the lanes themselves.
+ */
+function CourseLanes({
+  courses,
+  health,
+  query,
+  range,
+  today,
+  selectedId,
+  onSelectTopic,
+}: {
+  courses: readonly Course[];
+  health: Map<string, CourseHealth>;
+  query: string;
+  range: Range;
+  today: IsoDate;
+  selectedId: string | null;
+  onSelectTopic: (course: Course, topic: Topic) => void;
+}) {
+  const lanes = useListPresence(courses, courseKey);
+
+  return (
+    <>
+      {lanes.map(({ key, item: course, phase }) => (
+        <Collapse key={key} phase={phase}>
+          <MemoCourseLane
+            course={course}
+            health={health.get(course.id)}
+            query={query}
+            range={range}
+            today={today}
+            selectedId={selectedId}
+            onSelectTopic={(topic) => onSelectTopic(course, topic)}
+          />
+        </Collapse>
+      ))}
+    </>
+  );
+}
+
+/** Callback identity is ignored for the reason the lane's own comparator ignores it. */
+const MemoCourseLanes = memo(CourseLanes, (left, right) =>
+  left.courses === right.courses &&
+  left.health === right.health &&
+  left.query === right.query &&
+  left.range === right.range &&
+  left.today === right.today &&
+  left.selectedId === right.selectedId,
+);
+
 function sameCourseList(left: readonly Course[], right: readonly Course[]): boolean {
   if (left === right) return true;
   return left.length === right.length && left.every((course, index) => course === right[index]);

@@ -445,7 +445,6 @@ export function AppShell() {
                     onDeleteTopic={(_course, topic) =>
                       workspace.setPendingDelete({ kind: "topic", id: topic.id })
                     }
-                    onGoToOutline={() => workspace.setView("outline")}
                   />
                 ) : view === "timeline" ? (
                   <TimelineView
@@ -456,7 +455,6 @@ export function AppShell() {
                     selectedId={workspace.selection?.id ?? null}
                     onSelectTopic={selectTopic}
                     onClearSelection={() => workspace.select(null)}
-                    onGoToOutline={() => workspace.setView("outline")}
                   />
                 ) : (
                   <OutlineView
@@ -479,7 +477,6 @@ export function AppShell() {
                       workspace.setPendingDelete({ kind: "course", id: course.id })
                     }
                     onEditCourse={(courseId) => setEditingCourseId(courseId)}
-                    onNewCourse={() => workspace.setCreating("course")}
                   />
                 )
               }

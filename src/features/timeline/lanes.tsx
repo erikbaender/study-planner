@@ -35,7 +35,11 @@ import {
   type RowMotion,
 } from "./row-transitions";
 import { hintExcludedScope } from "@/features/workspace/hints";
-import { overdueBlockCount, overdueBlockCountForTopic } from "@/features/workspace/scope";
+import {
+  overdueBlockCount,
+  overdueBlockCountForTopic,
+  topicsForQuery,
+} from "@/features/workspace/scope";
 /* ─── Lanes ─────────────────────────────────────────────────────────────── */
 
 /**
@@ -339,7 +343,7 @@ function AllTopicsLane({
 function CourseLane({
   course,
   health,
-  topics,
+  query,
   range,
   today,
   selectedId,
@@ -347,7 +351,19 @@ function CourseLane({
 }: {
   course: Course;
   health: CourseHealth | undefined;
-  topics: readonly Topic[];
+  /**
+   * The search, rather than the topics it leaves.
+   *
+   * The chart handed this lane a topic list, and rebuilt it — a new array,
+   * with the same topics in it — on every render of the chart. A course
+   * arriving or leaving re-renders the chart four times over its 240ms, and a
+   * lane comparing its topics by identity had to treat all four as a change:
+   * every lane in the plan, with every row under it, reconciled while one lane
+   * was supposed to be quietly closing. Derived here instead, from the two
+   * things that actually decide it, exactly as a course card in the outline
+   * derives its own.
+   */
+  query: string;
   range: Range;
   today: IsoDate;
   selectedId: string | null;
@@ -355,6 +371,7 @@ function CourseLane({
 }) {
   const [open, setOpen] = useState(false);
   const disclosure = useDisclosure(open);
+  const topics = useMemo(() => topicsForQuery(query, course), [query, course]);
   const rows = useRowTransitions(topics, topicKeyOf);
   const span = useMemo(() => rollUpSpan(topics), [topics]);
   // One series per topic so a topic with its own colour still tints its share,
@@ -744,7 +761,7 @@ export const MemoAllTopicsLane = memo(AllTopicsLane, (left, right) =>
 export const MemoCourseLane = memo(CourseLane, (left, right) =>
   left.course === right.course &&
   left.health === right.health &&
-  left.topics === right.topics &&
+  left.query === right.query &&
   left.range === right.range &&
   left.today === right.today &&
   left.selectedId === right.selectedId,

@@ -19,21 +19,34 @@
  * already recorded, which is why it can exist before the scheduler does.
  */
 
-import { CalendarCheck } from "lucide-react";
+import { memo, useMemo } from "react";
+import { clsx } from "clsx";
 import type {
   Course,
   CourseHealth,
+  Exam,
   StudyLogEntry,
   Topic,
 } from "@/domain";
 import type { PlannerSnapshot, StudyBlock } from "@/domain";
 import { countStudyDays, isStudyDay, studyStreak, velocity, VELOCITY_WINDOW_DAYS } from "@/domain";
 import { courseColorValue } from "@/domain";
-import { Badge, Button, Card, CountdownBadge, EmptyState } from "@/ui";
+import {
+  Badge,
+  Card,
+  Collapse,
+  CountdownBadge,
+  Fade,
+  isHandedOver,
+  useListPresence,
+  usePresence,
+  useStableCallback,
+} from "@/ui";
 import { TopicRow } from "@/features/topics/topic-row";
 import { PlanningActions } from "@/features/planning/planning-actions";
 import { hintScope, useViewHints, type InputHint } from "@/features/workspace/hints";
 import { topicsForQuery } from "@/features/workspace/scope";
+import { EmptyFocus } from "@/features/workspace/empty-focus";
 
 /** What the pointer does here, for the toolbar's hint bar. */
 const TODAY_HINTS: readonly InputHint[] = [
@@ -55,6 +68,59 @@ const CONTINUE_PER_COURSE = 2;
 /** How many slipping courses the card names before it starts counting them instead. */
 const BEHIND_LIMIT = 5;
 
+/** A planned row is one block on one day, so two blocks on one topic are two rows. */
+type PlannedRow = { key: string; course: Course; topic: Topic; units: number };
+type ExamRow = { course: Course; exam: Exam; days: number; health: CourseHealth };
+type ContinueRow = { course: Course; topic: Topic };
+
+/**
+ * One row of the two topic lists, memoized.
+ *
+ * A filter change now moves this view through four commits rather than one —
+ * the click, the space opening, the fade, the space closing — and every one of
+ * them used to rebuild twenty rows, each of them a context menu wrapped around
+ * a draggable progress slider. That is most of the cost of the animation, and
+ * none of it is work: nothing about a row changes while the row beside it is
+ * leaving. Its props are the course, the topic and two callbacks that never
+ * change identity, so the phases run over rows that simply do not re-render.
+ */
+const TodayTopicRow = memo(function TodayTopicRow({
+  course,
+  topic,
+  today,
+  units,
+  selected,
+  onSelect,
+  onDelete,
+}: {
+  course: Course;
+  topic: Topic;
+  today: string;
+  /** Today's share of a scheduled block, for the plan list; absent in the other. */
+  units?: number;
+  selected: boolean;
+  onSelect: (course: Course, topic: Topic) => void;
+  onDelete: (course: Course, topic: Topic) => void;
+}) {
+  return (
+    <TopicRow
+      topic={topic}
+      today={today}
+      courseId={course.id}
+      courseColor={courseColorValue(course.color)}
+      prefix={units === undefined ? course.name : `${course.name} · ${units} today`}
+      selected={selected}
+      onSelect={() => onSelect(course, topic)}
+      onDelete={() => onDelete(course, topic)}
+    />
+  );
+});
+
+const plannedKey = (row: PlannedRow) => row.key;
+const examKey = (row: ExamRow) => row.exam.id;
+const courseRowKey = (course: Course) => course.id;
+const continueKey = (row: ContinueRow) => row.topic.id;
+
 export function TodayView({
   courses,
   health,
@@ -65,7 +131,6 @@ export function TodayView({
   selectedTopicId,
   onSelectTopic,
   onDeleteTopic,
-  onGoToOutline,
 }: {
   courses: readonly Course[];
   health: Map<string, CourseHealth>;
@@ -76,238 +141,325 @@ export function TodayView({
   selectedTopicId: string | null;
   onSelectTopic: (course: Course, topic: Topic) => void;
   onDeleteTopic: (course: Course, topic: Topic) => void;
-  onGoToOutline: () => void;
 }) {
   useViewHints(TODAY_HINTS);
-  const exams = courses
-    .flatMap((course) => {
-      const courseHealth = health.get(course.id);
-      return courseHealth?.exam && courseHealth.daysUntilExam !== null
-        ? [{ course, exam: courseHealth.exam, days: courseHealth.daysUntilExam, health: courseHealth }]
-        : [];
-    })
-    .sort((left, right) => left.days - right.days)
-    .slice(0, 3);
 
-  const behind = courses.filter((course) => {
-    const pace = health.get(course.id)?.pace;
-    return pace ? !pace.onTrack : false;
-  });
+  // Every list here is memoized, and none of them used to be. They are what the
+  // rows below arrive and leave against, and that merge is keyed on the array's
+  // identity: a fresh one per render would treat every row as new on every
+  // render and never settle.
+  const exams = useMemo<readonly ExamRow[]>(
+    () =>
+      courses
+        .flatMap((course) => {
+          const courseHealth = health.get(course.id);
+          return courseHealth?.exam && courseHealth.daysUntilExam !== null
+            ? [
+                {
+                  course,
+                  exam: courseHealth.exam,
+                  days: courseHealth.daysUntilExam,
+                  health: courseHealth,
+                },
+              ]
+            : [];
+        })
+        .sort((left, right) => left.days - right.days)
+        .slice(0, 3),
+    [courses, health],
+  );
+
+  const behind = useMemo(
+    () =>
+      courses.filter((course) => {
+        const pace = health.get(course.id)?.pace;
+        return pace ? !pace.onTrack : false;
+      }),
+    [courses, health],
+  );
 
   // Capped: a ten-row list of everything that is slipping is a wall, and the
   // two courses at the bottom of it are the ones you were never going to reach
   // today anyway. Sorted by how near the exam is, so the cut falls in the right
   // place.
-  const behindShown = behind
-    .slice()
-    .sort(
-      (left, right) =>
-        (health.get(left.id)?.daysUntilExam ?? Infinity) -
-        (health.get(right.id)?.daysUntilExam ?? Infinity),
-    )
-    .slice(0, BEHIND_LIMIT);
+  const behindShown = useMemo(
+    () =>
+      behind
+        .slice()
+        .sort(
+          (left, right) =>
+            (health.get(left.id)?.daysUntilExam ?? Infinity) -
+            (health.get(right.id)?.daysUntilExam ?? Infinity),
+        )
+        .slice(0, BEHIND_LIMIT),
+    [behind, health],
+  );
 
-  const plannedToday = todaysWork(courses, today, snapshot, query);
+  const plannedToday = useMemo(
+    () => todaysWork(courses, today, snapshot, query),
+    [courses, today, snapshot, query],
+  );
+
+  const continueTopics = useMemo(
+    () => pickUpNext(courses, health, CONTINUE_LIMIT, query),
+    [courses, health, query],
+  );
 
   // Measured over the whole plan rather than the focus: a pace figure that
   // changed when you clicked a sidebar row would be describing the filter
-  // rather than the person.
-  const pace = velocity(snapshot.studyLog, today, snapshot.preferences, VELOCITY_WINDOW_DAYS);
-  const streak = studyStreak(snapshot.studyLog, today, snapshot.preferences);
+  // rather than the person. Memoized because none of the three depend on the
+  // focus at all, and the view now renders four times per filter change.
+  const pace = useMemo(
+    () => velocity(snapshot.studyLog, today, snapshot.preferences, VELOCITY_WINDOW_DAYS),
+    [snapshot, today],
+  );
+  const streak = useMemo(
+    () => studyStreak(snapshot.studyLog, today, snapshot.preferences),
+    [snapshot, today],
+  );
+  const loggedToday = useMemo(
+    () =>
+      studyLog
+        .filter((entry) => entry.date === today)
+        .reduce((sum, entry) => sum + entry.units, 0),
+    [studyLog, today],
+  );
 
-  const continueTopics = pickUpNext(courses, health, CONTINUE_LIMIT, query);
+  // Held still for the rows above, which are memoized on them.
+  const selectTopic = useStableCallback(onSelectTopic);
+  const deleteTopic = useStableCallback(onDeleteTopic);
 
-  const loggedToday = studyLog
-    .filter((entry) => entry.date === today)
-    .reduce((sum, entry) => sum + entry.units, 0);
-
-  if (courses.length === 0) {
-    return (
-      <div className="h-full" {...hintScope}>
-        <EmptyState
-          icon={<CalendarCheck />}
-          title="Nothing in focus"
-          description="No course matches the current focus. Widen it in the sidebar, or add material in the outline."
-          action={
-            <Button variant="accent" onClick={onGoToOutline}>
-              Open the outline
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
+  /* Today used to be the one view a filter change did nothing to. Narrowing
+     the focus rewrote all four of its lists between two frames — rows gone,
+     rows appeared, the "Behind" card there or not — while the outline and the
+     chart animated the very same change. These put it on the same clock: a row
+     opens its space and then fades into it, and leaves the other way round. */
+  const plannedRows = useListPresence(plannedToday, plannedKey);
+  const examRows = useListPresence(exams, examKey);
+  const behindRows = useListPresence(behindShown, courseRowKey);
+  const continueRows = useListPresence(continueTopics, continueKey);
+  // A card, and the three lines that stand in for a list that has nothing in
+  // it, come and go the same way their rows do.
+  const behindPhase = usePresence(behind.length > 0);
+  const noPlanPhase = usePresence(plannedToday.length === 0);
+  const noExamsPhase = usePresence(exams.length === 0);
+  const noContinuePhase = usePresence(continueTopics.length === 0);
+  // And the whole view hands over to the message when the focus empties, as
+  // the timeline's canvas does: half the duration out, half the duration in.
+  const emptyPhase = usePresence(courses.length === 0);
+  const handedOver = isHandedOver(emptyPhase);
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-4 p-6" {...hintScope}>
-      <header className="flex flex-wrap items-baseline gap-3">
-        <h2 className="text-title1 font-semibold">{formatToday(today)}</h2>
-        <p className="text-body text-secondary">
-          {loggedToday > 0
-            ? `${loggedToday} units logged today`
-            : // Not "0 units logged" — the day is not over, and a zero reads
-              // like a verdict rather than a starting point.
-              "Nothing logged yet today"}
-        </p>
-        <dl className="ml-auto flex items-baseline gap-5">
-          <div className="flex items-baseline gap-1.5">
-            <dt className="text-callout text-tertiary">Pace</dt>
-            <dd className="text-body tabular-nums">
-              {pace > 0
-                ? `${pace.toFixed(1)} / day`
-                : // No work in the window is not a pace of zero, it is no
-                  // measurement. A "0.0 / day" here would be a verdict drawn
-                  // from an empty week.
-                  "not measured yet"}
-            </dd>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <dt className="text-callout text-tertiary">Streak</dt>
-            <dd className="text-body tabular-nums">
-              {streak > 0 ? `${streak} day${streak === 1 ? "" : "s"}` : "—"}
-            </dd>
-          </div>
-        </dl>
-      </header>
+    <div className="relative min-h-full" {...hintScope}>
+      <div
+        className={clsx("presence-fade", handedOver ? "opacity-0" : "opacity-100")}
+        data-visible={handedOver ? "false" : "true"}
+        aria-hidden={handedOver || undefined}
+      >
+        {/* No `gap`: a card leaving takes the space above it with it, and a gap
+            between flex items outlives the item collapsing to nothing. The
+            bottom padding is short by exactly the trailing margin. */}
+        <div className="mx-auto flex max-w-4xl flex-col p-6 pb-2">
+          <header className="mb-4 flex flex-wrap items-baseline gap-3">
+            <h2 className="text-title1 font-semibold">{formatToday(today)}</h2>
+            <p className="text-body text-secondary">
+              {loggedToday > 0
+                ? `${loggedToday} units logged today`
+                : // Not "0 units logged" — the day is not over, and a zero reads
+                  // like a verdict rather than a starting point.
+                  "Nothing logged yet today"}
+            </p>
+            <dl className="ml-auto flex items-baseline gap-5">
+              <div className="flex items-baseline gap-1.5">
+                <dt className="text-callout text-tertiary">Pace</dt>
+                <dd className="text-body tabular-nums">
+                  {pace > 0
+                    ? `${pace.toFixed(1)} / day`
+                    : // No work in the window is not a pace of zero, it is no
+                      // measurement. A "0.0 / day" here would be a verdict drawn
+                      // from an empty week.
+                      "not measured yet"}
+                </dd>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <dt className="text-callout text-tertiary">Streak</dt>
+                <dd className="text-body tabular-nums">
+                  {streak > 0 ? `${streak} day${streak === 1 ? "" : "s"}` : "—"}
+                </dd>
+              </div>
+            </dl>
+          </header>
 
-      <Card className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-title3 font-semibold">Today’s plan</h3>
-          {plannedToday.length > 0 ? (
-            <span className="text-callout tabular-nums text-secondary">
-              {plannedToday.reduce((sum, row) => sum + row.units, 0)} units across{" "}
-              {plannedToday.length} topic{plannedToday.length === 1 ? "" : "s"}
-            </span>
-          ) : null}
-          <span className="ml-auto">
-            <PlanningActions size="sm" courses={courses} snapshot={snapshot} today={today} />
-          </span>
-        </div>
-        {plannedToday.length === 0 ? (
-          <p className="text-body text-secondary">
-            {isStudyDay(today, snapshot.preferences)
-              ? "Nothing is scheduled for today. Reflow builds a plan from what is left and how long there is to do it."
-              : // A day off is not an empty day. Saying "nothing scheduled"
-                // would read as a failure to plan rather than as a rest day.
-                "Today is not one of your study days."}
-          </p>
-        ) : (
-          <ul className="flex flex-col">
-            {plannedToday.map(({ course, topic, units }) => (
-              <TopicRow
-                key={topic.id}
-                topic={topic}
-                today={today}
-                courseId={course.id}
-                courseColor={courseColorValue(course.color)}
-                prefix={`${course.name} · ${units} today`}
-                selected={topic.id === selectedTopicId}
-                onSelect={() => onSelectTopic(course, topic)}
-                onDelete={() => onDeleteTopic(course, topic)}
-              />
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card className="flex flex-col gap-3">
-        <h3 className="text-title3 font-semibold">Coming up</h3>
-        {exams.length === 0 ? (
-          <p className="text-body text-secondary">
-            No exam dates on the courses in focus. Add one — a provisional window is enough for the
-            app to start planning backwards from it.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1.5">
-            {exams.map(({ course, exam, days, health: courseHealth }) => (
-              <li key={exam.id} className="flex items-center gap-3 text-body">
-                <span
-                  aria-hidden="true"
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{ background: courseColorValue(course.color) }}
-                />
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="text-tertiary">{course.name} · </span>
-                  {exam.name}
+          <Card className="mb-4 flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="text-title3 font-semibold">Today’s plan</h3>
+              {plannedToday.length > 0 ? (
+                <span className="text-callout tabular-nums text-secondary">
+                  {plannedToday.reduce((sum, row) => sum + row.units, 0)} units across{" "}
+                  {plannedToday.length} topic{plannedToday.length === 1 ? "" : "s"}
                 </span>
-                {courseHealth.pace ? (
-                  <Badge tone={courseHealth.pace.onTrack ? "positive" : "warning"}>
-                    {courseHealth.pace.onTrack ? "On track" : "Behind"}
-                  </Badge>
-                ) : null}
-                <span className="w-24 shrink-0 text-right text-callout tabular-nums text-secondary">
-                  {exam.startDate}
-                </span>
-                <CountdownBadge days={days} provisional={exam.status === "provisional"} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+              ) : null}
+              <span className="ml-auto">
+                <PlanningActions size="sm" courses={courses} snapshot={snapshot} today={today} />
+              </span>
+            </div>
+            {/* The list and the line that stands in for it share one slot, so
+                the card's own gap counts once however many of them are on their
+                way in or out. */}
+            <div className="flex flex-col">
+              {noPlanPhase === null ? null : (
+                <Collapse phase={noPlanPhase} className="text-body text-secondary">
+                  {isStudyDay(today, snapshot.preferences)
+                    ? "Nothing is scheduled for today. Reflow builds a plan from what is left and how long there is to do it."
+                    : // A day off is not an empty day. Saying "nothing scheduled"
+                      // would read as a failure to plan rather than as a rest day.
+                      "Today is not one of your study days."}
+                </Collapse>
+              )}
+              <ul className="flex flex-col">
+                {plannedRows.map(({ key, item, phase }) => (
+                  <Collapse as="li" key={key} phase={phase}>
+                    <TodayTopicRow
+                      course={item.course}
+                      topic={item.topic}
+                      today={today}
+                      units={item.units}
+                      selected={item.topic.id === selectedTopicId}
+                      onSelect={selectTopic}
+                      onDelete={deleteTopic}
+                    />
+                  </Collapse>
+                ))}
+              </ul>
+            </div>
+          </Card>
 
-      {behind.length > 0 ? (
-        <Card className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-                <h3 className="text-title3 font-semibold">Behind</h3>
-            <span className="ml-auto">
-              <PlanningActions size="sm" courses={behind} snapshot={snapshot} today={today} />
-            </span>
-          </div>
-          <ul className="flex flex-col gap-1.5">
-            {behindShown.map((course) => {
-              const pace = health.get(course.id)!.pace!;
-              return (
-                <li key={course.id} className="flex items-center gap-3 text-body">
-                  <span
-                    aria-hidden="true"
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ background: courseColorValue(course.color) }}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{course.name}</span>
-                  <span className="shrink-0 text-callout tabular-nums text-secondary">
-                    {pace.remainingUnits} units left
+          <Card className="mb-4 flex flex-col gap-3">
+            <h3 className="text-title3 font-semibold">Coming up</h3>
+            <div className="flex flex-col">
+              {noExamsPhase === null ? null : (
+                <Collapse phase={noExamsPhase} className="text-body text-secondary">
+                  No exam dates on the courses in focus. Add one — a provisional window is enough
+                  for the app to start planning backwards from it.
+                </Collapse>
+              )}
+              <ul className="flex flex-col">
+                {examRows.map(({ key, item, phase }) => (
+                  <Collapse
+                    as="li"
+                    key={key}
+                    phase={phase}
+                    className="flex items-center gap-3 pb-1.5 text-body"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ background: courseColorValue(item.course.color) }}
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="text-tertiary">{item.course.name} · </span>
+                      {item.exam.name}
+                    </span>
+                    {item.health.pace ? (
+                      <Badge tone={item.health.pace.onTrack ? "positive" : "warning"}>
+                        {item.health.pace.onTrack ? "On track" : "Behind"}
+                      </Badge>
+                    ) : null}
+                    <span className="w-24 shrink-0 text-right text-callout tabular-nums text-secondary">
+                      {item.exam.startDate}
+                    </span>
+                    <CountdownBadge
+                      days={item.days}
+                      provisional={item.exam.status === "provisional"}
+                    />
+                  </Collapse>
+                ))}
+              </ul>
+            </div>
+          </Card>
+
+          {behindPhase === null ? null : (
+            <Collapse phase={behindPhase} className="pb-4">
+              <Card className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h3 className="text-title3 font-semibold">Behind</h3>
+                  <span className="ml-auto">
+                    <PlanningActions size="sm" courses={behind} snapshot={snapshot} today={today} />
                   </span>
-                  <Badge tone="warning">
-                    {Number.isFinite(pace.requiredPace)
-                      ? `${Math.ceil(pace.requiredPace)} / day needed`
-                      : "No days left"}
-                  </Badge>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="text-footnote text-tertiary">
-            {behind.length > behindShown.length
-              ? `${behind.length - behindShown.length} more behind. Needed pace counts only the days you have marked as study days.`
-              : "Needed pace counts only the days you have marked as study days."}
-          </p>
-        </Card>
-      ) : null}
+                </div>
+                <ul className="flex flex-col">
+                  {behindRows.map(({ key, item, phase }) => {
+                    const pace = health.get(item.id)?.pace;
+                    return (
+                      <Collapse
+                        as="li"
+                        key={key}
+                        phase={phase}
+                        className="flex items-center gap-3 pb-1.5 text-body"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ background: courseColorValue(item.color) }}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                        {pace ? (
+                          <>
+                            <span className="shrink-0 text-callout tabular-nums text-secondary">
+                              {pace.remainingUnits} units left
+                            </span>
+                            <Badge tone="warning">
+                              {Number.isFinite(pace.requiredPace)
+                                ? `${Math.ceil(pace.requiredPace)} / day needed`
+                                : "No days left"}
+                            </Badge>
+                          </>
+                        ) : null}
+                      </Collapse>
+                    );
+                  })}
+                </ul>
+                <p className="text-footnote text-tertiary">
+                  {behind.length > behindShown.length
+                    ? `${behind.length - behindShown.length} more behind. Needed pace counts only the days you have marked as study days.`
+                    : "Needed pace counts only the days you have marked as study days."}
+                </p>
+              </Card>
+            </Collapse>
+          )}
 
-      <Card className="flex flex-col gap-3">
-        <h3 className="text-title3 font-semibold">Pick up where you left off</h3>
-        {continueTopics.length === 0 ? (
-          <p className="text-body text-secondary">
-            Nothing is part-finished. Start anything from the outline and it will appear here.
-          </p>
-        ) : (
-          <ul className="flex flex-col">
-            {continueTopics.map(({ course, topic }) => (
-              <TopicRow
-                key={topic.id}
-                topic={topic}
-                today={today}
-                courseId={course.id}
-                courseColor={courseColorValue(course.color)}
-                prefix={course.name}
-                selected={topic.id === selectedTopicId}
-                onSelect={() => onSelectTopic(course, topic)}
-                onDelete={() => onDeleteTopic(course, topic)}
-              />
-            ))}
-          </ul>
-        )}
-      </Card>
+          <Card className="mb-4 flex flex-col gap-3">
+            <h3 className="text-title3 font-semibold">Pick up where you left off</h3>
+            <div className="flex flex-col">
+              {noContinuePhase === null ? null : (
+                <Collapse phase={noContinuePhase} className="text-body text-secondary">
+                  Nothing is part-finished. Start anything from the outline and it will appear here.
+                </Collapse>
+              )}
+              <ul className="flex flex-col">
+                {continueRows.map(({ key, item, phase }) => (
+                  <Collapse as="li" key={key} phase={phase}>
+                    <TodayTopicRow
+                      course={item.course}
+                      topic={item.topic}
+                      today={today}
+                      selected={item.topic.id === selectedTopicId}
+                      onSelect={selectTopic}
+                      onDelete={deleteTopic}
+                    />
+                  </Collapse>
+                ))}
+              </ul>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {emptyPhase === null ? null : (
+        <Fade phase={emptyPhase} className="absolute inset-0 flex items-center justify-center">
+          <EmptyFocus />
+        </Fade>
+      )}
     </div>
   );
 }
@@ -325,14 +477,16 @@ function todaysWork(
   today: string,
   snapshot: PlannerSnapshot,
   query: string,
-): Array<{ course: Course; topic: Topic; units: number }> {
-  const rows: Array<{ course: Course; topic: Topic; units: number }> = [];
+): PlannedRow[] {
+  const rows: PlannedRow[] = [];
 
   for (const course of courses) {
     for (const topic of topicsForQuery(query, course)) {
       for (const block of topic.blocks) {
         if (block.startDate > today || block.endDate < today) continue;
-        rows.push({ course, topic, units: unitsToday(block, snapshot) });
+        // Keyed on the block rather than the topic: a topic with two blocks
+        // spanning today is two rows, and two rows cannot share a key.
+        rows.push({ key: block.id, course, topic, units: unitsToday(block, snapshot) });
       }
     }
   }
@@ -361,7 +515,7 @@ function pickUpNext(
   health: Map<string, CourseHealth>,
   limit: number,
   query: string,
-): Array<{ course: Course; topic: Topic }> {
+): ContinueRow[] {
   const urgency = (course: Course) => health.get(course.id)?.daysUntilExam ?? Infinity;
 
   const rows = courses.flatMap((course) =>
@@ -375,20 +529,15 @@ function pickUpNext(
   );
   const untouched = rows.filter(({ topic }) => topic.completedUnits === 0);
 
-  const byUrgency = (
-    left: { course: Course; topic: Topic },
-    right: { course: Course; topic: Topic },
-  ) => urgency(left.course) - urgency(right.course) || left.topic.order - right.topic.order;
+  const byUrgency = (left: ContinueRow, right: ContinueRow) =>
+    urgency(left.course) - urgency(right.course) || left.topic.order - right.topic.order;
 
   return capPerCourse([...started.sort(byUrgency), ...untouched.sort(byUrgency)], limit);
 }
 
-function capPerCourse(
-  rows: Array<{ course: Course; topic: Topic }>,
-  limit: number,
-): Array<{ course: Course; topic: Topic }> {
+function capPerCourse(rows: ContinueRow[], limit: number): ContinueRow[] {
   const taken = new Map<string, number>();
-  const kept: Array<{ course: Course; topic: Topic }> = [];
+  const kept: ContinueRow[] = [];
 
   for (const row of rows) {
     if (kept.length === limit) break;

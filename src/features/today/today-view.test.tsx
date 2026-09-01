@@ -49,7 +49,6 @@ function renderToday(
       selectedTopicId={null}
       onSelectTopic={vi.fn()}
       onDeleteTopic={vi.fn()}
-      onGoToOutline={vi.fn()}
     />,
   );
 }
@@ -182,8 +181,7 @@ describe("TodayView", () => {
     expect(within(card("Coming up")).getByText(/No exam dates/)).toBeInTheDocument();
   });
 
-  it("offers a way out when the focus holds nothing", () => {
-    const onGoToOutline = vi.fn();
+  it("says so, and nothing more, when the focus holds nothing", () => {
     render(
       <TodayView
         courses={[]}
@@ -194,9 +192,11 @@ describe("TodayView", () => {
         selectedTopicId={null}
         onSelectTopic={vi.fn()}
         onDeleteTopic={vi.fn()}
-        onGoToOutline={onGoToOutline}
       />,
     );
     expect(screen.getByRole("heading", { name: "Nothing in focus" })).toBeInTheDocument();
+    // A filter that has caught everything is not a dead end, so the message
+    // does not offer to create anything to escape it.
+    expect(screen.queryByRole("button", { name: /outline|course/i })).not.toBeInTheDocument();
   });
 });
