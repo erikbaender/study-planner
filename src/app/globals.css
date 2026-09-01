@@ -659,14 +659,23 @@ span:has(> .topic-progress-thumb) {
 }
 
 /**
- * A course card arriving or leaving the filtered outline.
+ * A course card arriving or leaving a filtered list.
  *
- * The card stays in natural flow while its pixels fade. Keeping filtering to
- * one composited property avoids layout work fighting several cards at once.
+ * Two stages, the same two a topic row has: the space opens before the card
+ * fades into it and closes after the card has faded out, so the cards around
+ * the one being filtered travel rather than jump. Each stage is half the
+ * shared duration, so filtering a course costs exactly what filtering a topic
+ * does.
+ *
+ * `clip` rather than `hidden`, for the same reason `.timeline-disclosure` is:
+ * a course lane holds a `position: sticky` gutter card, and `hidden` would
+ * make this box the scrollport it sticks to.
  */
 .collapse-motion {
   overflow: clip;
-  transition: opacity var(--topic-motion-duration) var(--topic-motion-curve);
+  transition:
+    height calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve),
+    opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
 }
 
 /**

@@ -103,6 +103,9 @@ const courseKey = (course: Course) => course.id;
 const courseCardKey = (box: HTMLElement) =>
   box.querySelector("section[data-course-id]")?.getAttribute("data-course-id") ?? undefined;
 const EMPTY_COURSE_SELECTION: readonly string[] = [];
+/** The empty state, as a list of one, so it arrives and leaves like a card. */
+const EMPTY_STATE = { id: "empty" };
+const emptyStateKey = (item: { id: string }) => item.id;
 
 export function OutlineView({
   courses,
@@ -289,8 +292,14 @@ export function OutlineView({
     [onSelectExam, selection],
   );
   // Courses filtered out by the sidebar or the search field stay mounted for
-  // the duration of a simple opacity fade, rather than vanishing in a commit.
+  // the length of their departure, rather than vanishing in a commit: the card
+  // fades and then the space it took closes, so the cards below it travel into
+  // it instead of arriving there.
   const cards = useListPresence(sortedCourses, courseKey);
+  // The empty state is the same arrival: it opens the space it needs before it
+  // is legible in it. A one-item list, so it runs on the same clock as a card.
+  const emptyState = useMemo(() => (courses.length === 0 ? [EMPTY_STATE] : []), [courses.length]);
+  const emptyCards = useListPresence(emptyState, emptyStateKey);
 
   return (
     <div className="flex h-full flex-col">
@@ -335,9 +344,13 @@ export function OutlineView({
       <div className="min-h-0 flex-1 overflow-y-auto" {...hintScope}>
         {/* `min-h-full`, so the space below the last card is still the view and a
             click there clears the selection. */}
-        <div ref={listRef} className="mx-auto flex min-h-full max-w-4xl flex-col gap-2 p-5">
-          {cards.map(({ key, item, present, appear }) => (
-            <Collapse key={key} present={present} appear={appear}>
+        {/* No `gap`: the space between cards rides inside each card's own
+            collapsing box, so filtering one out takes its gap with it rather
+            than leaving eight pixels behind until the card unmounts. The
+            container's bottom padding is short by exactly that trailing gap. */}
+        <div ref={listRef} className="mx-auto flex min-h-full max-w-4xl flex-col px-5 pb-3 pt-5">
+          {cards.map(({ key, item, phase }) => (
+            <Collapse key={key} phase={phase} className="pb-2">
               <CourseCard
                 course={item}
                 health={health.get(item.id)}
@@ -358,17 +371,19 @@ export function OutlineView({
             </Collapse>
           ))}
 
-          <Collapse present={courses.length === 0}>
-            <EmptyState
-              title="No courses in focus"
-              description="Add a course, or widen the focus in the sidebar to see the ones you have."
-              action={
-                <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
-                  New course
-                </Button>
-              }
-            />
-          </Collapse>
+          {emptyCards.map(({ key, phase }) => (
+            <Collapse key={key} phase={phase} className="pb-2">
+              <EmptyState
+                title="No courses in focus"
+                description="Add a course, or widen the focus in the sidebar to see the ones you have."
+                action={
+                  <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
+                    New course
+                  </Button>
+                }
+              />
+            </Collapse>
+          ))}
         </div>
       </div>
     </div>

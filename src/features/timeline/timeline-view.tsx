@@ -48,7 +48,7 @@ import {
   type IsoDate,
   type Topic,
 } from "@/domain";
-import { Button, ContextMenuAt, useKeyboardMode, type MenuItem } from "@/ui";
+import { Button, Collapse, ContextMenuAt, useKeyboardMode, useListPresence, type MenuItem } from "@/ui";
 import {
   daysCss,
   DAY_WIDTH_PROPERTY,
@@ -93,6 +93,11 @@ import {
 import { MemoAllTopicsLane, MemoCourseLane } from "./lanes";
 import { firstBlockStart } from "./spans";
 import { useChartPosition } from "./use-chart-position";
+/** A lane is identified by its course, across the whole of its departure. */
+const courseKey = (course: Course) => course.id;
+/** One array rather than one per render, so a lane with no topics stays memoized. */
+const EMPTY_TOPICS: readonly Topic[] = [];
+
 type TimelineProps = {
   courses: readonly Course[];
   health: Map<string, CourseHealth>;
@@ -185,9 +190,22 @@ function TimelineChart({
     () => courses.map((course) => ({ course, topics: topicsForQuery(query, course) })),
     [courses, query],
   );
+  /**
+   * The lanes on the canvas, including the ones on their way off it.
+   *
+   * A course hidden in the sidebar used to leave in a single frame, and every
+   * lane below it moved up in that same frame — the one change on the chart
+   * that said nothing about what had happened. It now leaves the way a topic
+   * row inside it does: the lane fades, and then the height it occupied
+   * closes, so the lanes below travel into the space rather than appear in it.
+   */
+  const lanes = useListPresence(courses, courseKey);
+  // Computed from the lanes rather than from `courses`, so a departing lane
+  // still draws the topics it had: it is on screen for the length of its own
+  // departure, and one that emptied itself first would fade out already blank.
   const topicsByCourse = useMemo(
-    () => new Map(visibleCourseTopics.map(({ course, topics }) => [course, topics] as const)),
-    [visibleCourseTopics],
+    () => new Map(lanes.map(({ item }) => [item, topicsForQuery(query, item)] as const)),
+    [lanes, query],
   );
 
   const gutter = useMemo(() => {
@@ -480,17 +498,18 @@ function TimelineChart({
               selectedId={selectedId}
               onSelectTopic={selectTopic}
             />
-            {courses.map((course) => (
-              <MemoCourseLane
-                key={course.id}
-                course={course}
-                health={health.get(course.id)}
-                topics={topicsByCourse.get(course) ?? []}
-                range={range}
-                today={today}
-                selectedId={selectedId}
-                onSelectTopic={(topic) => selectTopic(course, topic)}
-              />
+            {lanes.map(({ key, item: course, phase }) => (
+              <Collapse key={key} phase={phase}>
+                <MemoCourseLane
+                  course={course}
+                  health={health.get(course.id)}
+                  topics={topicsByCourse.get(course) ?? EMPTY_TOPICS}
+                  range={range}
+                  today={today}
+                  selectedId={selectedId}
+                  onSelectTopic={(topic) => selectTopic(course, topic)}
+                />
+              </Collapse>
             ))}
           </div>
         </div>

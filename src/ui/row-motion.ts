@@ -89,7 +89,15 @@ export function useDisclosure(open: boolean): { mounted: boolean; expanded: bool
  * an element that has left the DOM cannot animate anything.
  * ────────────────────────────────────────────────────────────────────────── */
 
-type RowPhase = "enter" | "grow" | "shown" | "fade" | "shrink";
+/**
+ * Where a row is in its arrival or its departure.
+ *
+ * Exported because the same five states drive the variable-height version of
+ * this motion in `./collapse`: a course card grows before it fades in and
+ * fades out before it collapses for exactly the reason a topic row does, and
+ * the two would drift apart if each owned its own state machine.
+ */
+export type RowPhase = "enter" | "grow" | "shown" | "fade" | "shrink";
 
 /** What a row looks like right now: how much room it takes, and whether it is drawn. */
 export type RowMotion = { height: number; visible: boolean };
@@ -120,18 +128,19 @@ function motionOf(phase: RowPhase, rowHeight: number): RowMotion {
   return phase === "shown" ? motions.shown : motions.silent;
 }
 
-type RenderedRow<T> = { key: string; item: T; phase: RowPhase };
+/** A row, and how much of its arrival or departure has happened. */
+export type PhasedRow<T> = { key: string; item: T; phase: RowPhase };
 
 function mergeRows<T>(
-  previous: readonly RenderedRow<T>[],
+  previous: readonly PhasedRow<T>[],
   items: readonly T[],
   keyOf: (item: T) => string,
-): RenderedRow<T>[] {
+): PhasedRow<T>[] {
   const instant = prefersReducedMotion();
   const before = new Map(previous.map((row) => [row.key, row]));
   const keys = new Set(items.map(keyOf));
 
-  const rows: RenderedRow<T>[] = items.map((item) => {
+  const rows: PhasedRow<T>[] = items.map((item) => {
     const key = keyOf(item);
     const existing = before.get(key);
     if (!existing) return { key, item, phase: instant ? "shown" : "enter" };
@@ -148,7 +157,7 @@ function mergeRows<T>(
   // their own collapse moves it.
   previous.forEach((row, index) => {
     if (keys.has(row.key)) return;
-    const leaving: RenderedRow<T> =
+    const leaving: PhasedRow<T> =
       row.phase === "fade" || row.phase === "shrink" ? row : { ...row, phase: "fade" };
     rows.splice(Math.min(index, rows.length), 0, leaving);
   });
@@ -158,10 +167,10 @@ function mergeRows<T>(
 
 /** The same rows, carrying whatever their items now say. Nothing arrives or leaves. */
 function refreshRows<T>(
-  previous: readonly RenderedRow<T>[],
+  previous: readonly PhasedRow<T>[],
   items: readonly T[],
   keyOf: (item: T) => string,
-): readonly RenderedRow<T>[] {
+): readonly PhasedRow<T>[] {
   const current = new Map(items.map((item) => [keyOf(item), item]));
   let changed = false;
   const next = previous.map((row) => {
@@ -173,12 +182,20 @@ function refreshRows<T>(
   return changed ? next : previous;
 }
 
-export function useRowTransitions<T>(
+/**
+ * The list, each entry carrying how far through its arrival or departure it is.
+ *
+ * The state machine only — no heights, because the two callers measure them
+ * differently: a topic row is `ROW_HEIGHT` and knows it in advance, and a
+ * course card is whatever its topics make it and has to be measured. Both
+ * still change phase on the same clock, so a filter change is one motion
+ * wherever it lands.
+ */
+export function useRowPhases<T>(
   items: readonly T[],
   keyOf: (item: T) => string,
-  rowHeight: number,
-): readonly { key: string; item: T; motion: RowMotion }[] {
-  const [rendered, setRendered] = useState<readonly RenderedRow<T>[]>(() =>
+): readonly PhasedRow<T>[] {
+  const [rendered, setRendered] = useState<readonly PhasedRow<T>[]>(() =>
     items.map((item) => ({ key: keyOf(item), item, phase: "shown" as RowPhase })),
   );
 
@@ -205,18 +222,23 @@ export function useRowTransitions<T>(
     let frame = 0;
     let inner = 0;
     let timer = 0;
+    let fallback = 0;
 
     if (rendered.some((row) => row.phase === "enter")) {
       // Two frames, for the same reason `useDisclosure` needs them: the row has
       // to exist at zero height before the height it grows to is applied, or
       // the browser has no start value and the growth is a cut again.
-      frame = requestAnimationFrame(() => {
-        inner = requestAnimationFrame(() =>
-          setRendered((rows) =>
-            rows.map((row) => (row.phase === "enter" ? { ...row, phase: "grow" } : row)),
-          ),
+      const grow = () =>
+        setRendered((rows) =>
+          rows.map((row) => (row.phase === "enter" ? { ...row, phase: "grow" } : row)),
         );
+      frame = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(grow);
       });
+      // And the same fallback, for the same tab: one that is not on screen gets
+      // no frames at all, and a row waiting for the second of them would be
+      // stuck at zero height — filtered in, but not there.
+      fallback = window.setTimeout(grow, 100);
     }
 
     if (rendered.some((row) => row.phase !== "shown" && row.phase !== "enter")) {
@@ -237,11 +259,22 @@ export function useRowTransitions<T>(
     return () => {
       cancelAnimationFrame(frame);
       cancelAnimationFrame(inner);
+      window.clearTimeout(fallback);
       window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phases]);
 
+  return rendered;
+}
+
+/** Phases as heights, for a list whose rows are all `rowHeight` tall. */
+export function useRowTransitions<T>(
+  items: readonly T[],
+  keyOf: (item: T) => string,
+  rowHeight: number,
+): readonly { key: string; item: T; motion: RowMotion }[] {
+  const rendered = useRowPhases(items, keyOf);
   return useMemo(
     () => rendered.map(({ key, item, phase }) => ({ key, item, motion: motionOf(phase, rowHeight) })),
     [rendered, rowHeight],
