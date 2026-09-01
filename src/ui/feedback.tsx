@@ -146,9 +146,15 @@ export function Separator({
 }
 
 /**
- * The state the audit found the app stuck in — "Add a course" with no way to
- * add one. An empty state takes its action as a required prop so that cannot
- * happen again by omission.
+ * Nothing here, and why.
+ *
+ * The action is optional, and the three views that empty when the focus does
+ * leave it out. A message saying a filter has hidden everything is not a
+ * dead end — the sidebar that hid them is still on screen and still holds the
+ * way back — so a button offering to *create* something answers a question
+ * nobody asked, and puts the loudest control in the app under the quietest
+ * moment in it. Where the app really is stuck, as it is with no semester at
+ * all, the way out still belongs here.
  */
 export function EmptyState({
   title,
@@ -159,7 +165,7 @@ export function EmptyState({
 }: {
   title: string;
   description?: ReactNode;
-  action: ReactNode;
+  action?: ReactNode;
   icon?: ReactNode;
   className?: string;
 }) {
@@ -181,7 +187,7 @@ export function EmptyState({
           <p className="max-w-xs text-body text-secondary">{description}</p>
         ) : null}
       </div>
-      {action}
+      {action ?? null}
     </div>
   );
 }

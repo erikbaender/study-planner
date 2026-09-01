@@ -30,6 +30,64 @@ import { motionCurveValue, motionDuration, prefersReducedMotion } from "./motion
  * height they are growing to is applied, or the browser has no start value and
  * the growth is the cut again.
  */
+/* ─── One clock, not one per list ───────────────────────────────────────── */
+
+/**
+ * The moment a stage ends, shared by everything that ends with it.
+ *
+ * Today draws four lists, and filtering a course changes all four at once. Each
+ * had its own timer, so each woke the app up by itself: four separate tasks,
+ * four separate renders of the view, and — because a render of a whole view in
+ * a development build is not free — the fourth list started collapsing sixty
+ * milliseconds after the first. Measured at 480ms, the two halves of the same
+ * motion had visibly come apart, and the same is true of a course card, its
+ * exam rows and its topic rows all leaving together.
+ *
+ * So the deadline is the unit rather than the caller. Anything that asks for
+ * the same instant is woken by the same timer, in one task, which React commits
+ * once — the lists move together because there is nothing left that could move
+ * them apart.
+ */
+type Tick = { at: number; run: Set<() => void>; timer: number };
+
+const ticks: Tick[] = [];
+
+/**
+ * A few milliseconds of slack, because the effects that schedule these run one
+ * after another rather than at the same instant. Far shorter than any stage,
+ * so two deadlines that mean different moments can never be merged.
+ */
+const TICK_TOLERANCE_MS = 8;
+
+function advanceTogether(delay: number, run: () => void): () => void {
+  const at = Date.now() + delay;
+  let tick = ticks.find((candidate) => Math.abs(candidate.at - at) <= TICK_TOLERANCE_MS);
+  if (!tick) {
+    const created: Tick = { at, run: new Set(), timer: 0 };
+    created.timer = window.setTimeout(() => {
+      drop(created);
+      // Copied, because a callback may schedule the next stage as it runs.
+      for (const callback of [...created.run]) callback();
+    }, delay);
+    ticks.push(created);
+    tick = created;
+  }
+  const joined = tick;
+  joined.run.add(run);
+
+  return () => {
+    joined.run.delete(run);
+    if (joined.run.size > 0) return;
+    window.clearTimeout(joined.timer);
+    drop(joined);
+  };
+}
+
+function drop(tick: Tick): void {
+  const index = ticks.indexOf(tick);
+  if (index !== -1) ticks.splice(index, 1);
+}
+
 export function useDisclosure(open: boolean): { mounted: boolean; expanded: boolean } {
   const [mounted, setMounted] = useState(open);
   const [expanded, setExpanded] = useState(open);
@@ -58,11 +116,9 @@ export function useDisclosure(open: boolean): { mounted: boolean; expanded: bool
       };
     }
 
-    const timer = window.setTimeout(
-      () => setMounted(false),
-      motionDuration(document.documentElement),
-    );
-    return () => window.clearTimeout(timer);
+    // Shared, so folding every course in the outline unmounts them all in one
+    // commit rather than seven.
+    return advanceTogether(motionDuration(document.documentElement), () => setMounted(false));
   }, [open]);
 
   return { mounted, expanded };
@@ -216,54 +272,61 @@ export function useRowPhases<T>(
     );
   }
 
-  const phases = rendered.map((row) => row.phase).join("");
+  const arriving = rendered.some((row) => row.phase === "enter");
   useEffect(() => {
-    if (rendered.every((row) => row.phase === "shown")) return;
-    let frame = 0;
-    let inner = 0;
-    let timer = 0;
-    let fallback = 0;
-
-    if (rendered.some((row) => row.phase === "enter")) {
-      // Two frames, for the same reason `useDisclosure` needs them: the row has
-      // to exist at zero height before the height it grows to is applied, or
-      // the browser has no start value and the growth is a cut again.
-      const grow = () =>
-        setRendered((rows) =>
-          rows.map((row) => (row.phase === "enter" ? { ...row, phase: "grow" } : row)),
-        );
-      frame = requestAnimationFrame(() => {
-        inner = requestAnimationFrame(grow);
-      });
-      // And the same fallback, for the same tab: one that is not on screen gets
-      // no frames at all, and a row waiting for the second of them would be
-      // stuck at zero height — filtered in, but not there.
-      fallback = window.setTimeout(grow, 100);
-    }
-
-    if (rendered.some((row) => row.phase !== "shown" && row.phase !== "enter")) {
-      timer = window.setTimeout(
-        () =>
-          setRendered((rows) =>
-            rows.flatMap((row) => {
-              if (row.phase === "grow") return [{ ...row, phase: "shown" as RowPhase }];
-              if (row.phase === "fade") return [{ ...row, phase: "shrink" as RowPhase }];
-              if (row.phase === "shrink") return [];
-              return [row];
-            }),
-          ),
-        motionDuration(document.documentElement) / 2,
+    if (!arriving) return;
+    // Two frames, for the same reason `useDisclosure` needs them: the row has
+    // to exist at zero height before the height it grows to is applied, or the
+    // browser has no start value and the growth is a cut again.
+    const grow = () =>
+      setRendered((rows) =>
+        rows.map((row) => (row.phase === "enter" ? { ...row, phase: "grow" } : row)),
       );
-    }
-
+    let inner = 0;
+    const frame = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(grow);
+    });
+    // And the same fallback, for the same tab: one that is not on screen gets
+    // no frames at all, and a row waiting for the second of them would be stuck
+    // at zero height — filtered in, but not there.
+    const fallback = window.setTimeout(grow, 100);
     return () => {
       cancelAnimationFrame(frame);
       cancelAnimationFrame(inner);
       window.clearTimeout(fallback);
-      window.clearTimeout(timer);
     };
+  }, [arriving]);
+
+  /**
+   * When this stage ends — and `enter` is not a stage.
+   *
+   * The two frames above are how an arrival is *started*, not how long it
+   * lasts, so the signature this clock is keyed on counts an entering row as a
+   * growing one. Keyed on the raw phases instead, a list holding one arriving
+   * row restarted its timer two frames in and dragged every row leaving beside
+   * it two frames late with it — visible as a stagger between Today's four
+   * lists, one of which had an arrival in it and three of which did not. A row
+   * that arrives now grows for two frames less than half the duration and lands
+   * with everything else, which is the trade the house rule asks for: one
+   * interaction, one start, one finish.
+   */
+  const clock = rendered.map((row) => (row.phase === "enter" ? "grow" : row.phase)).join("");
+  useEffect(() => {
+    if (rendered.every((row) => row.phase === "shown")) return;
+    return advanceTogether(motionDuration(document.documentElement) / 2, () =>
+      setRendered((rows) =>
+        rows.flatMap((row) => {
+          if (row.phase === "grow" || row.phase === "enter") {
+            return [{ ...row, phase: "shown" as RowPhase }];
+          }
+          if (row.phase === "fade") return [{ ...row, phase: "shrink" as RowPhase }];
+          if (row.phase === "shrink") return [];
+          return [row];
+        }),
+      ),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phases]);
+  }, [clock]);
 
   return rendered;
 }

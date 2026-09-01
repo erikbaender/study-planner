@@ -27,7 +27,6 @@ const shared = {
   onDeleteTopic: vi.fn(),
   onDeleteCourse: vi.fn(),
   onEditCourse: vi.fn(),
-  onNewCourse: vi.fn(),
 };
 
 /** The box a card arrives and leaves in, found by the course it holds. */

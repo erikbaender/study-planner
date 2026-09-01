@@ -51,7 +51,6 @@ function chart(topics: ReturnType<typeof makeTopic>[], onSelectTopic = vi.fn()) 
       today="2026-05-01"
       selectedId={null}
       onSelectTopic={onSelectTopic}
-      onGoToOutline={vi.fn()}
     />,
   );
   return { course, onSelectTopic };
@@ -322,7 +321,6 @@ describe("TimelineView", () => {
         today="2026-05-01"
         selectedId={null}
         onSelectTopic={vi.fn()}
-        onGoToOutline={vi.fn()}
       />,
     );
     const target = bar(/2026-05-04 to 2026-05-08/);
@@ -396,7 +394,6 @@ describe("TimelineView", () => {
         selectedId={null}
         onSelectTopic={vi.fn()}
         onClearSelection={onClearSelection}
-        onGoToOutline={vi.fn()}
       />,
     );
 
@@ -439,7 +436,6 @@ describe("TimelineView", () => {
         today="2026-05-01"
         selectedId={null}
         onSelectTopic={vi.fn()}
-        onGoToOutline={vi.fn()}
       />,
     );
     const near = bar(/2026-05-04 to 2026-05-08/);
@@ -519,7 +515,6 @@ describe("TimelineView", () => {
         today="2026-05-01"
         selectedId={null}
         onSelectTopic={vi.fn()}
-        onGoToOutline={vi.fn()}
       />,
     );
     const scroller = container.querySelector(".overflow-auto");
@@ -539,7 +534,6 @@ describe("TimelineView", () => {
   it("keeps the chart mounted while the sidebar hides every course", () => {
     const topic = makeTopic({ name: "Glycolysis", blocks: [] });
     const course = makeCourse({ name: "Biochemistry", topics: [topic] });
-    const onGoToOutline = vi.fn();
     const { container, rerender } = render(
       <TimelineView
         courses={[course]}
@@ -547,7 +541,6 @@ describe("TimelineView", () => {
         today="2026-05-01"
         selectedId={null}
         onSelectTopic={vi.fn()}
-        onGoToOutline={onGoToOutline}
       />,
     );
     const existing = container.querySelector(".timeline-scrollport");
@@ -560,11 +553,10 @@ describe("TimelineView", () => {
         today="2026-05-01"
         selectedId={null}
         onSelectTopic={vi.fn()}
-        onGoToOutline={onGoToOutline}
       />,
     );
 
     expect(container.querySelector(".timeline-scrollport")).toBe(existing);
-    expect(screen.getByRole("button", { name: "Open the outline" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Nothing in focus" })).toBeInTheDocument();
   });
 });

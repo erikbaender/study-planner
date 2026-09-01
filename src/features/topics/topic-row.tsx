@@ -10,8 +10,12 @@
  * Name · draggable progress · count. The name is the click target that
  * selects the row into the inspector; the slider is a sibling rather than a
  * child of it, because a slider nested inside a `<button>` is invalid markup
- * and unreachable from the keyboard. The whole `<li>` is the context-menu
- * trigger, so right-clicking anywhere in the row works.
+ * and unreachable from the keyboard. The whole row is the context-menu
+ * trigger, so right-clicking anywhere in it works.
+ *
+ * Not a list item itself: the row arrives and leaves inside a slot that
+ * animates its height, and that slot is what the list is made of. A row that
+ * carried its own `<li>` would put one inside the other.
  */
 
 import { clsx } from "clsx";
@@ -49,7 +53,7 @@ export function TopicRow({
         { label: "Delete", icon: <Trash2 />, danger: true, onSelect: onDelete },
       ]}
     >
-      <li
+      <div
         data-course-id={courseId}
         className={clsx(
           "topic-completion-row group flex items-center gap-3 rounded-control px-2 py-1",
@@ -74,7 +78,7 @@ export function TopicRow({
           sliderClassName="w-48 shrink-0"
           readoutClassName="w-32 shrink-0 text-right text-callout tabular-nums whitespace-nowrap text-secondary"
         />
-      </li>
+      </div>
     </ContextMenu>
   );
 }

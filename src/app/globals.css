@@ -679,6 +679,38 @@ span:has(> .topic-progress-thumb) {
 }
 
 /**
+ * …but only while the height is actually moving, for the reason `.row-motion`
+ * makes an exception too: a card is drawn with a shadow that falls outside it,
+ * and a box clipped to the card's own box cut it off on three sides. A settled
+ * box is exactly its content's height and has nothing left to clip.
+ */
+.collapse-motion[data-phase="shown"] {
+  overflow: visible;
+}
+
+/**
+ * One surface handing over to another, in the same two halves.
+ *
+ * A view whose focus has been emptied does not open a space for the message
+ * that says so: the message goes exactly where the content was, so the two
+ * overlap and only opacity moves. The content leaves over the first half of
+ * the shared duration and the message arrives over the second — the same order
+ * and the same clock as a card's fade-then-close, so emptying a view costs
+ * what filtering one course out of it does.
+ *
+ * Anything faded out is also out of reach. Without this a message still at
+ * zero opacity would sit over the chart and eat the click that brought a
+ * course back.
+ */
+.presence-fade {
+  transition: opacity calc(var(--topic-motion-duration) / 2) var(--topic-motion-curve);
+}
+
+.presence-fade[data-visible="false"] {
+  pointer-events: none;
+}
+
+/**
  * Switching views: out, then in, never a cut.
  *
  * The outgoing view is not kept mounted underneath the incoming one. Two
@@ -855,6 +887,7 @@ span:has(> .topic-progress-thumb) {
   .row-motion,
   .outline-disclosure,
   .collapse-motion,
+  .presence-fade,
   .view-fade,
   .timeline-tint,
   .input-hint-fade {

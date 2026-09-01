@@ -43,7 +43,6 @@ const shared = {
   today: "2026-05-01",
   selectedId: null,
   onSelectTopic: vi.fn(),
-  onGoToOutline: vi.fn(),
 };
 
 /** The box a course's whole lane arrives and leaves in. */

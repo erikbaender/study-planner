@@ -108,7 +108,6 @@ describe("TopicList", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -142,7 +141,6 @@ describe("TopicList", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -251,7 +249,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
   }
@@ -376,7 +373,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -472,7 +468,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -534,7 +529,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 
@@ -591,7 +585,6 @@ describe("OutlineView course selection", () => {
         onDeleteTopic={vi.fn()}
         onDeleteCourse={vi.fn()}
         onEditCourse={vi.fn()}
-        onNewCourse={vi.fn()}
       />,
     );
 

@@ -17,7 +17,7 @@
  * overwritten, and never regenerated.
  */
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { CalendarSync, Wand2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
@@ -30,7 +30,13 @@ import {
 import { Badge, Button, Sheet, Stepper } from "@/ui";
 import { createPlanningPreview, type PlanningPreview } from "./planning-summary";
 
-export function PlanningActions({
+/**
+ * Memoized, because it is a button in front of a Radix dialog and the views it
+ * sits in re-render several times over one filter change. Nothing it is given
+ * changes while a row beside it is arriving or leaving, so rebuilding the
+ * dialog tree four times was the animation paying for a sheet nobody opened.
+ */
+export const PlanningActions = memo(function PlanningActions({
   courses,
   snapshot,
   today,
@@ -58,7 +64,7 @@ export function PlanningActions({
       />
     </>
   );
-}
+});
 
 export function AutoPlanButton({
   course,

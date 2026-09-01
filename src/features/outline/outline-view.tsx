@@ -44,7 +44,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ChevronsDown, ChevronsUp, Plus } from "lucide-react";
+import { ChevronsDown, ChevronsUp } from "lucide-react";
 import {
   type Course,
   type CourseHealth,
@@ -53,17 +53,19 @@ import {
   type Topic,
 } from "@/domain";
 import {
-  Button,
   Collapse,
-  EmptyState,
+  Fade,
   IconButton,
   SegmentedControl,
   useKeyboardMode,
   useListPresence,
+  usePresence,
+  useStableCallback,
 } from "@/ui";
 import { useReorderMotion } from "@/ui/row-motion";
 import { hintScope, useViewHints, type InputHint } from "@/features/workspace/hints";
 import { sortCourses } from "@/features/workspace/scope";
+import { EmptyFocus } from "@/features/workspace/empty-focus";
 import {
   COURSE_SORTS,
   COURSE_SORT_LABELS,
@@ -103,9 +105,6 @@ const courseKey = (course: Course) => course.id;
 const courseCardKey = (box: HTMLElement) =>
   box.querySelector("section[data-course-id]")?.getAttribute("data-course-id") ?? undefined;
 const EMPTY_COURSE_SELECTION: readonly string[] = [];
-/** The empty state, as a list of one, so it arrives and leaves like a card. */
-const EMPTY_STATE = { id: "empty" };
-const emptyStateKey = (item: { id: string }) => item.id;
 
 export function OutlineView({
   courses,
@@ -121,7 +120,6 @@ export function OutlineView({
   onDeleteTopic,
   onDeleteCourse,
   onEditCourse,
-  onNewCourse,
 }: {
   courses: readonly Course[];
   health: Map<string, CourseHealth>;
@@ -137,7 +135,6 @@ export function OutlineView({
   onDeleteTopic: (course: Course, topic: Topic) => void;
   onDeleteCourse: (course: Course) => void;
   onEditCourse: (courseId: string) => void;
-  onNewCourse: () => void;
 }) {
   const [selection] = useState(createSelectionStore);
   const keyboardMode = useKeyboardMode();
@@ -295,20 +292,37 @@ export function OutlineView({
   // the length of their departure, rather than vanishing in a commit: the card
   // fades and then the space it took closes, so the cards below it travel into
   // it instead of arriving there.
+  /* One handler each, for every card, rather than seven closures per card per
+     render: the cards are memoized, and a fresh function would undo that on
+     every one of the four commits a filter change now costs. */
+  const cardSelectTopic = useStableCallback(selectTopic);
+  const cardSelectExam = useStableCallback(selectExam);
+  const cardSelectCourse = useStableCallback(selectCourse);
+  const cardDeleteExam = useStableCallback(onDeleteExam);
+  const cardDeleteTopic = useStableCallback(onDeleteTopic);
+  const cardDeleteCourse = useStableCallback(onDeleteCourse);
+  const cardEditCourse = useStableCallback((course: Course) => onEditCourse(course.id));
+
   const cards = useListPresence(sortedCourses, courseKey);
-  // The empty state is the same arrival: it opens the space it needs before it
-  // is legible in it. A one-item list, so it runs on the same clock as a card.
-  const emptyState = useMemo(() => (courses.length === 0 ? [EMPTY_STATE] : []), [courses.length]);
-  const emptyCards = useListPresence(emptyState, emptyStateKey);
+  // Both of these run on the cards' clock rather than on one of their own: the
+  // last card fades, the space it took closes, and the message arrives in the
+  // half that the closing occupies. The bar leaves the same way it would if it
+  // were a card — its contents first, then the room it took.
+  const emptyPhase = usePresence(courses.length === 0);
+  const chromePhase = usePresence(courses.length > 0);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       {/* The view's own chrome, above its scroll and outside its hint scope,
           exactly as the timeline's zoom control sits above the chart. An
           outline with nothing in it has no order to choose, so the bar is not
           there to be chosen from. */}
-      {courses.length > 0 ? (
-        <div className="flex flex-none items-center gap-2 border-b border-separator px-4 py-2">
+      {chromePhase === null ? null : (
+        <Collapse
+          phase={chromePhase}
+          boxClassName="flex-none"
+          className="flex items-center gap-2 border-b border-separator px-4 py-2"
+        >
           <SegmentedControl<CourseSort>
             size="sm"
             label="Sort courses by"
@@ -338,8 +352,8 @@ export function OutlineView({
               onClick={() => unfoldCourses(visibleCourseIds)}
             />
           </span>
-        </div>
-      ) : null}
+        </Collapse>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto" {...hintScope}>
         {/* `min-h-full`, so the space below the last card is still the view and a
@@ -360,32 +374,27 @@ export function OutlineView({
                 selectedId={selectedId}
                 courseSelection={selection.stateOf(item.id)}
                 labelHints={labelHints}
-                onSelectTopic={(topic) => selectTopic(item, topic)}
-                onSelectExam={(exam) => selectExam(item, exam)}
-                onDeleteExam={(exam) => onDeleteExam(item, exam)}
-                onSelectCourse={(event) => selectCourse(item, event)}
-                onDeleteTopic={(topic) => onDeleteTopic(item, topic)}
-                onDeleteCourse={() => onDeleteCourse(item)}
-                onEditCourse={() => onEditCourse(item.id)}
-              />
-            </Collapse>
-          ))}
-
-          {emptyCards.map(({ key, phase }) => (
-            <Collapse key={key} phase={phase} className="pb-2">
-              <EmptyState
-                title="No courses in focus"
-                description="Add a course, or widen the focus in the sidebar to see the ones you have."
-                action={
-                  <Button variant="accent" leadingIcon={<Plus />} onClick={onNewCourse}>
-                    New course
-                  </Button>
-                }
+                onSelectTopic={cardSelectTopic}
+                onSelectExam={cardSelectExam}
+                onDeleteExam={cardDeleteExam}
+                onSelectCourse={cardSelectCourse}
+                onDeleteTopic={cardDeleteTopic}
+                onDeleteCourse={cardDeleteCourse}
+                onEditCourse={cardEditCourse}
               />
             </Collapse>
           ))}
         </div>
       </div>
+
+      {/* Over the list rather than at the top of it, so the message lands in
+          the middle of the view the way it does in the other two — and so the
+          cards still have their own space to close while it arrives. */}
+      {emptyPhase === null ? null : (
+        <Fade phase={emptyPhase} className="absolute inset-0 flex items-center justify-center">
+          <EmptyFocus />
+        </Fade>
+      )}
     </div>
   );
 }
