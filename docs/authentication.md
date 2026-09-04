@@ -4,7 +4,7 @@
 
 Study Planner has one storage and identity path: GitHub-authenticated Convex. Authentication resolves before the planner repository is mounted, so signed-out clients do not issue protected planner queries. Signing out unmounts active subscriptions and returns to the authentication gate. The same GitHub identity resolves to the same Convex user and therefore sees the same data after a reload or on another device.
 
-`NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` are required. If either is blank or missing, the application displays an actionable configuration error and never constructs a fallback planner.
+`NEXT_PUBLIC_CONVEX_URL` is required by the application. If it is blank or missing, the application displays an actionable configuration error and never constructs a fallback planner. `NEXT_PUBLIC_CONVEX_SITE_URL` is useful when configuring OAuth callbacks, but the Convex Auth client derives the corresponding HTTP Actions URL from `NEXT_PUBLIC_CONVEX_URL` and does not require it at runtime.
 
 ## Clean cutover decision
 
@@ -39,7 +39,7 @@ Convex Auth also requires `JWT_PRIVATE_KEY` and `JWKS`. Generate them through th
 
 ## Preview deployments
 
-Use a separate Convex deployment and GitHub OAuth app for preview. Set that preview deployment's `SITE_URL` to the exact preview browser origin, and set the OAuth callback to its exact `NEXT_PUBLIC_CONVEX_SITE_URL` plus `/api/auth/callback/github`. Supply the matching `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, and `NEXT_PUBLIC_CONVEX_SITE_URL` in the preview host. Avoid wildcard callbacks and do not point previews at production data.
+Use a separate Convex deployment and GitHub OAuth app for preview. Set that preview deployment's `SITE_URL` to the exact preview browser origin, and set the OAuth callback to its exact Convex HTTP Actions URL plus `/api/auth/callback/github`. Supply the matching `CONVEX_DEPLOYMENT` and `NEXT_PUBLIC_CONVEX_URL` in the preview host. Avoid wildcard callbacks and do not point previews at production data.
 
 ## Production deployment
 

@@ -16,25 +16,18 @@ vi.mock("@/components/ConfiguredConvexClientProvider", () => ({
   ),
 }));
 
-import {
-  ConvexClientProvider,
-  missingCloudConfiguration,
-} from "@/components/ConvexClientProvider";
+import { ConvexClientProvider } from "@/components/ConvexClientProvider";
 
 const originalConvexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-const originalConvexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
 
 describe("ConvexClientProvider", () => {
   afterEach(() => {
     if (originalConvexUrl === undefined) delete process.env.NEXT_PUBLIC_CONVEX_URL;
     else process.env.NEXT_PUBLIC_CONVEX_URL = originalConvexUrl;
-    if (originalConvexSiteUrl === undefined) delete process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
-    else process.env.NEXT_PUBLIC_CONVEX_SITE_URL = originalConvexSiteUrl;
   });
 
   it("fails explicitly instead of mounting a planner when cloud configuration is missing", () => {
     delete process.env.NEXT_PUBLIC_CONVEX_URL;
-    process.env.NEXT_PUBLIC_CONVEX_SITE_URL = "   ";
 
     render(
       <ConvexClientProvider>
@@ -44,14 +37,12 @@ describe("ConvexClientProvider", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("Cloud configuration required");
     expect(screen.getByRole("alert")).toHaveTextContent("NEXT_PUBLIC_CONVEX_URL");
-    expect(screen.getByRole("alert")).toHaveTextContent("NEXT_PUBLIC_CONVEX_SITE_URL");
     expect(screen.queryByText("Planner data")).not.toBeInTheDocument();
     expect(screen.queryByTestId("configured-provider")).not.toBeInTheDocument();
   });
 
-  it("mounts the only runtime when both public Convex URLs are configured", () => {
+  it("mounts the only runtime when the public Convex URL is configured", () => {
     process.env.NEXT_PUBLIC_CONVEX_URL = " https://configured.convex.cloud ";
-    process.env.NEXT_PUBLIC_CONVEX_SITE_URL = "https://configured.convex.site";
 
     render(
       <ConvexClientProvider>
@@ -64,14 +55,5 @@ describe("ConvexClientProvider", () => {
       "https://configured.convex.cloud",
     );
     expect(screen.getByText("Planner")).toBeInTheDocument();
-  });
-});
-
-describe("missingCloudConfiguration", () => {
-  it("treats blank values as missing", () => {
-    expect(missingCloudConfiguration({ convexUrl: " ", convexSiteUrl: undefined })).toEqual([
-      "NEXT_PUBLIC_CONVEX_URL",
-      "NEXT_PUBLIC_CONVEX_SITE_URL",
-    ]);
   });
 });
