@@ -45,7 +45,7 @@ Use a separate Convex deployment and GitHub OAuth app for preview. Set that prev
 
 Production requires its own Convex deployment and GitHub OAuth app. Before routing users to it:
 
-1. Deploy the schema and functions with `pnpm convex:deploy`.
+1. Deploy the schema and functions with `pnpm convex:deploy`. Pushes to `main` do this automatically after CI passes using the production-scoped `CONVEX_DEPLOY_KEY` GitHub Actions secret.
 2. Set the three public deployment values in the Next.js host.
 3. Set the exact production origin as Convex `SITE_URL`.
 4. Set the GitHub client ID/secret and Convex Auth JWT/JWKS values in the production Convex environment.
