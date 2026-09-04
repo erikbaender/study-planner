@@ -313,7 +313,8 @@ export function useRowPhases<T>(
   const clock = rendered.map((row) => (row.phase === "enter" ? "grow" : row.phase)).join("");
   useEffect(() => {
     if (rendered.every((row) => row.phase === "shown")) return;
-    return advanceTogether(motionDuration(document.documentElement) / 2, () =>
+    const half = motionDuration(document.documentElement) / 2;
+    const advance = () =>
       setRendered((rows) =>
         rows.flatMap((row) => {
           if (row.phase === "grow" || row.phase === "enter") {
@@ -323,8 +324,20 @@ export function useRowPhases<T>(
           if (row.phase === "shrink") return [];
           return [row];
         }),
-      ),
-    );
+      );
+    let cancelNext: (() => void) | undefined;
+    const run = () => {
+      advance();
+      // Register the second half while the first timer is running. React may
+      // flush the phase update after a large timer advance; waiting for the
+      // next effect in that case would start the second half too late.
+      if (clock.includes("fade")) cancelNext = advanceTogether(half, advance);
+    };
+    const cancel = advanceTogether(half, run);
+    return () => {
+      cancel();
+      cancelNext?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clock]);
 
