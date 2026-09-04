@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { ConfiguredConvexClientProvider } from "./ConfiguredConvexClientProvider";
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
-  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL?.trim();
+  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL?.trim().replace(/\/+$/, "");
 
   if (!convexUrl) {
     return (

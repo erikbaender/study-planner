@@ -4,7 +4,7 @@
 
 Study Planner has one storage and identity path: GitHub-authenticated Convex. Authentication resolves before the planner repository is mounted, so signed-out clients do not issue protected planner queries. Signing out unmounts active subscriptions and returns to the authentication gate. The same GitHub identity resolves to the same Convex user and therefore sees the same data after a reload or on another device.
 
-`NEXT_PUBLIC_CONVEX_URL` is required by the application. If it is blank or missing, the application displays an actionable configuration error and never constructs a fallback planner. `NEXT_PUBLIC_CONVEX_SITE_URL` is useful when configuring OAuth callbacks, but the Convex Auth client derives the corresponding HTTP Actions URL from `NEXT_PUBLIC_CONVEX_URL` and does not require it at runtime.
+`NEXT_PUBLIC_CONVEX_URL` is required by the application. If it is blank or missing, the application displays an actionable configuration error and never constructs a fallback planner. The client normalizes an accidental trailing slash before opening its WebSocket connection. `NEXT_PUBLIC_CONVEX_SITE_URL` is useful when configuring OAuth callbacks, but the Convex Auth client derives the corresponding HTTP Actions URL from `NEXT_PUBLIC_CONVEX_URL` and does not require it at runtime.
 
 ## Clean cutover decision
 

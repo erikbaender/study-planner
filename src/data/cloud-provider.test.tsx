@@ -42,7 +42,7 @@ describe("ConvexClientProvider", () => {
   });
 
   it("mounts the only runtime when the public Convex URL is configured", () => {
-    process.env.NEXT_PUBLIC_CONVEX_URL = " https://configured.convex.cloud ";
+    process.env.NEXT_PUBLIC_CONVEX_URL = " https://configured.convex.cloud/ ";
 
     render(
       <ConvexClientProvider>
