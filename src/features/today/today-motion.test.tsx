@@ -105,21 +105,26 @@ describe("Today's lists arriving and leaving", () => {
     // An exam yesterday with work still on it is behind by definition.
     const slipping = makeCourse({
       name: "Slipping",
-      exams: [makeExam({ name: "Past", startDate: "2026-05-05" })],
+      exams: [makeExam({ name: "Past", startDate: "2026-05-02" })],
       topics: [makeTopic({ name: "Unfinished", totalUnits: 400, completedUnits: 0 })],
     });
-    const { rerender } = render(today([slipping, anatomy]));
+    const { rerender } = render(today([slipping]));
     const card = screen.getByRole("heading", { name: "Behind" }).closest(".collapse-motion");
     expect(card).toHaveAttribute("data-phase", "shown");
 
-    rerender(today([anatomy]));
-    expect(screen.getByRole("heading", { name: "Behind" }).closest(".collapse-motion")).toHaveAttribute(
+    const onTrack = makeCourse({
+      name: "On track",
+      exams: [makeExam({ name: "Future", startDate: "2026-06-01" })],
+      topics: [makeTopic({ name: "Finished", totalUnits: 10, completedUnits: 10 })],
+    });
+    rerender(today([onTrack]));
+    expect(screen.getByText("Behind", { selector: "h3" }).closest(".collapse-motion")).toHaveAttribute(
       "data-phase",
       "fade",
     );
 
     act(() => vi.advanceTimersByTime(HALF));
-    expect(screen.getByRole("heading", { name: "Behind" }).closest(".collapse-motion")).toHaveAttribute(
+    expect(screen.getByText("Behind", { selector: "h3" }).closest(".collapse-motion")).toHaveAttribute(
       "data-phase",
       "shrink",
     );
