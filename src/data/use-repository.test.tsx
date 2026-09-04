@@ -1,15 +1,25 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { EMPTY_SNAPSHOT } from "@/domain/types";
-import { createLocalRepository, memoryStorage } from "./local-repository";
+import type { PlannerRepository, RepositoryState } from "./repository";
 import {
-  LocalRepositoryProvider,
   RepositoryStoreProvider,
   usePlannerErrors,
   usePlannerRun,
   usePlannerState,
   useRepository,
 } from "./use-repository";
+
+function testRepository(onSubscribe?: () => void, onUnsubscribe?: () => void) {
+  return {
+    subscribe(listener: (state: RepositoryState) => void) {
+      onSubscribe?.();
+      listener({ status: "ready", snapshot: EMPTY_SNAPSHOT });
+      return () => onUnsubscribe?.();
+    },
+  } as PlannerRepository;
+}
 
 function Consumers() {
   const first = usePlannerState();
@@ -27,48 +37,18 @@ function Consumers() {
 }
 
 describe("RepositoryStoreProvider", () => {
-  it("keeps one local repository instance across provider rerenders", async () => {
-    const repositories = new Set<ReturnType<typeof useRepository>>();
-
-    function LocalConsumer({ label }: { label: string }) {
-      const repository = useRepository();
-      const state = usePlannerState();
-      repositories.add(repository);
-      return <output>{label}:{state.status}</output>;
-    }
-
-    const view = render(
-      <LocalRepositoryProvider>
-        <LocalConsumer label="first" />
-      </LocalRepositoryProvider>,
-    );
-    await waitFor(() => expect(screen.getByText("first:ready")).toBeInTheDocument());
-
-    view.rerender(
-      <LocalRepositoryProvider>
-        <LocalConsumer label="second" />
-      </LocalRepositoryProvider>,
-    );
-    await waitFor(() => expect(screen.getByText("second:ready")).toBeInTheDocument());
-
-    expect(repositories.size).toBe(1);
-  });
-
-  it("shares one live repository subscription across every consumer", async () => {
-    const repository = createLocalRepository({ storage: memoryStorage(EMPTY_SNAPSHOT) });
-    const subscribe = repository.subscribe.bind(repository);
+  it("shares one live repository subscription across every consumer and cleans it up", async () => {
     let activeSubscriptions = 0;
     let maximumActiveSubscriptions = 0;
-
-    repository.subscribe = (listener) => {
-      activeSubscriptions += 1;
-      maximumActiveSubscriptions = Math.max(maximumActiveSubscriptions, activeSubscriptions);
-      const unsubscribe = subscribe(listener);
-      return () => {
+    const repository = testRepository(
+      () => {
+        activeSubscriptions += 1;
+        maximumActiveSubscriptions = Math.max(maximumActiveSubscriptions, activeSubscriptions);
+      },
+      () => {
         activeSubscriptions -= 1;
-        unsubscribe();
-      };
-    };
+      },
+    );
 
     const view = render(
       <RepositoryStoreProvider repository={repository}>
@@ -84,20 +64,35 @@ describe("RepositoryStoreProvider", () => {
     expect(activeSubscriptions).toBe(0);
   });
 
-  it("keeps repository data hidden while its host is resolving authentication", async () => {
-    const repository = createLocalRepository({ storage: memoryStorage(EMPTY_SNAPSHOT) });
-    const view = render(
-      <RepositoryStoreProvider repository={repository} suspended>
-        <Consumers />
+  it("presents a mutation failure and clears it when a later action succeeds", async () => {
+    const user = userEvent.setup();
+    const actions = [
+      () => Promise.reject(new Error("Connection interrupted")),
+      () => Promise.resolve(),
+    ];
+
+    function MutationConsumer() {
+      const { error, run } = usePlannerErrors();
+      return (
+        <>
+          <output>{error?.message ?? "ok"}</output>
+          <button type="button" onClick={() => run((actions.shift() ?? Promise.resolve)())}>
+            Save
+          </button>
+        </>
+      );
+    }
+
+    render(
+      <RepositoryStoreProvider repository={testRepository()}>
+        <MutationConsumer />
       </RepositoryStoreProvider>,
     );
 
-    expect(screen.getByText(/^loading:loading:/)).toBeInTheDocument();
-    view.rerender(
-      <RepositoryStoreProvider repository={repository} suspended={false}>
-        <Consumers />
-      </RepositoryStoreProvider>,
-    );
-    await waitFor(() => expect(screen.getByText(/^ready:ready:/)).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByText("Connection interrupted")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByText("ok")).toBeInTheDocument();
   });
 });

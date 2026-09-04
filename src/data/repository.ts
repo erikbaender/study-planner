@@ -2,17 +2,12 @@
  * The storage boundary.
  *
  * Everything above this line works in domain types and calls these methods.
- * Nothing above it may import from `convex/` or touch IndexedDB directly —
- * that separation is the point. Previously each of ~20 operations was written
- * twice, once per backend, inside the component that called it, and the two
- * copies had already drifted (dependency-cycle validation existed only on the
- * server, so local mode could build cycles the server would reject).
+ * Nothing above it imports from `convex/`; that separation keeps application
+ * features independent of the transport and generated API types.
  *
  * Mutation methods return `void` or a new id rather than an updated snapshot.
- * The Convex implementation is reactive — writes land through its subscription,
- * not through a return value — and having the local implementation return
- * something the Convex one cannot would put the difference right back into
- * every call site.
+ * The Convex implementation is reactive: writes land through its subscription,
+ * not through mutation return values.
  */
 
 import type {

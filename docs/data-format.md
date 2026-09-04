@@ -1,8 +1,8 @@
 # Planner JSON transfer format
 
-Study Planner exports a versioned JSON document for backup and transfer between
-the local and synced repositories. It is a portability format, not the browser
-storage schema, the Convex database schema, or a synchronization protocol.
+Study Planner exports a versioned JSON document for account backup and explicit
+import. It is a portability format, not the Convex database schema or a
+synchronization protocol.
 
 The current writer emits version 3. The reader accepts version 3 and can safely
 migrate unambiguous version 2 files. Internal database IDs, authentication data,
@@ -152,26 +152,23 @@ The repository exposes two different operations:
   deduplicate, or overwrite same-named records.
 - `replaceAll` replaces the current plans and study log with the document after
   validation. It is destructive for those records, although it preserves
-  preferences. The synced implementation scopes deletion to the authenticated
-  owner.
+  preferences. Deletion is scoped to the authenticated owner.
 
 Both operations restore key-based dependency and study-log references to the
 new topic IDs. Callers must not treat a topic key as stable after import. Back up
 current data before invoking replacement with user data.
 
-Each operation is atomic at its repository boundary. Local mode materializes
-one next snapshot and publishes it only after the IndexedDB transaction
-completes. Synced mode validates first and performs the import or replacement
-inside one Convex mutation transaction. A validation or storage failure must
-not expose a partially imported planner tree.
+Each operation validates first and performs the import or replacement inside
+one Convex mutation transaction. A validation or storage failure cannot expose
+a partially imported planner tree.
 
 ## Validation and resource limits
 
 Files are parsed as untrusted input before repository writes. V3 object shapes
 are strict, so unknown properties are rejected rather than silently ignored.
-Canonical cross-references and resource budgets are validated before records
-are materialized; the synced repository repeats semantic validation at its
-server boundary before writing.
+Canonical cross-references and resource budgets are validated before the
+repository call; Convex repeats semantic validation at its server boundary
+before writing.
 
 Current limits are defined in
 [`src/lib/planner-transfer.ts`](../src/lib/planner-transfer.ts) and mirrored by
@@ -246,13 +243,13 @@ should follow these rules:
    change requires a new version and an explicit, lossless migration path.
 3. Reject an older document when migration would require guessing, dropping
    referenced data, or inventing domain values.
-4. Update the portable types, serializer, parser, local materializer, server
-   validators, tests, and this document together. Because v3 parsing is strict,
+4. Update the portable types, serializer, parser, server validators, tests, and
+   this document together. Because v3 parsing is strict,
    even a new optional property is not accepted until the parser and relevant
    server boundary understand it.
 5. Keep transfer keys portable and free of storage- or account-specific IDs.
 
-The canonical types, serializer, integrity validation, and materializer live in
+The canonical types, serializer, and integrity validation live in
 [`src/lib/planner-transfer.ts`](../src/lib/planner-transfer.ts). Untrusted JSON
 parsing and v2 migration live in
 [`src/lib/import-export.ts`](../src/lib/import-export.ts). Repository-level

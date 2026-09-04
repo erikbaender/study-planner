@@ -16,6 +16,7 @@ type FunctionReference = Parameters<typeof getFunctionName>[0];
 
 class QueryWatch<Result> {
   private readonly listeners = new Set<() => void>();
+  private failure: unknown;
 
   constructor(private result: Result) {}
 
@@ -25,11 +26,18 @@ class QueryWatch<Result> {
   }
 
   localQueryResult() {
+    if (this.failure) throw this.failure;
     return this.result;
   }
 
   update(result: Result) {
+    this.failure = undefined;
     this.result = result;
+    for (const listener of this.listeners) listener();
+  }
+
+  fail(error: unknown) {
+    this.failure = error;
     for (const listener of this.listeners) listener();
   }
 }
@@ -182,7 +190,7 @@ function setup(source: ReturnType<typeof fixture>) {
     return ready.snapshot;
   };
 
-  return { watches, snapshot, repository, mutation };
+  return { watches, snapshot, repository, mutation, states };
 }
 
 describe("Convex snapshot translation", () => {
@@ -259,6 +267,20 @@ describe("Convex snapshot translation", () => {
     expect(changed.preferences).toBe(initial.preferences);
   });
 
+  it("recovers after a transient query failure without remounting", () => {
+    const source = fixture();
+    const { watches, states } = setup(source);
+
+    watches.plans.fail(new Error("Connection interrupted"));
+    expect(states.at(-1)).toMatchObject({
+      status: "error",
+      error: expect.objectContaining({ message: "Connection interrupted" }),
+    });
+
+    watches.plans.update(source.plans);
+    expect(states.at(-1)?.status).toBe("ready");
+  });
+
   it("sends schedule blocks and preferences through one mutation", async () => {
     const source = fixture();
     const { repository, mutation } = setup(source);
@@ -291,5 +313,129 @@ describe("Convex snapshot translation", () => {
         blackoutDates: [...preferences.blackoutDates],
       },
     });
+  });
+
+  it("maps every repository operation to its Convex mutation", async () => {
+    const source = fixture();
+    const { repository, mutation } = setup(source);
+    mutation.mockClear();
+
+    const preferences: Preferences = {
+      dailyCapacityUnits: 50,
+      studyDaysOfWeek: [1, 2, 3, 4, 5],
+      blackoutDates: [],
+      theme: "system",
+      accentColor: "violet",
+    };
+    const blocks = [
+      {
+        topicId: source.firstTopic._id,
+        startDate: "2026-08-20" as const,
+        endDate: "2026-08-21" as const,
+        plannedUnits: 20,
+      },
+    ];
+    const document = {
+      version: 3 as const,
+      plans: [],
+      studyLog: [],
+    };
+
+    await repository.createPlan({ name: "Spring" });
+    await repository.updatePlan(source.plan._id, { name: "Autumn", notes: "Notes" });
+    await repository.deletePlan(source.plan._id);
+    await repository.createCourse(source.plan._id, { name: "Biology", color: "violet" });
+    await repository.updateCourse(source.course._id, {
+      name: "Biochemistry",
+      code: "BIO-2",
+      notes: "Notes",
+      color: "violet",
+    });
+    await repository.deleteCourse(source.course._id);
+    await repository.reorderCourses(source.plan._id, [source.course._id]);
+    await repository.createExam(source.course._id, {
+      name: "Final",
+      startDate: "2026-12-10",
+    });
+    await repository.updateExam("exam_1", {
+      name: "Final",
+      kind: "exam",
+      startDate: "2026-12-10",
+      status: "confirmed",
+      notes: "",
+    });
+    await repository.deleteExam("exam_1");
+    await repository.createTopic(source.course._id, { name: "Metabolism", color: "violet" });
+    await repository.createTopics(
+      source.course._id,
+      [{ name: "Metabolism", unit: "pages", totalUnits: 30 }],
+      "violet",
+    );
+    await repository.updateTopic(source.firstTopic._id, {
+      name: "Glycolysis",
+      unit: "pages",
+      totalUnits: 100,
+      completedUnits: 20,
+      status: "active",
+      priority: "high",
+      notes: "",
+      color: "violet",
+    });
+    await repository.moveTopic(source.firstTopic._id, source.course._id);
+    await repository.deleteTopic(source.firstTopic._id);
+    await repository.setTopicDependencies(source.secondTopic._id, [source.firstTopic._id]);
+    await repository.reorderTopics(source.course._id, [
+      source.secondTopic._id,
+      source.firstTopic._id,
+    ]);
+    await repository.createStudyBlock({
+      topicId: source.firstTopic._id,
+      startDate: "2026-08-20",
+      endDate: "2026-08-21",
+    });
+    await repository.updateStudyBlock("block_1", {
+      startDate: "2026-08-21",
+      endDate: "2026-08-22",
+    });
+    await repository.deleteStudyBlock("block_1");
+    await repository.replaceAutoBlocks([source.firstTopic._id], blocks);
+    await repository.applySchedule([source.firstTopic._id], blocks, preferences);
+    await repository.logStudy({
+      topicId: source.firstTopic._id,
+      date: "2026-08-20",
+      units: 10,
+    });
+    await repository.savePreferences(preferences);
+    await repository.importPlans(document);
+    await repository.replaceAll(document);
+
+    expect(mutation.mock.calls.map(([reference]) => getFunctionName(reference))).toEqual([
+      "planner:createPlan",
+      "planner:updatePlan",
+      "planner:deletePlan",
+      "planner:createCourse",
+      "planner:updateCourse",
+      "planner:deleteCourse",
+      "planner:reorderCourses",
+      "planner:createExam",
+      "planner:updateExam",
+      "planner:deleteExam",
+      "planner:createTopic",
+      "planner:createTopics",
+      "planner:updateTopic",
+      "planner:moveTopic",
+      "planner:deleteTopic",
+      "planner:updateTopicDependencies",
+      "planner:reorderTopics",
+      "planner:createStudyBlock",
+      "planner:updateStudyBlock",
+      "planner:deleteStudyBlock",
+      "planner:replaceAutoBlocks",
+      "planner:applySchedule",
+      "planner:logStudy",
+      "planner:savePreferences",
+      "planner:importPlans",
+      "planner:replaceAllPlans",
+    ]);
   });
 });

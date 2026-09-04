@@ -15,17 +15,10 @@ Use Node.js 22–24 and pnpm 10.
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
-pnpm dev
-```
-
-That starts the local-only app; no environment file or Convex process is required. For optional cloud sync and OAuth, run this setup once before starting the app:
-
-```bash
-cp .env.example .env.local
 pnpm exec convex dev --once
 ```
 
-Keep secrets in the Convex deployment environment or an ignored local environment file. See [docs/authentication.md](docs/authentication.md) for provider setup; copying the example alone does not configure OAuth. When changing Convex functions, run `pnpm convex:dev` in a second terminal alongside `pnpm dev`.
+Study Planner requires Convex and authentication. The setup command writes `.env.local`; the values in `.env.example` are illustrative and must not be copied unchanged. Keep secrets in the Convex deployment environment, never in `.env.local`. Configure GitHub OAuth through [docs/authentication.md](docs/authentication.md), then run `pnpm dev`. When changing Convex functions, run `pnpm convex:dev` in a second terminal.
 
 ## Make a change
 
@@ -42,7 +35,7 @@ Use `pnpm exec convex dev --once` when a Convex schema or function signature cha
 
 - Prefer plain code over compact tricks. Extract a module when it owns a coherent responsibility, not merely to reduce a line count.
 - Keep dates as real `YYYY-MM-DD` calendar dates at domain and API boundaries.
-- Treat local and Convex repositories as implementations of the same contract. A feature must not branch on its storage backend.
+- Keep features behind the `PlannerRepository` contract and map new operations to authenticated Convex functions.
 - Validate untrusted data at both the client import boundary and the authenticated server boundary.
 - Preserve object identity for unchanged domain entities so memoized rows do not rerender unnecessarily.
 - Use native controls when possible. Every icon-only control needs an accessible name and every operation must remain usable by keyboard.

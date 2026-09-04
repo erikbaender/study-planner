@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { sequentialIdFactory } from "@/data/ids";
 import { course, plan, snapshot, topic } from "@/test/factories";
 import {
   EXPORT_VERSION,
   exportFilename,
-  materializePlannerTransfer,
   PlannerTransferError,
   serializePlans,
 } from "./planner-transfer";
@@ -95,18 +93,6 @@ describe("planner transfer serialization", () => {
     ]);
   });
 
-  it("restores every key reference with fresh ids", () => {
-    const materialized = materializePlannerTransfer(
-      serializePlans(fixture()),
-      sequentialIdFactory(),
-    );
-    const [first, second] = materialized.plans[0].courses[0].topics;
-
-    expect(second.dependencyIds).toEqual([first.id]);
-    expect(materialized.studyLog).toHaveLength(1);
-    expect(materialized.studyLog[0].topicId).toBe(first.id);
-  });
-
   it("round-trips duplicate names across plans, courses, and topics without collisions", () => {
     const duplicateSnapshot = snapshot({
       plans: [
@@ -155,18 +141,12 @@ describe("planner transfer serialization", () => {
     const allKeys = document.plans.flatMap((item) =>
       item.courses.flatMap((itemCourse) => itemCourse.topics.map((itemTopic) => itemTopic.key)),
     );
-    const materialized = materializePlannerTransfer(document, sequentialIdFactory());
-    const allTopicIds = materialized.plans.flatMap((item) =>
-      item.courses.flatMap((itemCourse) => itemCourse.topics.map((itemTopic) => itemTopic.id)),
-    );
 
     expect(new Set(allKeys).size).toBe(3);
-    expect(materialized.studyLog.map((entry) => entry.units)).toEqual([1, 2, 3]);
-    expect(new Set(materialized.studyLog.map((entry) => entry.topicId))).toEqual(
-      new Set(allTopicIds),
-    );
-    expect(materialized.plans[0].courses[0].topics[1].dependencyIds).toEqual([
-      materialized.plans[0].courses[0].topics[0].id,
+    expect(document.studyLog.map((entry) => entry.units)).toEqual([1, 2, 3]);
+    expect(new Set(document.studyLog.map((entry) => entry.topicKey))).toEqual(new Set(allKeys));
+    expect(document.plans[0].courses[0].topics[1].dependencies).toEqual([
+      document.plans[0].courses[0].topics[0].key,
     ]);
   });
 

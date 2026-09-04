@@ -5,8 +5,8 @@
  *
  * `StudyPlannerApp` used to hold two parallel sets of mutations and choose
  * between them at every call site. It now reads one repository out of context
- * and calls it. The hosting provider decides which implementation is behind
- * the interface, while this module stays independent of any sync vendor.
+ * and calls it. The hosting provider supplies the authenticated Convex
+ * implementation while this module stays independent of its transport.
  */
 
 import {
@@ -19,7 +19,6 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { createLocalRepository } from "./local-repository";
 import type { PlannerRepository, RepositoryState } from "./repository";
 
 type RepositoryActions = {
@@ -46,24 +45,16 @@ const RepositoryErrorContext = createContext<RepositoryErrorState | null>(null);
 
 const LOADING: RepositoryState = { status: "loading" };
 
-/** Stable IndexedDB-backed repository for an app with no Convex host at all. */
-export function LocalRepositoryProvider({ children }: { children: ReactNode }) {
-  const repository = useMemo(() => createLocalRepository(), []);
-  return <RepositoryStoreProvider repository={repository}>{children}</RepositoryStoreProvider>;
-}
-
 /**
  * Owns the one subscription to a repository and distributes its latest state.
- * Kept separate from auth selection so the lifecycle can be tested with a
- * deterministic repository and reused by other hosts.
+ * Kept separate from auth so the lifecycle can be tested with a deterministic
+ * repository. Its host mounts it only after authentication succeeds.
  */
 export function RepositoryStoreProvider({
   repository,
-  suspended = false,
   children,
 }: {
   repository: PlannerRepository;
-  suspended?: boolean;
   children: ReactNode;
 }) {
   const [failure, setFailure] = useState<{
@@ -97,7 +88,7 @@ export function RepositoryStoreProvider({
   return (
     <RepositoryContext.Provider value={actions}>
       <RepositoryErrorContext.Provider value={errors}>
-        <RepositoryStateContext.Provider value={suspended ? LOADING : repositoryState}>
+        <RepositoryStateContext.Provider value={repositoryState}>
           {children}
         </RepositoryStateContext.Provider>
       </RepositoryErrorContext.Provider>

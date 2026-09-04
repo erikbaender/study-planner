@@ -1,10 +1,9 @@
 /**
  * Client-side validation rules for repository operations.
  *
- * Previously these lived only in Convex, so local mode could build states the
- * server would have rejected — dependency cycles in particular. Putting them
- * here gives local mode the same semantics. Convex mirrors these rules in its
- * independent server guard so it remains a trustworthy security boundary.
+ * These rules mirror Convex so forms can reject invalid states — dependency
+ * cycles in particular — before a network round trip. Convex repeats them in
+ * its independent server guard so it remains a trustworthy security boundary.
  *
  * This is *not* the security boundary. Convex re-checks ownership and
  * invariants server-side; client validation exists so the UI can fail fast and

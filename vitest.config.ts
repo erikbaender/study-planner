@@ -3,9 +3,9 @@ import { defineConfig } from "vitest/config";
 /**
  * Three projects, because the suite has three genuinely different shapes.
  *
- * `domain` is pure — dates, metrics, parsing, and a repository running against
- * `memoryStorage()`. It has no business paying for a DOM, and keeping it in
- * node keeps the fast half of the suite fast.
+ * `domain` is pure — dates, metrics, parsing, and the Convex repository
+ * adapter. It has no business paying for a DOM, and keeping it in node keeps
+ * the fast half of the suite fast.
  *
  * `ui` and the React repository bridge need one. Their setup file supplies the
  * browser APIs jsdom omits but Radix's overlays require.

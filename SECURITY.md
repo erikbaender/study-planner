@@ -13,9 +13,9 @@ Include the affected revision, impact, reproduction conditions, and any suggeste
 ## Security boundaries
 
 - Convex functions authenticate the caller and derive ownership from the server-side user identity. Client-supplied entity IDs are never proof of ownership.
-- Imported JSON is untrusted. The parser and local materializer validate bounds and semantic invariants; authenticated Convex import mutations repeat validation at the server boundary.
+- Imported JSON is untrusted. The parser validates bounds and semantic invariants; authenticated Convex import mutations repeat validation at the server boundary.
 - OAuth credentials, Convex JWT material, and deployment secrets belong in provider-managed environment variables, never `NEXT_PUBLIC_*` variables or the repository.
-- Browser-local plans and exports can contain sensitive educational or health-related information. Users should protect their browser profile and exported files accordingly.
+- Account data and exports can contain sensitive educational or health-related information. Users should protect their account, browser profile, and exported files accordingly.
 - The installed Convex Auth client stores bearer tokens in browser `localStorage`. The content security policy reduces exposure but cannot give script-readable tokens the protections of HttpOnly cookies; treat any script injection as an authentication issue.
 
 Historical project material indicates that an OAuth secret may previously have been disclosed. Its absence from the current tree does not prove revocation. Maintainers must rotate that credential and inspect repository history with an approved secret scanner before publication.

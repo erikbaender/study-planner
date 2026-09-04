@@ -1,8 +1,9 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useConvexAuth } from "convex/react";
+import { useConvexAuth, useQuery } from "convex/react";
 import { useMemo, type ReactNode } from "react";
+import { api } from "../../convex/_generated/api";
 import {
   PlannerAuthProvider,
   type PlannerAuth,
@@ -14,19 +15,21 @@ import { DEFAULT_AUTH_PROVIDER } from "./providers";
 export function ConvexPlannerAuthProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signIn, signOut } = useAuthActions();
+  const account = useQuery(api.account.current, isAuthenticated ? {} : "skip");
 
   const status: PlannerAuthStatus = isLoading
     ? "loading"
     : isAuthenticated
-      ? "synced"
-      : "local";
+      ? "authenticated"
+      : "signed-out";
   const value = useMemo<PlannerAuth>(
     () => ({
       status,
+      account: account ?? null,
       signIn: (provider = DEFAULT_AUTH_PROVIDER) => signIn(provider),
       signOut,
     }),
-    [signIn, signOut, status],
+    [account, signIn, signOut, status],
   );
 
   return <PlannerAuthProvider value={value}>{children}</PlannerAuthProvider>;
