@@ -6,8 +6,8 @@
  * progress subissues rather than standalone subjects, so this fixture follows
  * the importer's established rule and leaves them out. The remaining 89
  * topics, their Project status and 86 Project date ranges are preserved in the
- * source language. Keeping the capture local makes "Load sample data" work in
- * local mode and without granting the browser access to a private repository.
+ * source language. Keeping the capture in the bundle makes "Load sample data"
+ * work without granting the browser access to a private repository.
  */
 
 import { addDays, differenceInDays, weekdayOf } from "./dates";

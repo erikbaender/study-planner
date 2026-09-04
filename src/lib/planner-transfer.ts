@@ -16,7 +16,6 @@ import {
   type ExamKind,
   type ExamStatus,
   type IsoDate,
-  type Plan,
   type PlannerSnapshot,
   type Priority,
   type TopicStatus,
@@ -616,100 +615,6 @@ export function assertPlannerTransferIntegrity(document: PlannerTransferDocument
       );
     }
   }
-}
-
-/** Builds fresh domain ids and restores every key-based reference. */
-export function materializePlannerTransfer(
-  document: PlannerTransferDocument,
-  createId: (prefix: string) => string,
-): Pick<PlannerSnapshot, "plans" | "studyLog"> {
-  assertPlannerTransferIntegrity(document);
-
-  const topicIdsByKey = new Map<string, string>();
-  const planInputs = document.plans.map((planInput) => ({
-    planId: createId("plan"),
-    planInput,
-    courses: planInput.courses.map((courseInput) => ({
-      courseId: createId("course"),
-      courseInput,
-      topics: courseInput.topics.map((topicInput) => {
-        const topicId = createId("topic");
-        topicIdsByKey.set(topicInput.key, topicId);
-        return { topicId, topicInput };
-      }),
-    })),
-  }));
-
-  const plans = planInputs.map(({ planId, planInput, courses }) => ({
-    id: planId,
-    name: planInput.name,
-    notes: planInput.notes,
-    courses: courses.map(({ courseId, courseInput, topics }, courseIndex) => ({
-      id: courseId,
-      planId,
-      name: courseInput.name,
-      code: courseInput.code,
-      color: courseInput.color,
-      notes: courseInput.notes,
-      order: courseIndex,
-      exams: courseInput.exams.map((examInput, examIndex) => ({
-        id: createId("exam"),
-        courseId,
-        name: examInput.name,
-        kind: examInput.kind,
-        startDate: examInput.startDate,
-        endDate: examInput.endDate,
-        status: examInput.status,
-        notes: examInput.notes,
-        order: examIndex,
-      })),
-      topics: topics.map(({ topicId, topicInput }, topicIndex) => ({
-        id: topicId,
-        courseId,
-        name: topicInput.name,
-        unit: topicInput.unit,
-        totalUnits: topicInput.totalUnits,
-        completedUnits: topicInput.completedUnits,
-        status: topicInput.status,
-        priority: topicInput.priority,
-        dependencyIds: topicInput.dependencies.map((dependencyKey) => {
-          const dependencyId = topicIdsByKey.get(dependencyKey);
-          if (!dependencyId) {
-            throw new PlannerTransferError(`Missing validated topic key ${dependencyKey}.`);
-          }
-          return dependencyId;
-        }),
-        color: topicInput.color,
-        notes: topicInput.notes,
-        order: topicIndex,
-        blocks: topicInput.blocks.map((blockInput) => ({
-          id: createId("block"),
-          topicId,
-          startDate: blockInput.startDate,
-          endDate: blockInput.endDate,
-          plannedUnits: blockInput.plannedUnits,
-          source: blockInput.source,
-        })),
-      })),
-    })),
-  })) satisfies Plan[];
-
-  const studyLog = document.studyLog.map((entry) => {
-    const topicId = topicIdsByKey.get(entry.topicKey);
-    if (!topicId) {
-      throw new PlannerTransferError(`Missing validated topic key ${entry.topicKey}.`);
-    }
-    return {
-      id: createId("log"),
-      topicId,
-      date: entry.date,
-      units: entry.units,
-      minutes: entry.minutes,
-      note: entry.note,
-    };
-  });
-
-  return { plans, studyLog };
 }
 
 export function exportFilename(date: string): string {

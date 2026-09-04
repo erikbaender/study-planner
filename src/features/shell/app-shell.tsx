@@ -123,7 +123,7 @@ export function AppShell() {
   const state = usePlannerState();
   const snapshot = state.status === "ready" ? state.snapshot : EMPTY_SNAPSHOT;
   const { error, run, clear } = usePlannerErrors();
-  const auth = usePlannerAuth();
+  const { account, signOut } = usePlannerAuth();
   const today = useToday();
 
   const contentId = useId();
@@ -346,9 +346,8 @@ export function AppShell() {
         onExport={exportJson}
         onImport={importJson}
         canExport={snapshot.plans.length > 0}
-        authStatus={auth.status}
-        onSignIn={() => void auth.signIn()}
-        onSignOut={() => void auth.signOut()}
+        account={account}
+        onSignOut={() => void signOut()}
       />
 
       {error ? (
@@ -409,7 +408,7 @@ export function AppShell() {
           ) : state.status === "error" ? (
             <EmptyState
               title="Couldn’t load your plan"
-              description="Your data has not been changed. Check this browser’s storage access or your sync connection, then try again."
+              description="Your data has not been changed. Check your connection, then try again."
               action={<Button onClick={() => window.location.reload()}>Reload</Button>}
             />
           ) : !plan ? (

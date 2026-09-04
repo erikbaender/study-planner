@@ -1,22 +1,14 @@
 "use client";
 
-import { useConvex, useConvexAuth } from "convex/react";
+import { useConvex } from "convex/react";
 import { useMemo, type ReactNode } from "react";
 import { createConvexRepository } from "./convex-repository";
-import { createLocalRepository } from "./local-repository";
 import { RepositoryStoreProvider } from "./use-repository";
 
-/** Selects local or synchronized storage inside an existing Convex provider. */
+/** Mounts the sole planner repository after the authentication gate opens. */
 export function ConvexRepositoryProvider({ children }: { children: ReactNode }) {
   const convex = useConvex();
-  const { isAuthenticated, isLoading } = useConvexAuth();
-  const localRepository = useMemo(() => createLocalRepository(), []);
-  const convexRepository = useMemo(() => createConvexRepository(convex), [convex]);
-  const repository = isAuthenticated ? convexRepository : localRepository;
+  const repository = useMemo(() => createConvexRepository(convex), [convex]);
 
-  return (
-    <RepositoryStoreProvider repository={repository} suspended={isLoading}>
-      {children}
-    </RepositoryStoreProvider>
-  );
+  return <RepositoryStoreProvider repository={repository}>{children}</RepositoryStoreProvider>;
 }

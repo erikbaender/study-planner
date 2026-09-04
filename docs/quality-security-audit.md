@@ -1,6 +1,6 @@
 # Quality, performance, maintainability, and security audit
 
-Audit date: 2026-08-20
+Audit date: 2026-08-20; cloud-only cutover updated 2026-09-04
 
 ## Executive summary
 
@@ -24,22 +24,23 @@ The following values were captured before the refactor in the development enviro
 ### Verified post-refactor facts
 
 - `pnpm audit --prod` reported zero known advisories after dependency upgrades. This is a point-in-time result from the package advisory database, not proof that the dependency tree is vulnerability-free.
-- Static import-graph regression coverage verifies that the local-only provider graph contains neither `convex/react` nor `@convex-dev/auth`; the configured stack is reached through a dynamic import.
-- Repository tests cover one provider-owned subscription, serialized local mutations, IndexedDB transaction completion, schedule application, transfer integrity, and configured/local provider selection.
-- The transfer writer emits v3, the reader accepts v3 and safely migrates unambiguous v2, and both repository implementations reconstruct document-local topic references with fresh IDs.
+- Configuration tests verify that missing public Convex URLs fail explicitly and never mount the planner.
+- Authentication tests cover the signed-out gate, sign-in failure/retry, sign-out, and authenticated repository startup/cleanup. Repository tests cover one provider-owned subscription, every Convex mutation mapping, error recovery, schedule application, and transfer integrity.
+- Convex function tests reject unauthenticated access and exercise two-account isolation plus persistence through a second session.
 
 ### Estimates and unmeasured outcomes
 
-The browser tracing integration needed for reliable production Core Web Vitals was unavailable. No Lighthouse, CWV, post-refactor production bundle size, or quantified speedup is claimed. Lazy views, the local-only Convex boundary, fewer subscriptions, and deferred preview work should reduce startup or rendering work, but their production impact remains an estimate until a production build is profiled on representative hardware. The scaling concerns below are derived from code structure and development fixtures; they are not evidence that a Convex platform limit or a user-visible production threshold has already been reached.
+The browser tracing integration needed for reliable production Core Web Vitals was unavailable. No Lighthouse, CWV, post-refactor production bundle size, or quantified speedup is claimed. Lazy views, one provider-owned subscription, and deferred preview work should reduce rendering work, but their production impact remains an estimate until a production build is profiled on representative hardware. The scaling concerns below are derived from code structure and development fixtures; they are not evidence that a Convex platform limit or a user-visible production threshold has already been reached.
 
 ### Final verification
 
 - ESLint and the strict TypeScript check passed.
-- All 43 test files and 502 tests passed.
-- A fresh `pnpm audit --prod --audit-level=low` registry check reported zero advisories across 221 production dependencies.
-- Next.js completed an optimized static production compilation through its supported webpack path. The harness prohibited Turbopack's internal CSS-worker socket, so this environment could not validate the default Turbopack build path; that restriction is not presented as an application result.
+- All 7 cloud-cutover test files and 23 tests passed. The complete suite passed 457 tests; two pre-existing Today motion assertions, in files unchanged from the default branch, still fail and are recorded rather than attributed to this cutover.
+- A fresh `pnpm audit --prod --audit-level=low` registry check reported no known production dependency vulnerabilities.
+- Next.js completed an optimized static production build with Turbopack.
 - `git diff --check` passed.
-- The development service returned HTTP 200 with the documented security headers before its final generated-cache refresh. The external browser/tool allowance was exhausted immediately after that restart, so a post-refresh interactive browser pass is not claimed.
+- The development service returned HTTP 200 and browser inspection confirmed that missing cloud configuration displays the dedicated actionable error without mounting planner data.
+- This worktree had no Convex deployment variables or OAuth credentials, so the real-deployment two-account smoke checklist remains a rollout gate and is not claimed here.
 
 ## Findings addressed
 
@@ -47,10 +48,9 @@ The browser tracing integration needed for reliable production Core Web Vitals w
 
 - Scheduling now respects dependency order and uses configured horizons for shortfall calculations.
 - Inclusive planning-day summaries replace endpoint-only counting.
-- `applySchedule` commits generated blocks and the preferences used to calculate them together: one serialized snapshot commit locally and one Convex mutation transaction when synced.
+- `applySchedule` commits generated blocks and the preferences used to calculate them in one Convex mutation transaction.
 - Context-menu actions use consistent icon-first, action-only labels.
 - Sample datasets are deterministic and date-relative; they consist of the preserved MHH outline and a feature-showcase variant built from it.
-- Local persistence serializes concurrent mutations and resolves a save only when the IndexedDB transaction completes, not when its object-store request first succeeds. A failed or aborted transaction is not published to React.
 - JSON import validates relationships before destructive replacement and preserves study history.
 - Transfer v3 replaces database IDs and name-based links with document-local topic keys. Imports append fresh plans and study history without deduplication, while replacement replaces plans and history; both preserve preferences. Unambiguous v2 documents remain read-only migration inputs.
 
@@ -59,7 +59,7 @@ The browser tracing integration needed for reliable production Core Web Vitals w
 - React owns one repository subscription instead of repeated consumers installing their own.
 - Closed planning sheets no longer run the scheduling engine on every render.
 - Timeline and Outline are separate lazy client chunks.
-- Local-only startup neither constructs a Convex client nor statically pulls Convex React/Auth into its provider graph; the complete configured sync stack is a separate lazy client chunk.
+- Startup fails explicitly when Convex configuration is missing. With configuration present, protected queries are not created until authentication succeeds.
 - Convex-to-domain translation reuses unchanged source-derived values where possible.
 - The remote Google font dependency was removed in favor of a local system stack, eliminating a build-time network dependency.
 
@@ -88,8 +88,7 @@ The browser tracing integration needed for reliable production Core Web Vitals w
 
 1. **Choose and add a license.** No `LICENSE` or equivalent file exists. Source visibility alone grants no clear reuse or redistribution rights, so this remains an open-source publication blocker.
 2. **Rotate historical credentials.** Historical project material indicates that an OAuth client secret may once have been exposed. A targeted scan found no credential-shaped value in the current working tree, but deletion is not revocation and rotation cannot be verified from source. Revoke and replace the credential before publication, then inspect Git history with an approved secret scanner. This remains a release blocker until a maintainer verifies it externally.
-3. **Define local-to-account migration.** Signing in currently switches stores. A deliberate preview/merge/replace workflow is required before advertising seamless sync.
-4. **Exercise recovery.** Test export, import, provider revocation, account loss, and Convex restore procedures with production-like configuration.
+3. **Complete the deployment smoke test.** Exercise two real accounts, two browser sessions, export/import, provider revocation, account loss, and Convex restore procedures against the non-production deployment before rollout.
 
 ### Performance backlog
 
@@ -107,8 +106,8 @@ The browser tracing integration needed for reliable production Core Web Vitals w
 
 ### Maintainability backlog
 
-`convex/planner.ts`, `src/features/outline/outline-view.tsx`, `src/data/local-repository.ts`, and the timeline interaction modules remain large. Further decomposition should follow stable responsibilities—query assembly, mutation families, gesture state, or row rendering—and retain end-to-end behavior tests. Line count alone is not a reason to split tightly coupled logic.
+`convex/planner.ts`, `src/features/outline/outline-view.tsx`, and the timeline interaction modules remain large. Further decomposition should follow stable responsibilities—query assembly, mutation families, gesture state, or row rendering—and retain end-to-end behavior tests. Line count alone is not a reason to split tightly coupled logic.
 
 ## Google SSO decision
 
-Google must launch as a separate provider-bound identity with `allowDangerousEmailAccountLinking: false`. Matching an OAuth email is not sufficient evidence to merge accounts. If linking is later offered, it must start from an authenticated account, require fresh authentication to both providers, disclose both data sets, detect an already-linked or already-existing destination identity, and perform a previewable, recoverable merge with explicit conflict rules. Local-to-synced migration requires separate user consent and must not be inferred from sign-in. See [authentication.md](authentication.md).
+Google must launch as a separate provider-bound identity with `allowDangerousEmailAccountLinking: false`. Matching an OAuth email is not sufficient evidence to merge accounts. If linking is later offered, it must start from an authenticated account, require fresh authentication to both providers, disclose both data sets, detect an already-linked or already-existing destination identity, and perform a previewable, recoverable merge with explicit conflict rules. See [authentication.md](authentication.md).

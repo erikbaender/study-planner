@@ -23,16 +23,18 @@ import {
   Command,
   Download,
   FlaskConical,
+  LogOut,
   MoreHorizontal,
   PanelLeft,
   Plus,
   Settings2,
   Upload,
+  UserRound,
 } from "lucide-react";
+import type { PlannerAccount } from "@/auth/use-planner-auth";
 import {
   AnimationSpeedControl,
   AppearanceControl,
-  Badge,
   Button,
   DropdownMenu,
   IconButton,
@@ -44,15 +46,7 @@ import {
   ToolbarSpacer,
 } from "@/ui";
 import { VIEWS, VIEW_LABELS, type ViewId } from "@/features/workspace/store";
-import type { PlannerAuthStatus } from "@/auth/use-planner-auth";
 import { InputHintBar } from "./input-hints";
-
-const AUTH_STATUS_LABEL: Record<PlannerAuthStatus, string> = {
-  "local-only": "Local only",
-  loading: "Connecting",
-  local: "This device",
-  synced: "Synced",
-};
 
 export function AppToolbar(props: {
     view: ViewId;
@@ -67,8 +61,7 @@ export function AppToolbar(props: {
     onExport: () => void;
     onImport: (file: File) => void;
     canExport: boolean;
-    authStatus: PlannerAuthStatus;
-    onSignIn: () => void;
+    account: PlannerAccount | null;
     onSignOut: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -190,24 +183,23 @@ export function AppToolbar(props: {
         }}
       />
 
-      <Badge tone={props.authStatus === "synced" ? "positive" : "neutral"}>
-        {AUTH_STATUS_LABEL[props.authStatus]}
-      </Badge>
-
-      {props.authStatus === "local-only" ? null : props.authStatus === "synced" ? (
-        <Button size="sm" onClick={props.onSignOut}>
-          Sign out
-        </Button>
-      ) : (
-        <Button
-          size="sm"
-          variant="accent"
-          disabled={props.authStatus === "loading"}
-          onClick={props.onSignIn}
-        >
-          Sign in
-        </Button>
-      )}
+      <DropdownMenu
+        label="Account"
+        align="end"
+        items={[
+          { label: "Sign out", icon: <LogOut />, onSelect: props.onSignOut },
+        ]}
+        trigger={
+          <Button
+            size="sm"
+            variant="plain"
+            leadingIcon={<UserRound />}
+            title={props.account?.email ?? undefined}
+          >
+            {props.account?.name ?? props.account?.email ?? "Account"}
+          </Button>
+        }
+      />
     </Toolbar>
   );
 }

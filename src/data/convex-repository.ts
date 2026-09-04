@@ -6,9 +6,8 @@
  * unit-tested without a renderer. `useRepository` in `src/data/use-repository.ts`
  * is the only place that bridges back into React.
  *
- * The client carries auth state set by `ConvexAuthProvider`; queries issued
- * before sign-in fail server-side with "Not signed in", which surfaces here as
- * the `error` state.
+ * The client carries auth state set by `ConvexAuthProvider`. Its host does not
+ * construct or subscribe this repository until authentication succeeds.
  */
 
 import type { ConvexReactClient } from "convex/react";
@@ -269,11 +268,12 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
 
   const subscribe = (listener: (state: RepositoryState) => void) => {
     const parts: Parts = {};
-    let failed = false;
+    const failedWatches = new Set<symbol>();
+    const colorMigrationWatch = Symbol("color migration");
     let colorMigrationRequested = false;
 
     const emit = () => {
-      if (failed) return;
+      if (failedWatches.size > 0) return;
       // All three queries must have landed. Emitting a partial snapshot would
       // flash an empty plan list for the instant before `plans` arrives, which
       // is exactly the "you have no plans yet" empty state.
@@ -302,7 +302,10 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         if (courses.length > 0 || topics.length > 0) {
           void client
             .mutation(api.planner.migrateColorReferences, { courses, topics })
-            .catch(fail);
+            .catch((error: unknown) => {
+              colorMigrationRequested = false;
+              fail(error, colorMigrationWatch);
+            });
         }
       }
 
@@ -312,9 +315,8 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       });
     };
 
-    const fail = (error: unknown) => {
-      if (failed) return;
-      failed = true;
+    const fail = (error: unknown, watch: symbol) => {
+      failedWatches.add(watch);
       listener({
         status: "error",
         error: error instanceof Error ? error : new Error(String(error)),
@@ -330,12 +332,15 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       queryWatch: { onUpdate(callback: () => void): () => void; localQueryResult(): T | undefined },
       assign: (value: T | undefined) => void,
     ) => {
+      const watchId = Symbol("planner query");
       const read = () => {
         try {
           assign(queryWatch.localQueryResult());
+          failedWatches.delete(watchId);
+          if (!colorMigrationRequested) failedWatches.delete(colorMigrationWatch);
           emit();
         } catch (error) {
-          fail(error);
+          fail(error, watchId);
         }
       };
       const unsubscribe = queryWatch.onUpdate(read);

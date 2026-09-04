@@ -8,9 +8,11 @@
  * @module
  */
 
+import type * as account from "../account.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as planner from "../planner.js";
+import type * as plannerGuards from "../plannerGuards.js";
 
 import type {
   ApiFromModules,
@@ -19,9 +21,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  account: typeof account;
   auth: typeof auth;
   http: typeof http;
   planner: typeof planner;
+  plannerGuards: typeof plannerGuards;
 }>;
 
 /**
