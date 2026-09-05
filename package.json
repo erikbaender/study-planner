@@ -31,6 +31,7 @@
   "dependencies": {
     "@auth/core": "^0.41.3",
     "@convex-dev/auth": "^0.0.95",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "clsx": "^2.1.1",
     "convex": "^1.44.0",
     "lucide-react": "^1.14.0",

@@ -326,14 +326,15 @@ export function startBarGesture(
       if (days === 0 || !chart.repository) return;
       const repository = chart.repository;
       chart.run(
-        Promise.all(
+        repository.updateStudyBlocks(
           targets.map(({ block }) => {
             const next = applyDelta(mode, block, days);
-            return repository.updateStudyBlock(block.id, {
+            return {
+              blockId: block.id,
               startDate: next.startDate,
               endDate: next.endDate,
               plannedUnits: block.plannedUnits,
-            });
+            };
           }),
         ),
       );

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { coursePalette } from "@/domain";
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
+import { DraftText } from "./inspector/shared";
 import { Inspector, isInspectable } from "./inspector";
 
 /**
@@ -630,4 +631,16 @@ describe("Inspector", () => {
     await user.click(screen.getByRole("button", { name: "Delete" }));
     expect(onDelete).toHaveBeenCalledWith({ kind: "topic", course, topic });
   });
+});
+
+it("keeps an inspector draft bound to the snapshot where typing started", async () => {
+  const originalSave = vi.fn();
+  const newerSave = vi.fn();
+  const user = userEvent.setup();
+  const { rerender } = render(<DraftText label="Notes" value="Original" onCommit={originalSave} />);
+  await user.type(screen.getByLabelText("Notes"), " draft");
+  rerender(<DraftText label="Notes" value="Original" onCommit={newerSave} />);
+  await user.tab();
+  expect(originalSave).toHaveBeenCalledWith("Original draft");
+  expect(newerSave).not.toHaveBeenCalled();
 });

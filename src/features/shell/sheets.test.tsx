@@ -51,6 +51,19 @@ describe("semester sheets", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: "Summer" }));
   });
 
+  it("keeps an open draft bound to the save callback from its original snapshot", async () => {
+    const originalSave = vi.fn();
+    const newerSave = vi.fn();
+    const plan = makePlan({ name: "Spring" });
+    const user = userEvent.setup();
+    const { rerender } = render(<EditPlanSheet plan={plan} open onOpenChange={vi.fn()} onSave={originalSave} />);
+    await user.type(screen.getByLabelText("Notes"), "Local draft");
+    rerender(<EditPlanSheet plan={{ ...plan, name: "Remote rename" }} open onOpenChange={vi.fn()} onSave={newerSave} />);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(originalSave).toHaveBeenCalledWith({ name: "Spring", notes: "Local draft" });
+    expect(newerSave).not.toHaveBeenCalled();
+  });
+
   it("requires confirmation before deleting a semester", async () => {
     const onConfirm = vi.fn();
     const user = userEvent.setup();
