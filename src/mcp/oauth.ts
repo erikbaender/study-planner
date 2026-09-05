@@ -1,4 +1,5 @@
 import "server-only";
+import { boundedBody } from "./body";
 
 import { createHash, randomBytes } from "node:crypto";
 import { ConvexHttpClient } from "convex/browser";
@@ -152,5 +153,5 @@ export async function formData(request: Request) {
   if (!contentType.startsWith("application/x-www-form-urlencoded")) {
     throw new OAuthError("invalid_request", "OAuth token requests must use application/x-www-form-urlencoded");
   }
-  return new URLSearchParams(await request.text());
+  return new URLSearchParams(await boundedBody(request, 16_384));
 }

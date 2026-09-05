@@ -305,6 +305,7 @@ describe("Convex snapshot translation", () => {
     expect(mutation).toHaveBeenCalledOnce();
     expect(getFunctionName(mutation.mock.calls[0][0])).toBe("planner:applySchedule");
     expect(mutation.mock.calls[0][1]).toEqual({
+      expectedRevisions: { plan_1: 0 },
       topicIds: [source.firstTopic._id],
       blocks,
       preferences: {
@@ -442,4 +443,15 @@ describe("Convex snapshot translation", () => {
       "planner:replaceAllPlans",
     ]);
   });
+});
+
+it("binds writes to the displayed snapshot instead of silently adopting a newer remote revision", async () => {
+  const source = fixture();
+  const { repository, snapshot, watches, mutation } = setup(source);
+  const oldView = repository.atSnapshot!(snapshot());
+  watches.plans.update([{ ...source.plan, revision: 7 }]);
+  await oldView.updatePlan(source.plan._id, { name: "Old draft", notes: "" });
+  expect(mutation.mock.calls.at(-1)![1]).toMatchObject({ expectedRevisions: { plan_1: 0 } });
+  await repository.atSnapshot!(snapshot()).updatePlan(source.plan._id, { name: "New draft", notes: "" });
+  expect(mutation.mock.calls.at(-1)![1]).toMatchObject({ expectedRevisions: { plan_1: 7 } });
 });

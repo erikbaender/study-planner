@@ -10,6 +10,7 @@
 
 import type * as account from "../account.js";
 import type * as auth from "../auth.js";
+import type * as browserMutation from "../browserMutation.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as maintenance from "../maintenance.js";
@@ -18,6 +19,7 @@ import type * as mcpPlanner from "../mcpPlanner.js";
 import type * as planner from "../planner.js";
 import type * as plannerApplication from "../plannerApplication.js";
 import type * as plannerGuards from "../plannerGuards.js";
+import type * as plannerStore from "../plannerStore.js";
 
 import type {
   ApiFromModules,
@@ -28,6 +30,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   account: typeof account;
   auth: typeof auth;
+  browserMutation: typeof browserMutation;
   crons: typeof crons;
   http: typeof http;
   maintenance: typeof maintenance;
@@ -36,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   planner: typeof planner;
   plannerApplication: typeof plannerApplication;
   plannerGuards: typeof plannerGuards;
+  plannerStore: typeof plannerStore;
 }>;
 
 /**

@@ -217,7 +217,7 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
 
   server.registerTool("planner.undo", {
     title: "Undo a plan transaction",
-    description: "Reverse one eligible unexpired transaction, only when the plan is still at expectedRevision. The undo is itself audited.",
+    description: "Reverse the latest eligible unexpired transaction, only when no later edits exist and the plan is still at expectedRevision. The undo is itself audited.",
     inputSchema: { planId: id("Target plan ID"), auditId: id("Undoable audit ID from planner.history"), expectedRevision: z.number().int().nonnegative(), idempotencyKey },
     outputSchema: { revision: z.number(), auditId: z.string(), summary: z.string() },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },

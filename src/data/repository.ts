@@ -101,6 +101,8 @@ export type RepositoryState =
   | { status: "error"; error: Error };
 
 export interface PlannerRepository {
+  /** Bind writes to the revisions of the snapshot the caller actually saw. */
+  atSnapshot?(snapshot: PlannerSnapshot): PlannerRepository;
   /**
    * Subscribes to state. The listener is called immediately with the current
    * state, then on every change. Returns an unsubscribe function.

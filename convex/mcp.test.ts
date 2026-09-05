@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { sha256Base64url } from "./mcpOAuth";
 
 declare global {
   interface ImportMeta {
@@ -31,13 +32,13 @@ async function connect(t: ReturnType<typeof convexTest>, ownerId: string) {
     resource,
     issuer,
     scopes: ["planner:read", "planner:manage"],
-    codeChallenge: "v".repeat(43),
+    codeChallenge: await sha256Base64url("v".repeat(43)),
     codeDigest: "c".repeat(43),
     timezone: "Europe/Berlin",
   });
   await t.mutation(api.mcpOAuth.exchangeAuthorizationCode, {
     codeDigest: "c".repeat(43),
-    verifierChallenge: "v".repeat(43),
+    codeVerifier: "v".repeat(43),
     clientId,
     redirectUri: "https://client.example/callback",
     resource,

@@ -170,16 +170,22 @@ export function DraftText({
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
   const [draft, setDraft] = useState(value);
+  // Keep the snapshot-bound callback from when editing began. A later remote
+  // update must not attach a fresh revision to an older draft.
+  const [draftCommit, setDraftCommit] = useState<typeof onCommit | null>(null);
   const [settled, setSettled] = useState(value);
   if (settled !== value) {
     setSettled(value);
     setDraft(value);
+    setDraftCommit(null);
   }
 
   const commit = () => {
     const trimmed = draft.trim();
     if (trimmed === value) return;
-    onCommit(trimmed);
+    const save = draftCommit;
+    setDraftCommit(null);
+    save?.(trimmed);
   };
 
   const props = {
@@ -188,13 +194,17 @@ export function DraftText({
     placeholder,
     hint,
     hideLabel,
-    onChange: (event: { target: { value: string } }) => setDraft(event.target.value),
+    onChange: (event: { target: { value: string } }) => {
+      if (!draftCommit) setDraftCommit(() => onCommit);
+      setDraft(event.target.value);
+    },
     onBlur: commit,
     onKeyDown: (event: React.KeyboardEvent) => {
       if (event.key === "Escape") {
         // Reverts in place and keeps focus, which is what AppKit does. Blurring
         // here would fire `onBlur` — and `commit` would still be holding this
         // render's draft, so Escape would save the very edit it was discarding.
+        setDraftCommit(null);
         setDraft(value);
       } else if (event.key === "Enter" && !multiline) {
         event.preventDefault();

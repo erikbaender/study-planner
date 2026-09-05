@@ -95,7 +95,7 @@ describe("ConfiguredConvexClientProvider", () => {
     expect(screen.queryByTestId("configured-repository-provider")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Continue with GitHub" }));
-    expect(mocks.signIn).toHaveBeenCalledWith("github");
+    expect(mocks.signIn).toHaveBeenCalledWith("github", { redirectTo: "/" });
   });
 
   it("leaves the MCP privacy notice public", () => {

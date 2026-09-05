@@ -1,4 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { boundedBody } from "@/mcp/body";
 import { api } from "../../../convex/_generated/api";
 import { createPlannerMcpServer } from "@/mcp/server";
 import {
@@ -18,6 +19,7 @@ function withProtocolHeaders(response: Response, request: Request) {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "no-store");
   headers.set("Vary", "Origin");
+  headers.set("Access-Control-Expose-Headers", "MCP-Protocol-Version, MCP-Session-Id, WWW-Authenticate");
   const origin = request.headers.get("origin");
   if (origin) headers.set("Access-Control-Allow-Origin", origin);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
@@ -62,9 +64,15 @@ export async function POST(request: Request) {
   const authentication = await authenticate(request);
   if ("response" in authentication && authentication.response) return withProtocolHeaders(authentication.response, request);
 
+  let body: string;
+  try {
+    body = await boundedBody(request, 1_048_576);
+  } catch {
+    return withProtocolHeaders(new Response("Request body exceeds the size limit", { status: 413 }), request);
+  }
   let operation = "unknown";
   try {
-    const envelope = (await request.clone().json()) as { method?: unknown; params?: { name?: unknown } };
+    const envelope = JSON.parse(body) as { method?: unknown; params?: { name?: unknown } };
     operation = envelope.method === "tools/call" && typeof envelope.params?.name === "string"
       ? envelope.params.name
       : typeof envelope.method === "string" ? envelope.method : "unknown";
@@ -79,7 +87,7 @@ export async function POST(request: Request) {
       enableJsonResponse: true,
     });
     await server.connect(transport);
-    const response = await transport.handleRequest(request, {
+    const response = await transport.handleRequest(new Request(request, { body }), {
       authInfo: {
         token: authentication.token,
         clientId: String(authentication.principal.grantId),

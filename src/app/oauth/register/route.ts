@@ -1,3 +1,4 @@
+import { boundedBody } from "@/mcp/body";
 import { api } from "../../../../convex/_generated/api";
 import {
   convexServerClient,
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const text = await request.text();
+    const text = await boundedBody(request, 16_384);
     if (text.length > 16_384) throw new OAuthError("invalid_client_metadata", "Registration payload is too large");
     const body = JSON.parse(text) as Record<string, unknown>;
     if (body.token_endpoint_auth_method !== undefined && body.token_endpoint_auth_method !== "none") {

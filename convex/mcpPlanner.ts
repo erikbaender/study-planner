@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import {
   commitAudit,
+  recordOtherPreferenceChanges,
   executeCommandBatch,
   findIdempotentResult,
   loadPlanForMcp,
@@ -327,6 +328,9 @@ export const createPlan = mutation({
       planId,
       commands: args.commands,
     });
+    if (args.commands.some(command => command.type === "preferences.update")) {
+      await recordOtherPreferenceChanges(ctx, { ...principal, planId, actorType: "mcp" });
+    }
     const revision = 1;
     await ctx.db.patch(planId, { revision, updatedAt: Date.now() });
     const summary = `Created plan ${args.name}; ${execution.summaries.join("; ")}`;
@@ -377,6 +381,9 @@ export const applyChanges = mutation({
       planId: args.planId,
       commands: args.commands,
     });
+    if (args.commands.some(command => command.type === "preferences.update")) {
+      await recordOtherPreferenceChanges(ctx, { ...principal, planId: args.planId, actorType: "mcp" });
+    }
     const revision = baseRevision + 1;
     await ctx.db.patch(args.planId, { revision, updatedAt: Date.now() });
     const summary = execution.summaries.join("; ");

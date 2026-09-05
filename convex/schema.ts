@@ -35,17 +35,17 @@ const blockSource = v.union(v.literal("auto"), v.literal("manual"));
 const inverseCommand = v.union(
   v.object({
     type: v.literal("plan.update"),
-    patch: v.object({ name: v.string(), notes: v.string() }),
+    patch: v.object({ name: v.optional(v.string()), notes: v.optional(v.string()) }),
   }),
   v.object({ type: v.literal("course.delete"), courseId: v.id("courses") }),
   v.object({
     type: v.literal("course.update"),
     courseId: v.id("courses"),
     patch: v.object({
-      name: v.string(),
-      code: v.optional(v.string()),
-      notes: v.string(),
-      color: v.string(),
+      name: v.optional(v.string()),
+      code: v.optional(v.union(v.string(), v.null())),
+      notes: v.optional(v.string()),
+      color: v.optional(v.string()),
     }),
   }),
   v.object({ type: v.literal("exam.delete"), examId: v.id("exams") }),
@@ -53,12 +53,12 @@ const inverseCommand = v.union(
     type: v.literal("exam.update"),
     examId: v.id("exams"),
     patch: v.object({
-      name: v.string(),
-      kind: examKind,
-      startDate: v.string(),
-      endDate: v.optional(v.string()),
-      status: examStatus,
-      notes: v.string(),
+      name: v.optional(v.string()),
+      kind: v.optional(examKind),
+      startDate: v.optional(v.string()),
+      endDate: v.optional(v.union(v.string(), v.null())),
+      status: v.optional(examStatus),
+      notes: v.optional(v.string()),
     }),
   }),
   v.object({ type: v.literal("topic.delete"), topicId: v.id("topics") }),
@@ -66,14 +66,14 @@ const inverseCommand = v.union(
     type: v.literal("topic.update"),
     topicId: v.id("topics"),
     patch: v.object({
-      name: v.string(),
-      unit,
-      totalUnits: v.number(),
-      completedUnits: v.number(),
-      status: topicStatus,
-      priority: topicPriority,
-      notes: v.string(),
-      color: v.string(),
+      name: v.optional(v.string()),
+      unit: v.optional(unit),
+      totalUnits: v.optional(v.number()),
+      completedUnits: v.optional(v.number()),
+      status: v.optional(topicStatus),
+      priority: v.optional(topicPriority),
+      notes: v.optional(v.string()),
+      color: v.optional(v.string()),
     }),
   }),
   v.object({
@@ -251,6 +251,7 @@ export default defineSchema({
     .index("by_topic", ["topicId"]),
 
   preferences: defineTable({
+    revision: v.optional(v.number()),
     ownerId: v.id("users"),
     dailyCapacityUnits: v.optional(v.number()),
     /** 0 = Sunday, matching `Date.prototype.getDay`. */
@@ -340,6 +341,7 @@ export default defineSchema({
     ownerId: v.id("users"),
     planId: v.id("plans"),
     inverseCommands: v.array(inverseCommand),
+    preferencesRevision: v.optional(v.number()),
     expiresAt: v.number(),
     usedAt: v.optional(v.number()),
   })

@@ -11,7 +11,7 @@
  */
 
 import type { ConvexReactClient } from "convex/react";
-import type { FunctionReturnType } from "convex/server";
+import { getFunctionName, type FunctionReturnType } from "convex/server";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import {
@@ -245,6 +245,8 @@ function createSnapshotTranslator() {
 
 /* ------------------------------------------------------------- repository */
 
+const snapshotRevisions = new WeakMap<PlannerSnapshot, Record<string, number>>();
+
 type Parts = {
   plans?: PlanTree[];
   studyLog?: Doc<"studyLog">[];
@@ -252,7 +254,17 @@ type Parts = {
   preferencesLoaded?: boolean;
 };
 
-export function createConvexRepository(client: ConvexReactClient): PlannerRepository {
+export function createConvexRepository(client: ConvexReactClient, revisions?: Record<string, number>): PlannerRepository {
+  const mutate: ConvexReactClient["mutation"] = (reference, input, options) => {
+    const expectedRevisions = revisions ?? Object.fromEntries(
+      (client.watchQuery(api.planner.listPlanTrees, {}).localQueryResult() ?? []).map(plan => [plan._id, plan.revision ?? 0]),
+    );
+    // New plans/imports do not overwrite existing entities.
+    if (["planner:createPlan", "planner:importPlans"].includes(getFunctionName(reference))) {
+      return client.mutation(reference, input, options);
+    }
+    return client.mutation(reference, { ...input, expectedRevisions }, options);
+  };
   const translateSnapshot = createSnapshotTranslator();
   const asId = <T extends "plans" | "courses" | "exams" | "topics" | "studyBlocks">(id: string) =>
     id as Id<T>;
@@ -300,8 +312,7 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         );
         colorMigrationRequested = true;
         if (courses.length > 0 || topics.length > 0) {
-          void client
-            .mutation(api.planner.migrateColorReferences, { courses, topics })
+          void mutate(api.planner.migrateColorReferences, { courses, topics })
             .catch((error: unknown) => {
               colorMigrationRequested = false;
               fail(error, colorMigrationWatch);
@@ -309,10 +320,9 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         }
       }
 
-      listener({
-        status: "ready",
-        snapshot: translateSnapshot(parts.plans, parts.studyLog, parts.preferences ?? null),
-      });
+      const snapshot = translateSnapshot(parts.plans, parts.studyLog, parts.preferences ?? null);
+      snapshotRevisions.set(snapshot, Object.fromEntries(parts.plans.map(plan => [plan._id, plan.revision ?? 0])));
+      listener({ status: "ready", snapshot });
     };
 
     const fail = (error: unknown, watch: symbol) => {
@@ -373,30 +383,35 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
 
   return {
     subscribe,
+    atSnapshot(snapshot) {
+      const expected = snapshotRevisions.get(snapshot);
+      if (!expected) throw new Error("Cannot save an unknown planner snapshot");
+      return createConvexRepository(client, expected);
+    },
 
     async createPlan(input: PlanInput) {
-      return await client.mutation(api.planner.createPlan, input);
+      return await mutate(api.planner.createPlan, input);
     },
     async updatePlan(planId, input) {
-      await client.mutation(api.planner.updatePlan, {
+      await mutate(api.planner.updatePlan, {
         planId: asId<"plans">(planId),
         name: input.name,
         notes: input.notes ?? "",
       });
     },
     async deletePlan(planId) {
-      await client.mutation(api.planner.deletePlan, { planId: asId<"plans">(planId) });
+      await mutate(api.planner.deletePlan, { planId: asId<"plans">(planId) });
     },
 
     async createCourse(planId, input: CourseInput) {
-      return await client.mutation(api.planner.createCourse, {
+      return await mutate(api.planner.createCourse, {
         planId: asId<"plans">(planId),
         ...input,
         color: resolveCourseColorId(input.color),
       });
     },
     async updateCourse(courseId, input) {
-      await client.mutation(api.planner.updateCourse, {
+      await mutate(api.planner.updateCourse, {
         courseId: asId<"courses">(courseId),
         name: input.name,
         code: input.code,
@@ -405,30 +420,30 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       });
     },
     async deleteCourse(courseId) {
-      await client.mutation(api.planner.deleteCourse, { courseId: asId<"courses">(courseId) });
+      await mutate(api.planner.deleteCourse, { courseId: asId<"courses">(courseId) });
     },
     async reorderCourses(planId, courseIds) {
-      await client.mutation(api.planner.reorderCourses, {
+      await mutate(api.planner.reorderCourses, {
         planId: asId<"plans">(planId),
         courseIds: courseIds.map((id) => asId<"courses">(id)),
       });
     },
 
     async reorderTopics(courseId, topicIds) {
-      await client.mutation(api.planner.reorderTopics, {
+      await mutate(api.planner.reorderTopics, {
         courseId: asId<"courses">(courseId),
         topicIds: topicIds.map((id) => asId<"topics">(id)),
       });
     },
 
     async createExam(courseId, input: ExamInput) {
-      return await client.mutation(api.planner.createExam, {
+      return await mutate(api.planner.createExam, {
         courseId: asId<"courses">(courseId),
         ...input,
       });
     },
     async updateExam(examId, input) {
-      await client.mutation(api.planner.updateExam, {
+      await mutate(api.planner.updateExam, {
         examId: asId<"exams">(examId),
         name: input.name,
         kind: input.kind,
@@ -439,60 +454,60 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       });
     },
     async deleteExam(examId) {
-      await client.mutation(api.planner.deleteExam, { examId: asId<"exams">(examId) });
+      await mutate(api.planner.deleteExam, { examId: asId<"exams">(examId) });
     },
 
     async createTopic(courseId, input: TopicInput) {
-      return await client.mutation(api.planner.createTopic, {
+      return await mutate(api.planner.createTopic, {
         courseId: asId<"courses">(courseId),
         ...input,
         color: resolveCourseColorId(input.color),
       });
     },
     async createTopics(courseId, topics, color) {
-      return await client.mutation(api.planner.createTopics, {
+      return await mutate(api.planner.createTopics, {
         courseId: asId<"courses">(courseId),
         topics,
         color: resolveCourseColorId(color),
       });
     },
     async updateTopic(topicId, patch: TopicPatch) {
-      await client.mutation(api.planner.updateTopic, {
+      await mutate(api.planner.updateTopic, {
         topicId: asId<"topics">(topicId),
         ...patch,
         color: resolveCourseColorId(patch.color),
       });
     },
     async moveTopic(topicId, courseId) {
-      await client.mutation(api.planner.moveTopic, {
+      await mutate(api.planner.moveTopic, {
         topicId: asId<"topics">(topicId),
         courseId: asId<"courses">(courseId),
       });
     },
     async deleteTopic(topicId) {
-      await client.mutation(api.planner.deleteTopic, { topicId: asId<"topics">(topicId) });
+      await mutate(api.planner.deleteTopic, { topicId: asId<"topics">(topicId) });
     },
     async setTopicDependencies(topicId, dependencyIds) {
-      await client.mutation(api.planner.updateTopicDependencies, {
+      await mutate(api.planner.updateTopicDependencies, {
         topicId: asId<"topics">(topicId),
         dependencyIds: dependencyIds.map((id) => asId<"topics">(id)),
       });
     },
 
     async createStudyBlock(input: StudyBlockInput) {
-      return await client.mutation(api.planner.createStudyBlock, {
+      return await mutate(api.planner.createStudyBlock, {
         ...input,
         topicId: asId<"topics">(input.topicId),
       });
     },
     async updateStudyBlock(blockId, input) {
-      await client.mutation(api.planner.updateStudyBlock, {
+      await mutate(api.planner.updateStudyBlock, {
         blockId: asId<"studyBlocks">(blockId),
         ...input,
       });
     },
     async updateStudyBlocks(updates) {
-      await client.mutation(api.planner.updateStudyBlocks, {
+      await mutate(api.planner.updateStudyBlocks, {
         updates: updates.map((update) => ({
           ...update,
           blockId: asId<"studyBlocks">(update.blockId),
@@ -500,18 +515,18 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
       });
     },
     async deleteStudyBlock(blockId) {
-      await client.mutation(api.planner.deleteStudyBlock, {
+      await mutate(api.planner.deleteStudyBlock, {
         blockId: asId<"studyBlocks">(blockId),
       });
     },
     async replaceAutoBlocks(topicIds, blocks: GeneratedBlock[]) {
-      await client.mutation(api.planner.replaceAutoBlocks, {
+      await mutate(api.planner.replaceAutoBlocks, {
         topicIds: topicIds.map((id) => asId<"topics">(id)),
         blocks: scheduleBlocks(blocks),
       });
     },
     async applySchedule(topicIds, blocks, preferences) {
-      await client.mutation(api.planner.applySchedule, {
+      await mutate(api.planner.applySchedule, {
         topicIds: topicIds.map((id) => asId<"topics">(id)),
         blocks: scheduleBlocks(blocks),
         preferences: preferenceArgs(preferences),
@@ -519,24 +534,24 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
     },
 
     async logStudy(input: StudyLogInput) {
-      await client.mutation(api.planner.logStudy, {
+      await mutate(api.planner.logStudy, {
         ...input,
         topicId: asId<"topics">(input.topicId),
       });
     },
 
     async savePreferences(preferences) {
-      await client.mutation(api.planner.savePreferences, preferenceArgs(preferences));
+      await mutate(api.planner.savePreferences, preferenceArgs(preferences));
     },
 
     async importPlans(document: PlannerTransferDocument) {
-      await client.mutation(api.planner.importPlans, {
+      await mutate(api.planner.importPlans, {
         plans: document.plans,
         studyLog: document.studyLog,
       });
     },
     async replaceAll(document: PlannerTransferDocument) {
-      await client.mutation(api.planner.replaceAllPlans, {
+      await mutate(api.planner.replaceAllPlans, {
         plans: document.plans,
         studyLog: document.studyLog,
       });

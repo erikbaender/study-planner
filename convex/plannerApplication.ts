@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { commandStore, previewStore, type CommandStore } from "./plannerStore";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -165,7 +166,8 @@ export const plannerCommandValidator = v.union(
 );
 
 export type PlannerCommand = (typeof plannerCommandValidator)["type"];
-type PlannerReadCtx = { db: QueryCtx["db"] | MutationCtx["db"] };
+type PlannerReadCtx = { db: Pick<QueryCtx["db"], "get" | "normalizeId"> };
+type CommandContext = { db: CommandStore };
 type Ref = { table: "courses" | "exams" | "topics" | "studyBlocks"; id: string };
 
 export const MAX_COMMANDS = 100;
@@ -365,20 +367,28 @@ function nextOrder(rows: Array<{ order: number }>) {
   return rows.reduce((highest, row) => Math.max(highest, row.order + 1), 0);
 }
 
-export async function loadPlanForMcp(ctx: PlannerReadCtx, ownerId: Id<"users">, planId: Id<"plans">) {
+export async function loadPlanForMcp(ctx: QueryCtx | MutationCtx, ownerId: Id<"users">, planId: Id<"plans">) {
+  return loadCommandPlan({ db: previewStore(ctx.db) }, ownerId, planId);
+}
+
+async function loadCommandPlan(ctx: CommandContext, ownerId: Id<"users">, planId: Id<"plans">) {
   const plan = await requireOwnedPlan(ctx, ownerId, planId);
-  const courseRows = await ctx.db.query("courses").withIndex("by_plan", (q) => q.eq("planId", planId)).take(100);
+  const courseRows = await ctx.db.list("courses", "planId", planId, 101);
+  if (courseRows.length > 100) throw new Error("Plan exceeds the 100-course MCP limit");
   const courses: Course[] = [];
   let entities = courseRows.length;
   for (const course of courseRows) {
     const [examRows, topicRows] = await Promise.all([
-      ctx.db.query("exams").withIndex("by_course", (q) => q.eq("courseId", course._id)).take(250),
-      ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", course._id)).take(500),
+      ctx.db.list("exams", "courseId", course._id, 251),
+      ctx.db.list("topics", "courseId", course._id, 501),
     ]);
+    if (examRows.length > 250 || topicRows.length > 500) throw new Error("Course exceeds the MCP entity limit");
     entities += examRows.length + topicRows.length;
+    if (entities > MAX_PLAN_ENTITIES) throw new Error("Plan exceeds the MCP entity limit");
     const topics: Topic[] = [];
     for (const topic of topicRows) {
-      const blocks = await ctx.db.query("studyBlocks").withIndex("by_topic", (q) => q.eq("topicId", topic._id)).take(500);
+      const blocks = await ctx.db.list("studyBlocks", "topicId", topic._id, 501);
+      if (blocks.length > 500) throw new Error("Topic exceeds the 500-block MCP limit");
       entities += blocks.length;
       if (entities > MAX_PLAN_ENTITIES) throw new Error(`Plan exceeds the ${MAX_PLAN_ENTITIES}-entity MCP limit`);
       topics.push({
@@ -426,7 +436,7 @@ export async function loadPlanForMcp(ctx: PlannerReadCtx, ownerId: Id<"users">, 
       topics,
     });
   }
-  const row = await ctx.db.query("preferences").withIndex("by_owner", (q) => q.eq("ownerId", ownerId)).unique();
+  const row = (await ctx.db.list("preferences", "ownerId", ownerId, 2))[0] ?? null;
   const preferences: Preferences = row
     ? {
         dailyCapacityUnits: row.dailyCapacityUnits,
@@ -440,13 +450,13 @@ export async function loadPlanForMcp(ctx: PlannerReadCtx, ownerId: Id<"users">, 
 }
 
 async function regenerateSchedule(
-  ctx: MutationCtx,
+  ctx: CommandContext,
   ownerId: Id<"users">,
   planId: Id<"plans">,
   today: string,
   courseIds?: string[],
 ) {
-  const state = await loadPlanForMcp(ctx, ownerId, planId);
+  const state = await loadCommandPlan(ctx, ownerId, planId);
   const requested = courseIds ? new Set(courseIds.map((id) => resolveId(ctx, new Map(), "courses", id))) : null;
   const courses = requested ? state.courses.filter((course) => requested.has(course.id as Id<"courses">)) : state.courses;
   if (requested && courses.length !== requested.size) throw new Error("Every schedule course must belong to this plan");
@@ -459,10 +469,7 @@ async function regenerateSchedule(
   const topicIds = courses.flatMap((course) => course.topics.map((topic) => topic.id as Id<"topics">));
   const oldAuto: Array<Omit<Doc<"studyBlocks">, "_id" | "_creationTime">> = [];
   for (const topicId of topicIds) {
-    const rows = await ctx.db
-      .query("studyBlocks")
-      .withIndex("by_topic_and_source", (q) => q.eq("topicId", topicId).eq("source", "auto"))
-      .take(PLANNER_LIMITS.reflowBlocks + 1);
+    const rows = (await ctx.db.list("studyBlocks", "topicId", topicId, PLANNER_LIMITS.reflowBlocks + 1)).filter(block => block.source === "auto");
     oldAuto.push(
       ...rows.map((row) => ({
         topicId: row.topicId,
@@ -479,10 +486,7 @@ async function regenerateSchedule(
     throw new Error("Generated schedule exceeds the block limit");
   }
   for (const topicId of topicIds) {
-    const rows = await ctx.db
-      .query("studyBlocks")
-      .withIndex("by_topic_and_source", (q) => q.eq("topicId", topicId).eq("source", "auto"))
-      .take(PLANNER_LIMITS.reflowBlocks + 1);
+    const rows = (await ctx.db.list("studyBlocks", "topicId", topicId, PLANNER_LIMITS.reflowBlocks + 1)).filter(block => block.source === "auto");
     for (const row of rows) await ctx.db.delete(row._id);
   }
   const now = Date.now();
@@ -508,86 +512,40 @@ type ExecutionResult = {
   summaries: string[];
   warnings: string[];
   inverseCommands: InverseCommand[];
+  generatedBlocks: Array<{ topicId: string; startDate: string; endDate: string; plannedUnits: number }>;
 };
 
-function commandSummary(command: PlannerCommand) {
-  switch (command.type) {
-    case "plan.update": return "Update plan details";
-    case "course.create": return `Create course ${command.input.name}`;
-    case "course.update": return "Update a course";
-    case "exam.create": return `Create exam ${command.input.name}`;
-    case "exam.update": return "Update an exam";
-    case "topic.create": return `Create topic ${command.input.name}`;
-    case "topic.update": return "Update a topic";
-    case "topic.reorder": return "Reorder topics";
-    case "topic.dependencies.set": return "Set topic dependencies";
-    case "block.create": return "Create a study block";
-    case "block.move": return "Move a study block";
-    case "block.resize": return "Resize a study block";
-    case "schedule.regenerate": return "Regenerate the deterministic schedule";
-    case "preferences.update": return "Update scheduling preferences";
-  }
-}
-
-/** Read-only validation and schedule calculation. It deliberately performs no writes. */
+/** Preview and apply run the same sequential evaluator against different stores. */
 export async function previewCommandBatch(
   ctx: QueryCtx,
   args: { ownerId: Id<"users">; planId: Id<"plans">; commands: PlannerCommand[] },
 ) {
-  validateCommandBatch(args.commands);
-  const state = await loadPlanForMcp(ctx, args.ownerId, args.planId);
-  const refs = new Map<string, Ref>();
-  const warnings: string[] = [];
-  let generatedBlocks: Array<{ topicId: string; startDate: string; endDate: string; plannedUnits: number }> = [];
-
-  for (const command of args.commands) {
-    if ("ref" in command) {
-      const table = command.type === "course.create" ? "courses" : command.type === "exam.create" ? "exams" : command.type === "topic.create" ? "topics" : "studyBlocks";
-      refs.set(command.ref, { table, id: `preview:${command.ref}` });
-    }
-    if (command.type === "course.update" && !refs.has(command.courseId)) {
-      await assertCourseInPlan(ctx, args.planId, resolveId(ctx, refs, "courses", command.courseId));
-    } else if (command.type === "exam.update" && !refs.has(command.examId)) {
-      const exam = await assertExamInPlan(ctx, args.planId, resolveId(ctx, refs, "exams", command.examId));
-      assertOrderedIsoDates(command.patch.startDate ?? exam.startDate, command.patch.endDate ?? exam.endDate);
-    } else if ((command.type === "topic.update" || command.type === "topic.dependencies.set") && !refs.has(command.topicId)) {
-      await assertTopicInPlan(ctx, args.planId, resolveId(ctx, refs, "topics", command.topicId));
-    } else if ((command.type === "block.move" || command.type === "block.resize") && !refs.has(command.blockId)) {
-      await assertBlockInPlan(ctx, args.planId, resolveId(ctx, refs, "studyBlocks", command.blockId));
-    } else if (command.type === "schedule.regenerate") {
-      const requested = command.courseIds
-        ? new Set(command.courseIds.map((value) => resolveId(ctx, refs, "courses", value)))
-        : null;
-      const courses = requested
-        ? state.courses.filter((course) => requested.has(course.id as Id<"courses">))
-        : state.courses;
-      if (requested && courses.length !== requested.size) throw new Error("Every schedule course must belong to this plan");
-      const result = schedule({
-        courses,
-        today: command.today,
-        calendar: {
-          studyDaysOfWeek: state.preferences.studyDaysOfWeek,
-          blackoutDates: state.preferences.blackoutDates,
-        },
-        dailyCapacityUnits: state.preferences.dailyCapacityUnits,
-      });
-      generatedBlocks = result.blocks;
-      warnings.push(...result.shortfalls.map((shortfall) => `${shortfall.courseName}: ${shortfall.unscheduledUnits} units could not be scheduled before ${shortfall.deadline}`));
-    }
-  }
-
+  const store = { db: previewStore(ctx.db) };
+  const plan = await requireOwnedPlan(store, args.ownerId, args.planId);
+  const execution = await evaluateCommands(store, args);
   return {
-    revision: planRevision(state.plan),
-    resultingRevision: planRevision(state.plan) + 1,
-    summary: args.commands.map(commandSummary).join("; "),
-    warnings,
-    generatedBlocks,
+    revision: planRevision(plan),
+    resultingRevision: planRevision(plan) + 1,
+    summary: execution.summaries.join("; "),
+    warnings: execution.warnings,
+    generatedBlocks: execution.generatedBlocks,
     writesApplied: false as const,
   };
 }
 
 export async function executeCommandBatch(
   ctx: MutationCtx,
+  args: { ownerId: Id<"users">; planId: Id<"plans">; commands: PlannerCommand[] },
+): Promise<ExecutionResult> {
+  return evaluateCommands({ db: commandStore(ctx.db) }, args);
+}
+
+function changedFields<T extends object>(before: T, patch: Partial<T>): Partial<T> {
+  return Object.fromEntries(Object.keys(patch).map(key => [key, before[key as keyof T]])) as Partial<T>;
+}
+
+async function evaluateCommands(
+  ctx: CommandContext,
   args: { ownerId: Id<"users">; planId: Id<"plans">; commands: PlannerCommand[] },
 ): Promise<ExecutionResult> {
   validateCommandBatch(args.commands);
@@ -597,6 +555,7 @@ export async function executeCommandBatch(
   const summaries: string[] = [];
   const warnings: string[] = [];
   const inverseCommands: InverseCommand[] = [];
+  let generatedBlocks: ExecutionResult["generatedBlocks"] = [];
 
   for (const command of args.commands) {
     const now = Date.now();
@@ -605,13 +564,13 @@ export async function executeCommandBatch(
         const before = await requireOwnedPlan(ctx, args.ownerId, args.planId);
         if (command.patch.name !== undefined || command.patch.notes !== undefined) {
           await ctx.db.patch(args.planId, { ...command.patch, updatedAt: now });
-          inverseCommands.unshift({ type: "plan.update", patch: { name: before.name, notes: before.notes } });
+          inverseCommands.unshift({ type: "plan.update", patch: changedFields(before, command.patch) });
           summaries.push("Updated plan details");
         }
         break;
       }
       case "course.create": {
-        const existing = await ctx.db.query("courses").withIndex("by_plan", (q) => q.eq("planId", args.planId)).take(101);
+        const existing = await ctx.db.list("courses", "planId", args.planId, 101);
         if (existing.length >= 100) throw new Error("A plan cannot contain more than 100 courses");
         const id = await ctx.db.insert("courses", {
           planId: args.planId,
@@ -636,7 +595,7 @@ export async function executeCommandBatch(
         inverseCommands.unshift({
           type: "course.update",
           courseId: id,
-          patch: { name: before.name, code: before.code, notes: before.notes, color: before.color },
+          patch: { ...changedFields(before, command.patch), code: "code" in command.patch ? before.code ?? null : undefined },
         });
         affected.add(id);
         summaries.push(`Updated course ${before.name}`);
@@ -645,7 +604,7 @@ export async function executeCommandBatch(
       case "exam.create": {
         const courseId = resolveId(ctx, refs, "courses", command.courseId);
         await assertCourseInPlan(ctx, args.planId, courseId);
-        const existing = await ctx.db.query("exams").withIndex("by_course", (q) => q.eq("courseId", courseId)).take(251);
+        const existing = await ctx.db.list("exams", "courseId", courseId, 251);
         const id = await ctx.db.insert("exams", {
           courseId,
           name: command.input.name,
@@ -674,7 +633,7 @@ export async function executeCommandBatch(
         inverseCommands.unshift({
           type: "exam.update",
           examId: id,
-          patch: { name: before.name, kind: before.kind, startDate: before.startDate, endDate: before.endDate, status: before.status, notes: before.notes },
+          patch: { ...changedFields(before, command.patch), endDate: "endDate" in command.patch ? before.endDate ?? null : undefined },
         });
         affected.add(id);
         summaries.push(`Updated exam ${before.name}`);
@@ -683,7 +642,7 @@ export async function executeCommandBatch(
       case "topic.create": {
         const courseId = resolveId(ctx, refs, "courses", command.courseId);
         await assertCourseInPlan(ctx, args.planId, courseId);
-        const existing = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", courseId)).take(501);
+        const existing = await ctx.db.list("topics", "courseId", courseId, 501);
         const id = await ctx.db.insert("topics", {
           courseId,
           name: command.input.name,
@@ -715,16 +674,7 @@ export async function executeCommandBatch(
         inverseCommands.unshift({
           type: "topic.update",
           topicId: id,
-          patch: {
-            name: before.name,
-            unit: before.unit,
-            totalUnits: before.totalUnits,
-            completedUnits: before.completedUnits,
-            status: before.status,
-            priority: before.priority,
-            notes: before.notes,
-            color: before.color,
-          },
+          patch: changedFields(before, command.patch),
         });
         affected.add(id);
         summaries.push(`Updated topic ${before.name}`);
@@ -733,7 +683,7 @@ export async function executeCommandBatch(
       case "topic.reorder": {
         const courseId = resolveId(ctx, refs, "courses", command.courseId);
         await assertCourseInPlan(ctx, args.planId, courseId);
-        const topics = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", courseId)).take(501);
+        const topics = await ctx.db.list("topics", "courseId", courseId, 501);
         const ids = command.topicIds.map((id) => resolveId(ctx, refs, "topics", id));
         assertReorderComplete(topics.map((topic) => topic._id), ids, "Topic ids");
         const oldOrder = [...topics].sort((a, b) => a.order - b.order).map((topic) => topic._id);
@@ -752,7 +702,7 @@ export async function executeCommandBatch(
           const { topic: dependency } = await assertTopicInPlan(ctx, args.planId, dependencyId);
           if (dependency.courseId !== topic.courseId) throw new Error("Dependencies must be in the same course");
         }
-        const graphRows = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", topic.courseId)).take(501);
+        const graphRows = await ctx.db.list("topics", "courseId", topic.courseId, 501);
         const graph = new Map(graphRows.map((row) => [row._id as string, row.dependencyIds as string[]]));
         graph.set(topicId, dependencyIds);
         const visits = new Set<string>();
@@ -811,7 +761,8 @@ export async function executeCommandBatch(
         break;
       }
       case "schedule.regenerate": {
-        const regenerated = await regenerateSchedule(ctx, args.ownerId, args.planId, command.today, command.courseIds);
+        const regenerated = await regenerateSchedule(ctx, args.ownerId, args.planId, command.today, command.courseIds?.map(id => resolveId(ctx, refs, "courses", id)));
+        generatedBlocks = regenerated.result.blocks;
         regenerated.topicIds.forEach((id) => affected.add(id));
         warnings.push(...regenerated.result.shortfalls.map((shortfall) => `${shortfall.courseName}: ${shortfall.unscheduledUnits} units could not be scheduled before ${shortfall.deadline}`));
         inverseCommands.unshift({ type: "schedule.restore", topicIds: regenerated.topicIds, blocks: regenerated.oldAuto });
@@ -819,21 +770,23 @@ export async function executeCommandBatch(
         break;
       }
       case "preferences.update": {
-        const before = await ctx.db.query("preferences").withIndex("by_owner", (q) => q.eq("ownerId", args.ownerId)).unique();
-        if (before) await ctx.db.patch(before._id, { ...command.patch, updatedAt: now });
-        else await ctx.db.insert("preferences", { ownerId: args.ownerId, ...command.patch, updatedAt: now });
+        const before = (await ctx.db.list("preferences", "ownerId", args.ownerId, 2))[0] ?? null;
+        if (before) await ctx.db.patch(before._id, { ...command.patch, revision: (before.revision ?? 0) + 1, updatedAt: now });
+        else await ctx.db.insert("preferences", { ownerId: args.ownerId, ...command.patch, revision: 1, updatedAt: now });
         inverseCommands.unshift({ type: "preferences.restore", value: before ? { dailyCapacityUnits: before.dailyCapacityUnits, studyDaysOfWeek: before.studyDaysOfWeek, blackoutDates: before.blackoutDates, theme: before.theme, accentColor: before.accentColor, timezone: before.timezone } : null });
         summaries.push("Updated scheduling preferences");
         break;
       }
     }
   }
+  await loadCommandPlan(ctx, args.ownerId, args.planId);
   return {
     createdIds: Object.fromEntries([...refs.entries()].map(([ref, value]) => [ref, value.id])),
     affectedEntityIds: [...affected].slice(0, 500),
     summaries,
     warnings,
     inverseCommands,
+    generatedBlocks,
   };
 }
 
@@ -861,18 +814,22 @@ async function executeInverseCommands(ctx: MutationCtx, ownerId: Id<"users">, pl
         await ctx.db.delete(course._id);
         break;
       }
-      case "course.update":
+      case "course.update": {
+        const { code, ...patch } = command.patch;
         await assertCourseInPlan(ctx, planId, command.courseId);
-        await ctx.db.patch(command.courseId, { ...command.patch, updatedAt: Date.now() });
+        await ctx.db.patch(command.courseId, { ...patch, ...("code" in command.patch ? { code: code ?? undefined } : {}), updatedAt: Date.now() });
         break;
+      }
       case "exam.delete":
         await assertExamInPlan(ctx, planId, command.examId);
         await ctx.db.delete(command.examId);
         break;
-      case "exam.update":
+      case "exam.update": {
+        const { endDate, ...patch } = command.patch;
         await assertExamInPlan(ctx, planId, command.examId);
-        await ctx.db.patch(command.examId, { ...command.patch, updatedAt: Date.now() });
+        await ctx.db.patch(command.examId, { ...patch, ...("endDate" in command.patch ? { endDate: endDate ?? undefined } : {}), updatedAt: Date.now() });
         break;
+      }
       case "topic.delete": {
         const { topic } = await assertTopicInPlan(ctx, planId, command.topicId);
         await deleteTopic(ctx, topic);
@@ -898,7 +855,7 @@ async function executeInverseCommands(ctx: MutationCtx, ownerId: Id<"users">, pl
         break;
       case "block.restore":
         await assertBlockInPlan(ctx, planId, command.blockId);
-        await ctx.db.patch(command.blockId, { ...command.value, updatedAt: Date.now() });
+        await ctx.db.patch(command.blockId, { ...command.value, plannedUnits: command.value.plannedUnits, updatedAt: Date.now() });
         break;
       case "schedule.restore": {
         for (const topicId of command.topicIds) {
@@ -913,8 +870,8 @@ async function executeInverseCommands(ctx: MutationCtx, ownerId: Id<"users">, pl
         const existing = await ctx.db.query("preferences").withIndex("by_owner", (q) => q.eq("ownerId", ownerId)).unique();
         if (command.value === null) {
           if (existing) await ctx.db.delete(existing._id);
-        } else if (existing) await ctx.db.patch(existing._id, { ...command.value, updatedAt: Date.now() });
-        else await ctx.db.insert("preferences", { ownerId, ...command.value, updatedAt: Date.now() });
+        } else if (existing) await ctx.db.patch(existing._id, { ...command.value, revision: (existing.revision ?? 0) + 1, updatedAt: Date.now() });
+        else await ctx.db.insert("preferences", { ownerId, ...command.value, revision: 1, updatedAt: Date.now() });
         break;
       }
       case "progress.restore": {
@@ -938,7 +895,7 @@ async function executeInverseCommands(ctx: MutationCtx, ownerId: Id<"users">, pl
   }
 }
 
-export async function revisionConflictMessage(ctx: PlannerReadCtx, planId: Id<"plans">, expected: number, current: number) {
+export async function revisionConflictMessage(ctx: QueryCtx | MutationCtx, planId: Id<"plans">, expected: number, current: number) {
   const changes = await ctx.db
     .query("plannerAudit")
     .withIndex("by_plan_and_created_at", (q) => q.eq("planId", planId))
@@ -972,11 +929,15 @@ export async function commitAudit(ctx: MutationCtx, args: {
     undoable: Boolean(args.inverseCommands?.length),
   });
   if (args.inverseCommands?.length) {
+    const preferences = args.inverseCommands.some(command => command.type === "preferences.restore")
+      ? await ctx.db.query("preferences").withIndex("by_owner", q => q.eq("ownerId", args.ownerId)).unique()
+      : null;
     await ctx.db.insert("plannerUndo", {
       auditId,
       ownerId: args.ownerId,
       planId: args.planId,
       inverseCommands: args.inverseCommands,
+      preferencesRevision: preferences ? preferences.revision ?? 0 : undefined,
       expiresAt: Date.now() + UNDO_RETENTION_MS,
     });
   }
@@ -989,6 +950,7 @@ export async function recordBrowserMutation(ctx: MutationCtx, args: {
   planId: Id<"plans">;
   summary: string;
   affectedEntityIds: string[];
+  inverseCommands?: InverseCommand[];
 }) {
   const plan = await requireOwnedPlan(ctx, args.ownerId, args.planId);
   const baseRevision = planRevision(plan);
@@ -999,7 +961,7 @@ export async function recordBrowserMutation(ctx: MutationCtx, args: {
 }
 
 export async function findIdempotentResult<T extends Doc<"mcpIdempotency">["result"]>(
-  ctx: PlannerReadCtx,
+  ctx: QueryCtx | MutationCtx,
   grantId: Id<"mcpGrants">,
   key: string,
   operation: string,
@@ -1035,7 +997,17 @@ export async function undoAudit(ctx: MutationCtx, args: {
   if (!audit || audit.ownerId !== args.ownerId || audit.planId !== args.planId || !audit.undoable) throw new Error("Audit entry is not eligible for undo");
   const undo = await ctx.db.query("plannerUndo").withIndex("by_audit", (q) => q.eq("auditId", audit._id)).unique();
   if (!undo || undo.usedAt !== undefined || undo.expiresAt <= Date.now()) throw new Error("Undo data is missing, expired, or already used");
+  if (audit.resultRevision !== current) {
+    throw new Error("Only the latest transaction can be undone. Later edits must be preserved; use a new command batch instead.");
+  }
+  if (undo.preferencesRevision !== undefined) {
+    const preferences = await ctx.db.query("preferences").withIndex("by_owner", q => q.eq("ownerId", args.ownerId)).unique();
+    if ((preferences?.revision ?? 0) !== undo.preferencesRevision) throw new Error("Scheduling preferences changed after this transaction; undo would overwrite later edits");
+  }
   await executeInverseCommands(ctx, args.ownerId, args.planId, undo.inverseCommands);
+  if (undo.inverseCommands.some(command => command.type === "preferences.restore")) {
+    await recordOtherPreferenceChanges(ctx, { ownerId: args.ownerId, planId: args.planId, actorType: "mcp", grantId: args.grantId });
+  }
   const resultRevision = current + 1;
   await ctx.db.patch(args.planId, { revision: resultRevision, updatedAt: Date.now() });
   await ctx.db.patch(undo._id, { usedAt: Date.now() });
@@ -1057,3 +1029,16 @@ export const retentionPolicy = {
   undoDays: UNDO_RETENTION_MS / 86_400_000,
   idempotencyHours: IDEMPOTENCY_RETENTION_MS / 3_600_000,
 } as const;
+
+/** Account scheduling preferences are part of every plan snapshot. */
+export async function recordOtherPreferenceChanges(ctx: MutationCtx, args: {
+  ownerId: Id<"users">; planId?: Id<"plans">; actorType: "user" | "mcp"; grantId?: Id<"mcpGrants">;
+}) {
+  const plans = await ctx.db.query("plans").withIndex("by_owner", q => q.eq("ownerId", args.ownerId)).collect();
+  for (const plan of plans) {
+    if (plan._id === args.planId) continue;
+    const baseRevision = planRevision(plan);
+    await ctx.db.patch(plan._id, { revision: baseRevision + 1, updatedAt: Date.now() });
+    await commitAudit(ctx, { ...args, planId: plan._id, baseRevision, resultRevision: baseRevision + 1, summary: "Updated account scheduling preferences", affectedEntityIds: [plan._id] });
+  }
+}

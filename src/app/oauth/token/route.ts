@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       const redirectUri = validateRedirectUri(required(params, "redirect_uri"));
       const result = await client.mutation(api.mcpOAuth.exchangeAuthorizationCode, {
         codeDigest: sha256Base64url(required(params, "code")),
-        verifierChallenge: sha256Base64url(verifier),
+        codeVerifier: verifier,
         clientId,
         redirectUri,
         resource,

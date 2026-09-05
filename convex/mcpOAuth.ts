@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import { recordOtherPreferenceChanges } from "./plannerApplication";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -10,6 +11,11 @@ const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1_000;
 const REFRESH_TOKEN_LIFETIME_MS = 30 * 24 * 60 * 60 * 1_000;
 const AUTHORIZATION_CODE_LIFETIME_MS = 5 * 60 * 1_000;
 const REQUESTS_PER_MINUTE = 120;
+
+export async function sha256Base64url(value: string) {
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 const scopeValidator = v.union(
   v.literal("planner:read"),
@@ -247,8 +253,9 @@ export const authorize = mutation({
         .query("preferences")
         .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
         .unique();
-      if (preferences) await ctx.db.patch(preferences._id, { timezone: args.timezone, updatedAt: now });
-      else {
+      if (preferences && !preferences.timezone) {
+        await ctx.db.patch(preferences._id, { timezone: args.timezone, revision: (preferences.revision ?? 0) + 1, updatedAt: now });
+      } else if (!preferences) {
         await ctx.db.insert("preferences", {
           ownerId,
           studyDaysOfWeek: [1, 2, 3, 4, 5, 6],
@@ -256,9 +263,11 @@ export const authorize = mutation({
           theme: "system",
           accentColor: "#1769e0",
           timezone: args.timezone,
+          revision: 1,
           updatedAt: now,
         });
       }
+      if (!preferences?.timezone) await recordOtherPreferenceChanges(ctx, { ownerId, actorType: "user" });
     }
     return { grantId: grant._id, expiresAt };
   },
@@ -267,7 +276,7 @@ export const authorize = mutation({
 export const exchangeAuthorizationCode = mutation({
   args: {
     codeDigest: v.string(),
-    verifierChallenge: v.string(),
+    codeVerifier: v.string(),
     clientId: v.string(),
     redirectUri: v.string(),
     resource: v.string(),
@@ -283,7 +292,10 @@ export const exchangeAuthorizationCode = mutation({
   }),
   handler: async (ctx, args) => {
     assertDigest(args.codeDigest, "Authorization code digest");
-    assertDigest(args.verifierChallenge, "PKCE verifier challenge");
+    if (!/^[A-Za-z0-9._~-]{43,128}$/.test(args.codeVerifier)) {
+      throw new Error("Invalid PKCE code verifier");
+    }
+    const verifierChallenge = await sha256Base64url(args.codeVerifier);
     assertDigest(args.accessTokenDigest, "Access token digest");
     assertDigest(args.refreshTokenDigest, "Refresh token digest");
     const code = await ctx.db
@@ -300,7 +312,7 @@ export const exchangeAuthorizationCode = mutation({
       code.redirectUri !== args.redirectUri ||
       code.resource !== args.resource ||
       code.issuer !== args.issuer ||
-      code.codeChallenge !== args.verifierChallenge
+      code.codeChallenge !== verifierChallenge
     ) {
       throw new Error("Authorization code is invalid, expired, already used, or failed PKCE validation");
     }
