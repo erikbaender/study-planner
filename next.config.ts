@@ -48,6 +48,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   ...(allowedDevOrigins?.length ? { allowedDevOrigins } : {}),
+  // The compiler API is deterministic across CI/sandbox process policies;
+  // the CLI mode spawns a detached process group merely to read tsconfig.
+  experimental: { useTypeScriptCli: false },
   poweredByHeader: false,
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];

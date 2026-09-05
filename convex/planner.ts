@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { recordBrowserMutation } from "./plannerApplication";
 import {
   assertAutoBlockReplacement,
   assertBoundedArray,
@@ -75,6 +76,7 @@ const planDocumentFields = {
   ownerId: v.id("users"),
   name: v.string(),
   notes: v.string(),
+  revision: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
 };
@@ -349,13 +351,21 @@ export const createPlan = mutation({
     assertTrimmedBoundedText(args.name, "Plan name", PLANNER_LIMITS.nameCharacters);
     assertBoundedText(args.notes ?? "", "Plan notes", PLANNER_LIMITS.notesCharacters);
     const now = Date.now();
-    return await ctx.db.insert("plans", {
+    const planId = await ctx.db.insert("plans", {
       ownerId: userId,
       name: args.name,
       notes: args.notes ?? "",
+      revision: 0,
       createdAt: now,
       updatedAt: now,
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId,
+      summary: `Created plan ${args.name}`,
+      affectedEntityIds: [planId],
+    });
+    return planId;
   },
 });
 
@@ -376,6 +386,12 @@ export const updatePlan = mutation({
       notes: args.notes,
       updatedAt: Date.now(),
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: args.planId,
+      summary: "Updated plan details",
+      affectedEntityIds: [args.planId],
+    });
     return null;
   },
 });
@@ -386,6 +402,12 @@ export const deletePlan = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     await assertPlanOwner(ctx, args.planId, userId);
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: args.planId,
+      summary: "Deleted plan",
+      affectedEntityIds: [args.planId],
+    });
     await deletePlanTree(ctx, args.planId);
     return null;
   },
@@ -412,7 +434,7 @@ export const createCourse = mutation({
     assertBoundedText(args.notes ?? "", "Course notes", PLANNER_LIMITS.notesCharacters);
     const existing = await ctx.db.query("courses").withIndex("by_plan", (q) => q.eq("planId", args.planId)).collect();
     const now = Date.now();
-    return await ctx.db.insert("courses", {
+    const courseId = await ctx.db.insert("courses", {
       planId: args.planId,
       name: args.name,
       code: args.code,
@@ -422,6 +444,13 @@ export const createCourse = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: args.planId,
+      summary: `Created course ${args.name}`,
+      affectedEntityIds: [courseId],
+    });
+    return courseId;
   },
 });
 
@@ -436,7 +465,7 @@ export const updateCourse = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertCourseOwner(ctx, args.courseId, userId);
+    const course = await assertCourseOwner(ctx, args.courseId, userId);
     assertTrimmedBoundedText(args.name, "Course name", PLANNER_LIMITS.nameCharacters);
     if (args.code !== undefined) {
       assertTrimmedBoundedText(args.code, "Course code", PLANNER_LIMITS.codeCharacters);
@@ -448,6 +477,12 @@ export const updateCourse = mutation({
       notes: args.notes,
       color: args.color,
       updatedAt: Date.now(),
+    });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Updated course ${course.name}`,
+      affectedEntityIds: [args.courseId],
     });
     return null;
   },
@@ -477,14 +512,25 @@ export const migrateColorReferences = mutation({
       (topic) => topic.topicId,
     );
     const now = Date.now();
+    const affectedByPlan = new Map<Id<"plans">, string[]>();
 
     for (const course of args.courses) {
-      await assertCourseOwner(ctx, course.courseId, userId);
+      const existing = await assertCourseOwner(ctx, course.courseId, userId);
       await ctx.db.patch(course.courseId, { color: course.color, updatedAt: now });
+      affectedByPlan.set(existing.planId, [...(affectedByPlan.get(existing.planId) ?? []), course.courseId]);
     }
     for (const topic of args.topics) {
-      await assertTopicOwner(ctx, topic.topicId, userId);
+      const { course } = await assertTopicOwner(ctx, topic.topicId, userId);
       await ctx.db.patch(topic.topicId, { color: topic.color, updatedAt: now });
+      affectedByPlan.set(course.planId, [...(affectedByPlan.get(course.planId) ?? []), topic.topicId]);
+    }
+    for (const [planId, affectedEntityIds] of affectedByPlan) {
+      await recordBrowserMutation(ctx, {
+        ownerId: userId,
+        planId,
+        summary: "Migrated palette references",
+        affectedEntityIds,
+      });
     }
     return null;
   },
@@ -495,8 +541,14 @@ export const deleteCourse = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertCourseOwner(ctx, args.courseId, userId);
+    const course = await assertCourseOwner(ctx, args.courseId, userId);
     await deleteCourseTree(ctx, args.courseId);
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Deleted course ${course.name}`,
+      affectedEntityIds: [args.courseId],
+    });
     return null;
   },
 });
@@ -520,6 +572,12 @@ export const reorderCourses = mutation({
     for (const [index, courseId] of args.courseIds.entries()) {
       await ctx.db.patch(courseId, { order: index, updatedAt: now });
     }
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: args.planId,
+      summary: "Reordered courses",
+      affectedEntityIds: args.courseIds,
+    });
     return null;
   },
 });
@@ -529,7 +587,7 @@ export const reorderTopics = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertCourseOwner(ctx, args.courseId, userId);
+    const course = await assertCourseOwner(ctx, args.courseId, userId);
     const existing = await ctx.db
       .query("topics")
       .withIndex("by_course", (q) => q.eq("courseId", args.courseId))
@@ -543,6 +601,12 @@ export const reorderTopics = mutation({
     for (const [index, topicId] of args.topicIds.entries()) {
       await ctx.db.patch(topicId, { order: index, updatedAt: now });
     }
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: "Reordered topics",
+      affectedEntityIds: args.topicIds,
+    });
     return null;
   },
 });
@@ -562,13 +626,13 @@ export const createExam = mutation({
   returns: v.id("exams"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertCourseOwner(ctx, args.courseId, userId);
+    const course = await assertCourseOwner(ctx, args.courseId, userId);
     assertTrimmedBoundedText(args.name, "Exam name", PLANNER_LIMITS.nameCharacters);
     assertBoundedText(args.notes ?? "", "Exam notes", PLANNER_LIMITS.notesCharacters);
     assertOrderedIsoDates(args.startDate, args.endDate);
     const existing = await ctx.db.query("exams").withIndex("by_course", (q) => q.eq("courseId", args.courseId)).collect();
     const now = Date.now();
-    return await ctx.db.insert("exams", {
+    const examId = await ctx.db.insert("exams", {
       courseId: args.courseId,
       name: args.name,
       kind: args.kind ?? "exam",
@@ -582,6 +646,13 @@ export const createExam = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Created exam ${args.name}`,
+      affectedEntityIds: [examId],
+    });
+    return examId;
   },
 });
 
@@ -598,7 +669,9 @@ export const updateExam = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertExamOwner(ctx, args.examId, userId);
+    const exam = await assertExamOwner(ctx, args.examId, userId);
+    const course = await ctx.db.get(exam.courseId);
+    if (!course) throw new Error("Exam not found");
     assertTrimmedBoundedText(args.name, "Exam name", PLANNER_LIMITS.nameCharacters);
     assertBoundedText(args.notes, "Exam notes", PLANNER_LIMITS.notesCharacters);
     assertOrderedIsoDates(args.startDate, args.endDate);
@@ -611,6 +684,12 @@ export const updateExam = mutation({
       notes: args.notes,
       updatedAt: Date.now(),
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Updated exam ${exam.name}`,
+      affectedEntityIds: [args.examId],
+    });
     return null;
   },
 });
@@ -620,8 +699,16 @@ export const deleteExam = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertExamOwner(ctx, args.examId, userId);
+    const exam = await assertExamOwner(ctx, args.examId, userId);
+    const course = await ctx.db.get(exam.courseId);
+    if (!course) throw new Error("Exam not found");
     await ctx.db.delete(args.examId);
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Deleted exam ${exam.name}`,
+      affectedEntityIds: [args.examId],
+    });
     return null;
   },
 });
@@ -641,14 +728,14 @@ export const createTopic = mutation({
   returns: v.id("topics"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertCourseOwner(ctx, args.courseId, userId);
+    const course = await assertCourseOwner(ctx, args.courseId, userId);
     assertTrimmedBoundedText(args.name, "Topic name", PLANNER_LIMITS.nameCharacters);
     assertBoundedText(args.notes ?? "", "Topic notes", PLANNER_LIMITS.notesCharacters);
     const totalUnits = args.totalUnits ?? 0;
     assertProgress(0, totalUnits);
     const existing = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", args.courseId)).collect();
     const now = Date.now();
-    return await ctx.db.insert("topics", {
+    const topicId = await ctx.db.insert("topics", {
       courseId: args.courseId,
       name: args.name,
       unit: args.unit ?? "slides",
@@ -663,6 +750,13 @@ export const createTopic = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Created topic ${args.name}`,
+      affectedEntityIds: [topicId],
+    });
+    return topicId;
   },
 });
 
@@ -682,7 +776,7 @@ export const createTopics = mutation({
   returns: v.array(v.id("topics")),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertCourseOwner(ctx, args.courseId, userId);
+    const course = await assertCourseOwner(ctx, args.courseId, userId);
     assertBoundedArray(args.topics, "Topics", PLANNER_LIMITS.bulkTopics);
     for (const topic of args.topics) {
       assertTrimmedBoundedText(topic.name, "Topic name", PLANNER_LIMITS.nameCharacters);
@@ -712,6 +806,12 @@ export const createTopics = mutation({
       );
     }
 
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Created ${ids.length} topics`,
+      affectedEntityIds: ids,
+    });
     return ids;
   },
 });
@@ -731,7 +831,7 @@ export const updateTopic = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertTopicOwner(ctx, args.topicId, userId);
+    const { topic, course } = await assertTopicOwner(ctx, args.topicId, userId);
     assertTrimmedBoundedText(args.name, "Topic name", PLANNER_LIMITS.nameCharacters);
     assertBoundedText(args.notes, "Topic notes", PLANNER_LIMITS.notesCharacters);
     assertProgress(args.completedUnits, args.totalUnits);
@@ -745,6 +845,12 @@ export const updateTopic = mutation({
       notes: args.notes,
       color: args.color,
       updatedAt: Date.now(),
+    });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Updated topic ${topic.name}`,
+      affectedEntityIds: [args.topicId],
     });
     return null;
   },
@@ -783,6 +889,12 @@ export const moveTopic = mutation({
         });
       }
     }
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: targetCourse.planId,
+      summary: `Moved topic ${topic.name}`,
+      affectedEntityIds: [args.topicId],
+    });
     return null;
   },
 });
@@ -792,8 +904,14 @@ export const deleteTopic = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const { topic } = await assertTopicOwner(ctx, args.topicId, userId);
+    const { topic, course } = await assertTopicOwner(ctx, args.topicId, userId);
     await deleteTopicTree(ctx, topic);
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Deleted topic ${topic.name}`,
+      affectedEntityIds: [args.topicId],
+    });
     return null;
   },
 });
@@ -803,7 +921,7 @@ export const updateTopicDependencies = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const { topic } = await assertTopicOwner(ctx, args.topicId, userId);
+    const { topic, course } = await assertTopicOwner(ctx, args.topicId, userId);
     assertDistinctBoundedArray(
       args.dependencyIds,
       "Dependency ids",
@@ -819,6 +937,12 @@ export const updateTopicDependencies = mutation({
     }
 
     await ctx.db.patch(args.topicId, { dependencyIds: args.dependencyIds, updatedAt: Date.now() });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Updated dependencies for ${topic.name}`,
+      affectedEntityIds: [args.topicId],
+    });
     return null;
   },
 });
@@ -836,11 +960,11 @@ export const createStudyBlock = mutation({
   returns: v.id("studyBlocks"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertTopicOwner(ctx, args.topicId, userId);
+    const { course } = await assertTopicOwner(ctx, args.topicId, userId);
     assertOrderedIsoDates(args.startDate, args.endDate);
     assertPlannedUnits(args.plannedUnits);
     const now = Date.now();
-    return await ctx.db.insert("studyBlocks", {
+    const blockId = await ctx.db.insert("studyBlocks", {
       topicId: args.topicId,
       startDate: args.startDate,
       endDate: args.endDate,
@@ -850,6 +974,13 @@ export const createStudyBlock = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: "Created a study block",
+      affectedEntityIds: [blockId],
+    });
+    return blockId;
   },
 });
 
@@ -864,6 +995,9 @@ export const updateStudyBlock = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const block = await assertBlockOwner(ctx, args.blockId, userId);
+    const topic = await ctx.db.get(block.topicId);
+    const course = topic ? await ctx.db.get(topic.courseId) : null;
+    if (!topic || !course) throw new Error("Study block not found");
     assertOrderedIsoDates(args.startDate, args.endDate);
     assertPlannedUnits(args.plannedUnits);
     await ctx.db.patch(args.blockId, {
@@ -875,6 +1009,63 @@ export const updateStudyBlock = mutation({
       source: "manual",
       updatedAt: Date.now(),
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: "Moved or resized a study block",
+      affectedEntityIds: [args.blockId],
+    });
+    return null;
+  },
+});
+
+/** Atomic path for a multi-selection timeline drag/resize. */
+export const updateStudyBlocks = mutation({
+  args: {
+    updates: v.array(
+      v.object({
+        blockId: v.id("studyBlocks"),
+        startDate: v.string(),
+        endDate: v.string(),
+        plannedUnits: v.optional(v.number()),
+      }),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    assertDistinctBoundedArray(args.updates, "Study block updates", 100, (update) => update.blockId);
+    if (args.updates.length === 0) throw new Error("At least one study block update is required");
+    const validated: Array<{ block: Doc<"studyBlocks">; planId: Id<"plans">; update: (typeof args.updates)[number] }> = [];
+    for (const update of args.updates) {
+      const block = await assertBlockOwner(ctx, update.blockId, userId);
+      const topic = await ctx.db.get(block.topicId);
+      const course = topic ? await ctx.db.get(topic.courseId) : null;
+      if (!topic || !course) throw new Error("Study block not found");
+      assertOrderedIsoDates(update.startDate, update.endDate);
+      assertPlannedUnits(update.plannedUnits);
+      validated.push({ block, planId: course.planId, update });
+    }
+    const planId = validated[0]!.planId;
+    if (validated.some((entry) => entry.planId !== planId)) {
+      throw new Error("One atomic block update cannot span plans");
+    }
+    const now = Date.now();
+    for (const { block, update } of validated) {
+      await ctx.db.patch(block._id, {
+        startDate: update.startDate,
+        endDate: update.endDate,
+        plannedUnits: update.plannedUnits ?? block.plannedUnits,
+        source: "manual",
+        updatedAt: now,
+      });
+    }
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId,
+      summary: `Moved or resized ${validated.length} study blocks`,
+      affectedEntityIds: validated.map((entry) => entry.block._id),
+    });
     return null;
   },
 });
@@ -884,8 +1075,17 @@ export const deleteStudyBlock = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    await assertBlockOwner(ctx, args.blockId, userId);
+    const block = await assertBlockOwner(ctx, args.blockId, userId);
+    const topic = await ctx.db.get(block.topicId);
+    const course = topic ? await ctx.db.get(topic.courseId) : null;
+    if (!topic || !course) throw new Error("Study block not found");
     await ctx.db.delete(args.blockId);
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: "Deleted a study block",
+      affectedEntityIds: [args.blockId],
+    });
     return null;
   },
 });
@@ -919,10 +1119,13 @@ async function assertScheduleTopicOwnership(
   ctx: MutationCtx,
   userId: Id<"users">,
   topicIds: Id<"topics">[],
-): Promise<void> {
+): Promise<Id<"plans">[]> {
+  const planIds = new Set<Id<"plans">>();
   for (const topicId of topicIds) {
-    await assertTopicOwner(ctx, topicId, userId);
+    const { course } = await assertTopicOwner(ctx, topicId, userId);
+    planIds.add(course.planId);
   }
+  return [...planIds];
 }
 
 async function writeAutoBlockReplacement(
@@ -985,8 +1188,16 @@ export const replaceAutoBlocks = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     assertAutoBlockReplacement(args.topicIds, args.blocks);
-    await assertScheduleTopicOwnership(ctx, userId, args.topicIds);
+    const planIds = await assertScheduleTopicOwnership(ctx, userId, args.topicIds);
     await writeAutoBlockReplacement(ctx, args.topicIds, args.blocks);
+    for (const planId of planIds) {
+      await recordBrowserMutation(ctx, {
+        ownerId: userId,
+        planId,
+        summary: "Regenerated study schedule",
+        affectedEntityIds: args.topicIds,
+      });
+    }
     return null;
   },
 });
@@ -1002,12 +1213,20 @@ export const applySchedule = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     assertScheduleApplication(args.topicIds, args.blocks, args.preferences);
-    await assertScheduleTopicOwnership(ctx, userId, args.topicIds);
+    const planIds = await assertScheduleTopicOwnership(ctx, userId, args.topicIds);
 
     // Convex mutations are transactions: a failure in either writer rolls
     // back both branches. All input is validated before the first write.
     await writeAutoBlockReplacement(ctx, args.topicIds, args.blocks);
     await writePreferences(ctx, userId, args.preferences);
+    for (const planId of planIds) {
+      await recordBrowserMutation(ctx, {
+        ownerId: userId,
+        planId,
+        summary: "Applied a regenerated study schedule",
+        affectedEntityIds: args.topicIds,
+      });
+    }
     return null;
   },
 });
@@ -1031,7 +1250,7 @@ export const logStudy = mutation({
   returns: v.id("studyLog"),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
-    const { topic } = await assertTopicOwner(ctx, args.topicId, userId);
+    const { topic, course } = await assertTopicOwner(ctx, args.topicId, userId);
     assertIsoDate(args.date, "Study date");
     assertFiniteBoundedNumber(args.units, "Units", {
       min: -PLANNER_LIMITS.units,
@@ -1066,7 +1285,7 @@ export const logStudy = mutation({
       updatedAt: now,
     });
 
-    return await ctx.db.insert("studyLog", {
+    const logId = await ctx.db.insert("studyLog", {
       ownerId: userId,
       topicId: args.topicId,
       date: args.date,
@@ -1075,6 +1294,13 @@ export const logStudy = mutation({
       note: args.note,
       createdAt: now,
     });
+    await recordBrowserMutation(ctx, {
+      ownerId: userId,
+      planId: course.planId,
+      summary: `Recorded progress for ${topic.name}`,
+      affectedEntityIds: [args.topicId, logId],
+    });
+    return logId;
   },
 });
 
@@ -1086,7 +1312,20 @@ export const savePreferences = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     assertPreferences(args);
-    return await writePreferences(ctx, userId, args);
+    const preferenceId = await writePreferences(ctx, userId, args);
+    const plans = await ctx.db
+      .query("plans")
+      .withIndex("by_owner", (q) => q.eq("ownerId", userId))
+      .take(50);
+    for (const plan of plans) {
+      await recordBrowserMutation(ctx, {
+        ownerId: userId,
+        planId: plan._id,
+        summary: "Updated scheduling preferences",
+        affectedEntityIds: [preferenceId],
+      });
+    }
+    return preferenceId;
   },
 });
 
@@ -1153,6 +1392,14 @@ export const importPlans = mutation({
     assertImportPayload(args.plans, args.studyLog);
     const { planIds, topicIdsByKey } = await insertPlans(ctx, userId, args.plans);
     await insertImportedLog(ctx, userId, args.studyLog, topicIdsByKey);
+    for (const planId of planIds) {
+      await recordBrowserMutation(ctx, {
+        ownerId: userId,
+        planId,
+        summary: "Imported plan",
+        affectedEntityIds: [planId],
+      });
+    }
     return planIds;
   },
 });
@@ -1183,6 +1430,15 @@ export const replaceAllPlans = mutation({
     const { planIds, topicIdsByKey } = await insertPlans(ctx, userId, args.plans);
     await insertImportedLog(ctx, userId, args.studyLog, topicIdsByKey);
 
+    for (const planId of planIds) {
+      await recordBrowserMutation(ctx, {
+        ownerId: userId,
+        planId,
+        summary: "Replaced planner data from the web app",
+        affectedEntityIds: [planId],
+      });
+    }
+
     return planIds;
   },
 });
@@ -1197,6 +1453,7 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
       ownerId: userId,
       name: planInput.name,
       notes: planInput.notes,
+      revision: 0,
       createdAt: now,
       updatedAt: now,
     });

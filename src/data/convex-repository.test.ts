@@ -397,6 +397,9 @@ describe("Convex snapshot translation", () => {
       startDate: "2026-08-21",
       endDate: "2026-08-22",
     });
+    await repository.updateStudyBlocks([
+      { blockId: "block_1", startDate: "2026-08-22", endDate: "2026-08-23" },
+    ]);
     await repository.deleteStudyBlock("block_1");
     await repository.replaceAutoBlocks([source.firstTopic._id], blocks);
     await repository.applySchedule([source.firstTopic._id], blocks, preferences);
@@ -429,6 +432,7 @@ describe("Convex snapshot translation", () => {
       "planner:reorderTopics",
       "planner:createStudyBlock",
       "planner:updateStudyBlock",
+      "planner:updateStudyBlocks",
       "planner:deleteStudyBlock",
       "planner:replaceAutoBlocks",
       "planner:applySchedule",

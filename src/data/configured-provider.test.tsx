@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
     | null
     | { name: string | null; email: string | null; image: string | null },
   auth: { isAuthenticated: false, isLoading: false },
+  pathname: "/",
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => mocks.pathname,
 }));
 
 vi.mock("convex/react", () => ({
@@ -69,6 +74,7 @@ describe("ConfiguredConvexClientProvider", () => {
     mocks.auth.isAuthenticated = false;
     mocks.auth.isLoading = false;
     mocks.currentAccount = undefined;
+    mocks.pathname = "/";
   });
 
   it("shows a stable loading screen without mounting protected subscriptions", () => {
@@ -90,6 +96,15 @@ describe("ConfiguredConvexClientProvider", () => {
 
     await user.click(screen.getByRole("button", { name: "Continue with GitHub" }));
     expect(mocks.signIn).toHaveBeenCalledWith("github");
+  });
+
+  it("leaves the MCP privacy notice public", () => {
+    mocks.pathname = "/mcp/privacy";
+    renderProvider();
+
+    expect(screen.getByText("No account")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue with GitHub" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("configured-repository-provider")).not.toBeInTheDocument();
   });
 
   it("presents sign-in failures and lets the user retry", async () => {

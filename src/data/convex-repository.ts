@@ -491,6 +491,14 @@ export function createConvexRepository(client: ConvexReactClient): PlannerReposi
         ...input,
       });
     },
+    async updateStudyBlocks(updates) {
+      await client.mutation(api.planner.updateStudyBlocks, {
+        updates: updates.map((update) => ({
+          ...update,
+          blockId: asId<"studyBlocks">(update.blockId),
+        })),
+      });
+    },
     async deleteStudyBlock(blockId) {
       await client.mutation(api.planner.deleteStudyBlock, {
         blockId: asId<"studyBlocks">(blockId),

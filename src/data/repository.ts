@@ -146,6 +146,15 @@ export interface PlannerRepository {
     blockId: EntityId,
     input: { startDate: IsoDate; endDate: IsoDate; plannedUnits?: number },
   ): Promise<void>;
+  /** Commits one timeline multi-selection gesture as one transaction. */
+  updateStudyBlocks(
+    updates: Array<{
+      blockId: EntityId;
+      startDate: IsoDate;
+      endDate: IsoDate;
+      plannedUnits?: number;
+    }>,
+  ): Promise<void>;
   deleteStudyBlock(blockId: EntityId): Promise<void>;
   /** Swaps generated blocks for `topicIds`, leaving `manual` ones untouched. */
   replaceAutoBlocks(topicIds: EntityId[], blocks: GeneratedBlock[]): Promise<void>;
