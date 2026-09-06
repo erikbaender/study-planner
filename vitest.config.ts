@@ -25,7 +25,7 @@ export default defineConfig({
         test: {
           name: "domain",
           environment: "node",
-          include: ["src/{domain,data,lib}/**/*.test.ts", "convex/**/*.test.ts"],
+          include: ["src/{domain,data,lib}/**/*.test.ts", "convex/**/*.test.ts", "src/mcp/**/*.test.ts"],
         },
       },
       {

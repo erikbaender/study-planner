@@ -2,6 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { getFunctionName } from "convex/server";
 
 declare global {
   interface ImportMeta {
@@ -13,6 +14,20 @@ const modules = {
   ...import.meta.glob("./**/*.ts"),
   ...import.meta.glob("./_generated/*.js"),
 };
+
+// Existing ownership tests use a freshly read browser snapshot for each write.
+function browserSession(t: ReturnType<typeof convexTest>, subject: string) {
+  const session = t.withIdentity({ subject });
+  const original = session.mutation;
+  session.mutation = (async (reference: Parameters<typeof getFunctionName>[0], args: Record<string, unknown> = {}) => {
+    if (!["planner:createPlan", "planner:importPlans"].includes(getFunctionName(reference))) {
+      const plans = await session.query(api.planner.listPlanTrees, {});
+      args = { ...args, expectedRevisions: Object.fromEntries(plans.map(plan => [plan._id, plan.revision ?? 0])) };
+    }
+    return (original as (ref: Parameters<typeof getFunctionName>[0], input: Record<string, unknown>) => Promise<unknown>)(reference, args);
+  }) as typeof session.mutation;
+  return session;
+}
 
 describe("authenticated planner ownership", () => {
   it("fails closed without a signed-in account", async () => {
@@ -32,8 +47,8 @@ describe("authenticated planner ownership", () => {
       await ctx.db.insert("users", { name: "Alice" }),
       await ctx.db.insert("users", { name: "Bob" }),
     ]);
-    const alice = t.withIdentity({ subject: aliceId });
-    const bob = t.withIdentity({ subject: bobId });
+    const alice = browserSession(t, aliceId);
+    const bob = browserSession(t, bobId);
 
     const planId = await alice.mutation(api.planner.createPlan, { name: "Alice semester" });
     const courseId = await alice.mutation(api.planner.createCourse, {
@@ -83,7 +98,7 @@ describe("authenticated planner ownership", () => {
         notes: "",
         color: "violet",
       }),
-    ).rejects.toThrow("Course not found");
+    ).rejects.toThrow("Plan not found");
     await expect(
       bob.mutation(api.planner.updateExam, {
         examId,
@@ -93,7 +108,7 @@ describe("authenticated planner ownership", () => {
         status: "confirmed",
         notes: "",
       }),
-    ).rejects.toThrow("Exam not found");
+    ).rejects.toThrow("Plan not found");
     await expect(
       bob.mutation(api.planner.updateTopic, {
         topicId,
@@ -106,14 +121,14 @@ describe("authenticated planner ownership", () => {
         notes: "",
         color: "violet",
       }),
-    ).rejects.toThrow("Topic not found");
+    ).rejects.toThrow("Plan not found");
     await expect(
       bob.mutation(api.planner.updateStudyBlock, {
         blockId,
         startDate: "2026-09-06",
         endDate: "2026-09-06",
       }),
-    ).rejects.toThrow("Study block not found");
+    ).rejects.toThrow("Plan not found");
     await expect(
       bob.mutation(api.planner.applySchedule, {
         topicIds: [topicId],
@@ -126,7 +141,7 @@ describe("authenticated planner ownership", () => {
           accentColor: "violet",
         },
       }),
-    ).rejects.toThrow("Topic not found");
+    ).rejects.toThrow("Plan not found");
 
     const bobPlanId = await bob.mutation(api.planner.createPlan, { name: "Bob semester" });
     expect((await bob.query(api.planner.listPlanTrees, {})).map((plan) => plan._id)).toEqual([
@@ -135,7 +150,7 @@ describe("authenticated planner ownership", () => {
     await bob.mutation(api.planner.replaceAllPlans, { plans: [], studyLog: [] });
     expect(await bob.query(api.planner.listPlanTrees, {})).toEqual([]);
 
-    const aliceSecondSession = t.withIdentity({ subject: aliceId });
+    const aliceSecondSession = browserSession(t, aliceId);
     const alicePlans = await aliceSecondSession.query(api.planner.listPlanTrees, {});
     expect(alicePlans.map((plan) => plan._id)).toEqual([planId]);
     expect(alicePlans[0].courses[0].topics[0]._id).toBe(topicId);

@@ -20,6 +20,7 @@
 
 import { useRef } from "react";
 import {
+  Bot,
   Command,
   Download,
   FlaskConical,
@@ -187,6 +188,11 @@ export function AppToolbar(props: {
         label="Account"
         align="end"
         items={[
+          {
+            label: "Connected agents",
+            icon: <Bot />,
+            onSelect: () => window.location.replace("/connections"),
+          },
           { label: "Sign out", icon: <LogOut />, onSelect: props.onSignOut },
         ]}
         trigger={

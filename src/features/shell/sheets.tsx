@@ -34,21 +34,23 @@ export function EditPlanSheet({
   onOpenChange: (open: boolean) => void;
   onSave: (input: { name: string; notes?: string }) => void;
 }) {
+  const [saveDraft, setSaveDraft] = useState(() => onSave);
   const [draft, setDraft] = useState(() => ({
     name: plan?.name ?? "",
     notes: plan?.notes ?? "",
   }));
-  useResetWhen(`${plan?.id ?? ""}:${open}`, () =>
+  useResetWhen(`${plan?.id ?? ""}:${open}`, () => {
+    setSaveDraft(() => onSave);
     setDraft({
       name: plan?.name ?? "",
       notes: plan?.notes ?? "",
-    }),
-  );
+    });
+  });
 
   const invalid = draft.name.trim() === "";
   const submit = () => {
     if (invalid) return;
-    onSave({
+    saveDraft({
       name: draft.name.trim(),
       notes: draft.notes.trim() || undefined,
     });
@@ -316,12 +318,14 @@ function CourseSheet({
   initial: { name: string; code: string; color: string; notes: string };
   onSubmit: (input: CourseInput) => void;
 }) {
+  const [saveDraft, setSaveDraft] = useState(() => onSubmit);
   const [name, setName] = useState(initial.name);
   const [code, setCode] = useState(initial.code);
   const [color, setColor] = useState(initial.color);
   const [notes, setNotes] = useState(initial.notes);
 
   useResetWhen(open, () => {
+    setSaveDraft(() => onSubmit);
     setName(initial.name);
     setCode(initial.code);
     setColor(initial.color);
@@ -331,7 +335,7 @@ function CourseSheet({
   const submit = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onSubmit({ name: trimmed, code: code.trim() || undefined, color, notes: notes.trim() });
+    saveDraft({ name: trimmed, code: code.trim() || undefined, color, notes: notes.trim() });
     onOpenChange(false);
   };
 

@@ -105,7 +105,12 @@ function usePlannerContext(): RepositoryActions {
 }
 
 export function useRepository(): PlannerRepository {
-  return usePlannerContext().repository;
+  const { repository } = usePlannerContext();
+  const state = useContext(RepositoryStateContext);
+  return useMemo(
+    () => state?.status === "ready" ? repository.atSnapshot?.(state.snapshot) ?? repository : repository,
+    [repository, state],
+  );
 }
 
 /**

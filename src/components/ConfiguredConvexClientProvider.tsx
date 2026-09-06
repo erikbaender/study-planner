@@ -2,6 +2,7 @@
 
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
+import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import { ConvexPlannerAuthProvider } from "@/auth/convex-planner-auth";
 import { usePlannerAuth } from "@/auth/use-planner-auth";
@@ -29,9 +30,13 @@ export function ConfiguredConvexClientProvider({
 
 /** Prevents protected planner queries from starting until authentication succeeds. */
 export function AuthenticatedPlanner({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const auth = usePlannerAuth();
   const [signInPending, setSignInPending] = useState(false);
   const [signInError, setSignInError] = useState<Error | null>(null);
+
+  // OAuth metadata links here before a user has an account or session.
+  if (pathname === "/mcp/privacy") return children;
 
   if (auth.status === "loading") {
     return (

@@ -9,6 +9,7 @@ const repository = {
   updateStudyBlock: vi.fn<(id: string, input: Partial<StudyBlockInput>) => Promise<void>>(() =>
     Promise.resolve(),
   ),
+  updateStudyBlocks: vi.fn(() => Promise.resolve()),
   deleteStudyBlock: vi.fn<(id: string) => Promise<void>>(() => Promise.resolve()),
 };
 const run = vi.fn((promise: Promise<unknown>) => promise);
@@ -91,7 +92,7 @@ describe("TimelineView", () => {
     expect(onSelectTopic).toHaveBeenCalledOnce();
     expect(target).toHaveAttribute("data-selection", "primary");
     // A press that never travelled is a selection, not an edit.
-    expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+    expect(repository.updateStudyBlocks).not.toHaveBeenCalled();
   });
 
   it("deselects a bar when it is clicked again", () => {
@@ -170,14 +171,13 @@ describe("TimelineView", () => {
     fireEvent.pointerMove(window, { clientX: 398 });
     fireEvent.pointerUp(window, { button: 0, clientX: 398 });
 
-    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
-      "block_1",
-      expect.objectContaining({ startDate: "2026-05-11", endDate: "2026-05-15" }),
+    expect(repository.updateStudyBlocks).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ blockId: "block_1", startDate: "2026-05-11", endDate: "2026-05-15" }),
+        expect.objectContaining({ blockId: "block_2", startDate: "2026-05-25", endDate: "2026-05-27" }),
+      ]),
     );
-    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
-      "block_2",
-      expect.objectContaining({ startDate: "2026-05-25", endDate: "2026-05-27" }),
-    );
+    expect(repository.updateStudyBlocks).toHaveBeenCalledOnce();
   });
 
   it("replaces the selection on the press, so a drag moves only the bar under the hand", () => {
@@ -212,11 +212,10 @@ describe("TimelineView", () => {
     fireEvent.pointerMove(window, { clientX: 398 });
     fireEvent.pointerUp(window, { button: 0, clientX: 398 });
 
-    expect(repository.updateStudyBlock).toHaveBeenCalledTimes(1);
-    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
-      "block_2",
-      expect.objectContaining({ startDate: "2026-05-25", endDate: "2026-05-27" }),
-    );
+    expect(repository.updateStudyBlocks).toHaveBeenCalledWith([
+      expect.objectContaining({ blockId: "block_2", startDate: "2026-05-25", endDate: "2026-05-27" }),
+    ]);
+    expect(repository.updateStudyBlocks).toHaveBeenCalledOnce();
   });
 
   it("cancels a bar drag without leaving a drag listener or changing the bar", () => {
@@ -241,7 +240,7 @@ describe("TimelineView", () => {
 
     fireEvent.pointerMove(window, { pointerId: 41, clientX: 400 });
     expect(target).toHaveAttribute("aria-label", expect.stringContaining("2026-05-04 to 2026-05-08"));
-    expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+    expect(repository.updateStudyBlocks).not.toHaveBeenCalled();
   });
 
   it("commits the release position when drag frames were coalesced", () => {
@@ -266,10 +265,9 @@ describe("TimelineView", () => {
 
     fireEvent.pointerUp(window, { button: 0, clientX: 398 });
 
-    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
-      "block_1",
-      expect.objectContaining({ startDate: "2026-05-25", endDate: "2026-05-29" }),
-    );
+    expect(repository.updateStudyBlocks).toHaveBeenCalledWith([
+      expect.objectContaining({ blockId: "block_1", startDate: "2026-05-25", endDate: "2026-05-29" }),
+    ]);
   });
 
   it("cancels a queued bar draft without publishing or writing", () => {
@@ -289,7 +287,7 @@ describe("TimelineView", () => {
 
     expect(frames.cancel).toHaveBeenCalledOnce();
     expect(target).toHaveAttribute("aria-label", expect.stringContaining("2026-05-04 to 2026-05-08"));
-    expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+    expect(repository.updateStudyBlocks).not.toHaveBeenCalled();
   });
 
   it("cancels a pan without leaving a panning listener", () => {
@@ -330,7 +328,7 @@ describe("TimelineView", () => {
 
     fireEvent.pointerMove(window, { pointerId: 43, clientX: 400 });
     fireEvent.pointerUp(window, { pointerId: 43, button: 0, clientX: 400 });
-    expect(repository.updateStudyBlock).not.toHaveBeenCalled();
+    expect(repository.updateStudyBlocks).not.toHaveBeenCalled();
   });
 
   it("stops the whole selection where the first of its bars is blocked", () => {
@@ -366,13 +364,11 @@ describe("TimelineView", () => {
     fireEvent.pointerMove(window, { clientX: 296 });
     fireEvent.pointerUp(window, { button: 0, clientX: 296 });
 
-    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
-      "block_1",
-      expect.objectContaining({ startDate: "2026-05-07", endDate: "2026-05-11" }),
-    );
-    expect(repository.updateStudyBlock).toHaveBeenCalledWith(
-      "block_3",
-      expect.objectContaining({ startDate: "2026-05-07", endDate: "2026-05-09" }),
+    expect(repository.updateStudyBlocks).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ blockId: "block_1", startDate: "2026-05-07", endDate: "2026-05-11" }),
+        expect.objectContaining({ blockId: "block_3", startDate: "2026-05-07", endDate: "2026-05-09" }),
+      ]),
     );
   });
 
