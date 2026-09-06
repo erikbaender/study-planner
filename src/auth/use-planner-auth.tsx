@@ -11,10 +11,17 @@ export type PlannerAccount = {
   image: string | null;
 };
 
+export type PlannerSignInOptions = {
+  email?: string;
+  code?: string;
+  flow?: "signIn" | "changeEmail";
+  redirectTo?: string;
+};
+
 export type PlannerAuth = {
   status: PlannerAuthStatus;
   account: PlannerAccount | null;
-  signIn: (provider?: AuthProviderId) => void | Promise<unknown>;
+  signIn: (provider?: AuthProviderId, options?: PlannerSignInOptions) => void | Promise<unknown>;
   signOut: () => void | Promise<unknown>;
 };
 

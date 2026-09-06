@@ -26,8 +26,9 @@ export function ConvexPlannerAuthProvider({ children }: { children: ReactNode })
     () => ({
       status,
       account: account ?? null,
-      signIn: (provider = DEFAULT_AUTH_PROVIDER) => signIn(provider, {
-        redirectTo: window.location.pathname + window.location.search,
+      signIn: (provider = DEFAULT_AUTH_PROVIDER, options = {}) => signIn(provider, {
+        ...options,
+        redirectTo: options.redirectTo ?? window.location.pathname + window.location.search,
       }),
       signOut,
     }),

@@ -3,11 +3,11 @@
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import { usePathname } from "next/navigation";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { ConvexPlannerAuthProvider } from "@/auth/convex-planner-auth";
 import { usePlannerAuth } from "@/auth/use-planner-auth";
 import { ConvexRepositoryProvider } from "@/data/convex-repository-provider";
-import { Button, Spinner } from "@/ui";
+import { Button, Spinner, TextField } from "@/ui";
 
 /** The application's single Convex/Auth runtime. */
 export function ConfiguredConvexClientProvider({
@@ -32,8 +32,6 @@ export function ConfiguredConvexClientProvider({
 export function AuthenticatedPlanner({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const auth = usePlannerAuth();
-  const [signInPending, setSignInPending] = useState(false);
-  const [signInError, setSignInError] = useState<Error | null>(null);
 
   // OAuth metadata links here before a user has an account or session.
   if (pathname === "/mcp/privacy") return children;
@@ -47,42 +45,83 @@ export function AuthenticatedPlanner({ children }: { children: ReactNode }) {
   }
 
   if (auth.status === "signed-out") {
-    const handleSignIn = async () => {
-      setSignInPending(true);
-      setSignInError(null);
-      try {
-        await auth.signIn();
-      } catch (cause) {
-        setSignInError(cause instanceof Error ? cause : new Error(String(cause)));
-      } finally {
-        setSignInPending(false);
-      }
-    };
-
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-content px-6">
-        <div className="w-full max-w-sm text-center">
-          <h1 className="text-title font-semibold text-label">Study Planner</h1>
-          <p className="mt-2 text-body text-secondary">
-            Sign in to open your account-backed study plans.
-          </p>
-          {signInError ? (
-            <p role="alert" className="mt-3 text-body text-negative">
-              {signInError.message}
-            </p>
-          ) : null}
-          <Button
-            variant="accent"
-            className="mt-5"
-            disabled={signInPending}
-            onClick={() => void handleSignIn()}
-          >
-            {signInPending ? "Opening GitHub…" : "Continue with GitHub"}
-          </Button>
-        </div>
-      </main>
-    );
+    return <EmailSignIn />;
   }
 
   return <ConvexRepositoryProvider>{children}</ConvexRepositoryProvider>;
+}
+
+type SignInStep = "email" | "code";
+
+/** Email OTP gate. The same page owns the email and code so MCP consent return state survives. */
+export function EmailSignIn() {
+  const auth = usePlannerAuth();
+  const [step, setStep] = useState<SignInStep>("email");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = window.setInterval(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldown]);
+
+  const submitEmail = async (event: FormEvent) => {
+    event.preventDefault();
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || !normalized.includes("@")) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    setPending(true); setError(null);
+    try {
+      await auth.signIn("email-otp", { email: normalized });
+      setEmail(normalized); setStep("code"); setCooldown(30);
+    } catch {
+      setError("We couldn’t send a code. Check the address and try again.");
+    } finally { setPending(false); }
+  };
+
+  const submitCode = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!/^\d{8}$/.test(code.trim())) { setError("Enter the 8-digit code from your email."); return; }
+    setPending(true); setError(null);
+    try { await auth.signIn("email-otp", { email, code: code.trim() }); }
+    catch { setError("That code is invalid or expired. Request a new one and try again."); }
+    finally { setPending(false); }
+  };
+
+  const resend = async () => {
+    if (cooldown > 0 || pending) return;
+    setPending(true); setError(null);
+    try { await auth.signIn("email-otp", { email }); setCooldown(30); }
+    catch { setError("We couldn’t resend the code. Please try again."); }
+    finally { setPending(false); }
+  };
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-content px-6">
+      <div className="w-full max-w-sm">
+        <h1 className="text-title font-semibold text-label text-center">Study Planner</h1>
+        <p className="mt-2 text-body text-secondary text-center">Sign in with your email to open your study plans.</p>
+        {step === "email" ? (
+          <form className="mt-6 flex flex-col gap-4" onSubmit={submitEmail}>
+            <TextField label="Email address" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} error={error ?? undefined} autoFocus />
+            <Button variant="accent" type="submit" disabled={pending}>{pending ? "Sending code…" : "Send sign-in code"}</Button>
+          </form>
+        ) : (
+          <form className="mt-6 flex flex-col gap-4" onSubmit={submitCode}>
+            <TextField label={`Code sent to ${email}`} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={8} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))} error={error ?? undefined} autoFocus />
+            <Button variant="accent" type="submit" disabled={pending}>{pending ? "Verifying…" : "Verify code"}</Button>
+            <div className="flex items-center justify-between text-callout">
+              <Button variant="plain" size="sm" disabled={pending} onClick={() => { setStep("email"); setCode(""); setError(null); }}>Change email</Button>
+              <Button variant="plain" size="sm" disabled={pending || cooldown > 0} onClick={() => void resend()}>{cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}</Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </main>
+  );
 }
