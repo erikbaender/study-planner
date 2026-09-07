@@ -550,10 +550,11 @@ export function createConvexRepository(client: ConvexReactClient, revisions?: Re
         studyLog: document.studyLog,
       });
     },
-    async replaceAll(document: PlannerTransferDocument) {
+    async replaceAll(document: PlannerTransferDocument, preferences?: Preferences) {
       await mutate(api.planner.replaceAllPlans, {
         plans: document.plans,
         studyLog: document.studyLog,
+        ...(preferences ? { preferences: preferenceArgs(preferences) } : {}),
       });
     },
   };

@@ -191,7 +191,8 @@ export function AppShell() {
           },
           today,
         ),
-      ).then(() => (preferences ? repository.savePreferences(preferences) : undefined)),
+        preferences,
+      ),
     );
   };
 

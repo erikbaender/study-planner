@@ -86,16 +86,25 @@ describe("ConfiguredConvexClientProvider", () => {
     expect(mocks.constructClient).toHaveBeenCalledWith("https://configured.convex.cloud");
   });
 
-  it("gates signed-out users and starts GitHub sign-in without mounting planner data", async () => {
+  it("requests an email code without mounting planner data, then verifies it", async () => {
     const user = userEvent.setup();
     renderProvider();
 
-    expect(screen.getByText("Sign in to open your account-backed study plans.")).toBeInTheDocument();
+    expect(screen.getByText("Sign in with your email to open your study plans.")).toBeInTheDocument();
     expect(screen.queryByText("authenticated")).not.toBeInTheDocument();
     expect(screen.queryByTestId("configured-repository-provider")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Continue with GitHub" }));
-    expect(mocks.signIn).toHaveBeenCalledWith("github", { redirectTo: "/" });
+    await user.type(screen.getByLabelText("Email address"), "Ada@example.com");
+    await user.click(screen.getByRole("button", { name: "Send sign-in code" }));
+    expect(mocks.signIn).toHaveBeenCalledWith("email-otp", { email: "ada@example.com", redirectTo: "/" });
+    expect(await screen.findByLabelText("Code sent to ada@example.com")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resend in 30s" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Change email" }));
+    expect(screen.getByLabelText("Email address")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send sign-in code" }));
+    await user.type(screen.getByLabelText("Code sent to ada@example.com"), "12345678");
+    await user.click(screen.getByRole("button", { name: "Verify code" }));
+    expect(mocks.signIn).toHaveBeenLastCalledWith("email-otp", { email: "ada@example.com", code: "12345678", redirectTo: "/" });
   });
 
   it("leaves the MCP privacy notice public", () => {
@@ -103,21 +112,20 @@ describe("ConfiguredConvexClientProvider", () => {
     renderProvider();
 
     expect(screen.getByText("No account")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Continue with GitHub" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send sign-in code" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("configured-repository-provider")).not.toBeInTheDocument();
   });
 
   it("presents sign-in failures and lets the user retry", async () => {
-    mocks.signIn
-      .mockRejectedValueOnce(new Error("GitHub sign-in was interrupted"))
-      .mockResolvedValueOnce(undefined);
+    mocks.signIn.mockRejectedValueOnce(new Error("delivery failed")).mockResolvedValueOnce(undefined);
     const user = userEvent.setup();
     renderProvider();
 
-    await user.click(screen.getByRole("button", { name: "Continue with GitHub" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("GitHub sign-in was interrupted");
+    await user.type(screen.getByLabelText("Email address"), "ada@example.com");
+    await user.click(screen.getByRole("button", { name: "Send sign-in code" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("We couldn’t send a code");
 
-    await user.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+    await user.click(screen.getByRole("button", { name: "Send sign-in code" }));
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     expect(mocks.signIn).toHaveBeenCalledTimes(2);
   });
@@ -140,7 +148,7 @@ describe("ConfiguredConvexClientProvider", () => {
         <AuthProbe />
       </ConfiguredConvexClientProvider>,
     );
-    expect(screen.getByRole("button", { name: "Continue with GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send sign-in code" })).toBeInTheDocument();
     expect(screen.queryByTestId("configured-repository-provider")).not.toBeInTheDocument();
   });
 });

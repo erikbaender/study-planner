@@ -18,7 +18,7 @@ pnpm install --frozen-lockfile
 pnpm exec convex dev --once
 ```
 
-Study Planner requires Convex and authentication. The setup command writes `.env.local`; the values in `.env.example` are illustrative and must not be copied unchanged. Keep secrets in the Convex deployment environment, never in `.env.local`. Configure GitHub OAuth through [docs/authentication.md](docs/authentication.md), then run `pnpm dev`. When changing Convex functions, run `pnpm convex:dev` in a second terminal.
+Study Planner requires Convex and authentication. The setup command writes `.env.local`; the values in `.env.example` are illustrative and must not be copied unchanged. Keep secrets in the Convex deployment environment, never in `.env.local`. Configure email delivery through [docs/authentication.md](docs/authentication.md), then run `pnpm dev`. When changing Convex functions, run `pnpm convex:dev` in a second terminal.
 
 ## Make a change
 

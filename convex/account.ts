@@ -26,3 +26,11 @@ export const current = query({
     };
   },
 });
+
+export const authConfiguration = query({
+  args: {},
+  returns: v.object({ githubMigrationEnabled: v.boolean() }),
+  handler: async () => ({
+    githubMigrationEnabled: process.env.AUTH_GITHUB_MIGRATION_ENABLED === "true",
+  }),
+});

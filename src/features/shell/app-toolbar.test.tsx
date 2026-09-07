@@ -1,12 +1,16 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { PlannerAuthProvider } from "@/auth/use-planner-auth";
 import { AppToolbar } from "./app-toolbar";
+
+vi.mock("convex/react", () => ({ useQuery: () => ({ githubMigrationEnabled: false }) }));
 
 function renderToolbar() {
   const onSignOut = vi.fn();
   render(
-    <AppToolbar
+    <PlannerAuthProvider value={{ status: "authenticated", account: { name: "Ada Lovelace", email: "ada@example.com", image: null }, signIn: vi.fn(), signOut: onSignOut }}>
+      <AppToolbar
       view="today"
       onViewChange={vi.fn()}
       contentId="workspace"
@@ -21,7 +25,8 @@ function renderToolbar() {
       canExport={false}
       account={{ name: "Ada Lovelace", email: "ada@example.com", image: null }}
       onSignOut={onSignOut}
-    />,
+      />
+    </PlannerAuthProvider>,
   );
   return onSignOut;
 }
@@ -40,5 +45,17 @@ describe("AppToolbar account action", () => {
     await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
     await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
     expect(onSignOut).toHaveBeenCalledOnce();
+  });
+
+  it("opens account settings in the standard dialog", async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+
+    await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+    await user.click(screen.getByRole("menuitem", { name: "Settings" }));
+
+    expect(screen.getByRole("dialog", { name: "Account settings" })).toBeInTheDocument();
+    expect(screen.getByLabelText("New email address")).toBeInTheDocument();
   });
 });

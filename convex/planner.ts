@@ -1226,7 +1226,11 @@ export const importPlans = mutation({
  * user's data even by mistake.
  */
 export const replaceAllPlans = browserMutation({
-  args: { plans: v.array(importPlan), studyLog: v.array(importLogEntry) },
+  args: {
+    plans: v.array(importPlan),
+    studyLog: v.array(importLogEntry),
+    preferences: v.optional(preferenceValidator),
+  },
   returns: v.array(v.id("plans")),
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
@@ -1243,6 +1247,8 @@ export const replaceAllPlans = browserMutation({
 
     const { planIds, topicIdsByKey } = await insertPlans(ctx, userId, args.plans);
     await insertImportedLog(ctx, userId, args.studyLog, topicIdsByKey);
+
+    if (args.preferences) await writePreferences(ctx, userId, args.preferences);
 
     for (const planId of planIds) {
       await recordBrowserMutation(ctx, {

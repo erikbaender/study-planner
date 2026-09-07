@@ -174,5 +174,5 @@ export interface PlannerRepository {
 
   importPlans(document: PlannerTransferDocument): Promise<void>;
   /** Destructive: drops everything and writes the supplied document. */
-  replaceAll(document: PlannerTransferDocument): Promise<void>;
+  replaceAll(document: PlannerTransferDocument, preferences?: Preferences): Promise<void>;
 }

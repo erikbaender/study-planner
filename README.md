@@ -2,7 +2,7 @@
 
 Study Planner is an account-backed web app for turning course material and exam dates into a practical study schedule. It tracks topics by workload, records progress, and can regenerate future study blocks without overwriting work placed manually.
 
-The project uses Next.js, React, TypeScript, Tailwind CSS, Convex, and Convex Auth. Convex is the sole planner data store, and GitHub authentication is required before planner data is loaded or changed.
+The project uses Next.js, React, TypeScript, Tailwind CSS, Convex, and Convex Auth. Convex is the sole planner data store, and Email-code authentication is required before planner data is loaded or changed.
 
 > **Publication note:** this repository does not yet contain a license. Source being visible is not the same as being open source. A maintainer must choose and add a license before the first public release.
 
@@ -12,7 +12,7 @@ The project uses Next.js, React, TypeScript, Tailwind CSS, Convex, and Convex Au
 - Workload-aware scheduling with priorities, dependencies, study days, blackout dates, and manual-block preservation
 - Direct timeline creation, dragging, resizing, deletion, and generated-schedule reflow
 - Bulk topic entry and two adaptive MHH sample datasets
-- GitHub-authenticated, account-owned Convex persistence across browsers and devices
+- Email-authenticated, account-owned Convex persistence across browsers and devices
 - Versioned, validated JSON backup and restore
 - Keyboard navigation, reduced-motion support, and accessible overlay primitives
 
@@ -22,7 +22,7 @@ Prerequisites:
 
 - Node.js 22–24
 - pnpm 10.33 or a compatible pnpm 10 release
-- a Convex account and GitHub OAuth application
+- a Convex account and a transactional email service with a verified sending domain
 
 ```bash
 corepack enable
@@ -31,7 +31,7 @@ pnpm exec convex dev --once
 pnpm dev
 ```
 
-The Convex command creates or selects a development deployment, deploys the functions, and writes the required public URLs to `.env.local`. Configure GitHub OAuth and the deployment secrets in [the authentication guide](docs/authentication.md) before opening <http://localhost:3000>. Missing configuration produces a setup error; there is no browser-storage fallback.
+The Convex command creates or selects a development deployment, deploys the functions, and writes the required public URLs to `.env.local`. Configure email delivery and the deployment secrets in [the authentication guide](docs/authentication.md) before opening <http://localhost:3000>. Missing configuration produces a setup error; there is no browser-storage fallback.
 
 Use `pnpm convex:dev` in a second terminal while changing Convex functions. Do not commit `.env.local`, OAuth secrets, JWT keys, exported planner files containing personal data, or deployment credentials.
 
@@ -68,11 +68,11 @@ The UI depends on `PlannerRepository`, while the only runtime implementation map
 
 ## Data and authentication
 
-Every planner record belongs to the authenticated Convex user. Signing out unmounts the repository and hides the account data; signing back into the same GitHub identity restores it. Import and export are explicit account backup operations, not synchronization or account merging.
+Every planner record belongs to the authenticated Convex user. Signing out unmounts the repository and hides the account data; signing back into the same account restores it. Import and export are explicit account backup operations, not synchronization or account merging.
 
 The writer emits transfer format v3. Import accepts v3 and unambiguous v2 files, appends plans and study history with fresh IDs, and leaves preferences unchanged. See [the format specification](docs/data-format.md).
 
-GitHub is the only configured OAuth provider. Automatic account merging by matching email is disabled. Environment setup, recovery, deletion, backup, and provider revocation are documented in [authentication](docs/authentication.md).
+Email codes are the normal sign-in method. A temporary GitHub migration path preserves existing accounts; automatic account merging by matching email is disabled. Environment setup, recovery, deletion, backup, and provider revocation are documented in [authentication](docs/authentication.md).
 
 ## Documentation
 

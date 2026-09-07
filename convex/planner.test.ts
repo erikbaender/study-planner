@@ -147,8 +147,22 @@ describe("authenticated planner ownership", () => {
     expect((await bob.query(api.planner.listPlanTrees, {})).map((plan) => plan._id)).toEqual([
       bobPlanId,
     ]);
-    await bob.mutation(api.planner.replaceAllPlans, { plans: [], studyLog: [] });
+    await bob.mutation(api.planner.replaceAllPlans, {
+      plans: [],
+      studyLog: [],
+      preferences: {
+        dailyCapacityUnits: 40,
+        studyDaysOfWeek: [1, 2, 3, 4, 5],
+        blackoutDates: [],
+        theme: "system",
+        accentColor: "violet",
+      },
+    });
     expect(await bob.query(api.planner.listPlanTrees, {})).toEqual([]);
+    expect(await bob.query(api.planner.getPreferences, {})).toMatchObject({
+      dailyCapacityUnits: 40,
+      accentColor: "violet",
+    });
 
     const aliceSecondSession = browserSession(t, aliceId);
     const alicePlans = await aliceSecondSession.query(api.planner.listPlanTrees, {});

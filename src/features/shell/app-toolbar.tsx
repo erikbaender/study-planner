@@ -18,9 +18,8 @@
  * `workspace/hints.ts`.
  */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
-  Bot,
   Command,
   Download,
   FlaskConical,
@@ -33,6 +32,8 @@ import {
   UserRound,
 } from "lucide-react";
 import type { PlannerAccount } from "@/auth/use-planner-auth";
+import { usePlannerAuth } from "@/auth/use-planner-auth";
+import { AccountSettings } from "@/auth/account-settings";
 import {
   AnimationSpeedControl,
   AppearanceControl,
@@ -66,6 +67,10 @@ export function AppToolbar(props: {
     onSignOut: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const auth = usePlannerAuth();
+  const currentAccountId = auth.account?.email?.trim().toLowerCase();
+  const otherAccounts = (auth.accounts ?? []).filter((account) => account.id !== currentAccountId);
 
   return (
     <Toolbar>
@@ -188,23 +193,25 @@ export function AppToolbar(props: {
         label="Account"
         align="end"
         items={[
-          {
-            label: "Connected agents",
-            icon: <Bot />,
-            onSelect: () => window.location.replace("/connections"),
-          },
+          ...otherAccounts.map((account) => ({
+            label: account.name ?? account.email ?? "Account",
+            icon: <UserRound />,
+            onSelect: () => auth.switchAccount?.(account.id),
+          })),
+          { label: "Add account", icon: <Plus />, onSelect: () => auth.addAccount?.() },
+          { type: "separator" },
+          { label: "Settings", icon: <Settings2 />, onSelect: () => setAccountSettingsOpen(true) },
           { label: "Sign out", icon: <LogOut />, onSelect: props.onSignOut },
         ]}
         trigger={
-          <Button
-            size="sm"
-            variant="plain"
-            leadingIcon={<UserRound />}
-            title={props.account?.email ?? undefined}
-          >
-            {props.account?.name ?? props.account?.email ?? "Account"}
-          </Button>
+          <span><Button size="sm" variant="plain" leadingIcon={<UserRound />} title={props.account?.email ?? undefined}>{props.account?.name ?? props.account?.email ?? "Account"}</Button></span>
         }
+      />
+
+      <AccountSettings
+        account={props.account}
+        open={accountSettingsOpen}
+        onOpenChange={setAccountSettingsOpen}
       />
     </Toolbar>
   );
