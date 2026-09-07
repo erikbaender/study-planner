@@ -18,12 +18,12 @@
  * `workspace/hints.ts`.
  */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
-  Bot,
   Command,
   Download,
   FlaskConical,
+  LogOut,
   MoreHorizontal,
   PanelLeft,
   Plus,
@@ -66,6 +66,7 @@ export function AppToolbar(props: {
     onSignOut: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
 
   return (
     <Toolbar>
@@ -184,16 +185,23 @@ export function AppToolbar(props: {
         }}
       />
 
-      <Popover
-        side="bottom"
+      <DropdownMenu
+        label="Account"
         align="end"
+        items={[
+          { label: "Settings", icon: <Settings2 />, onSelect: () => setAccountSettingsOpen(true) },
+          { label: "Sign out", icon: <LogOut />, onSelect: props.onSignOut },
+        ]}
         trigger={
           <span><Button size="sm" variant="plain" leadingIcon={<UserRound />} title={props.account?.email ?? undefined}>{props.account?.name ?? props.account?.email ?? "Account"}</Button></span>
         }
-      >
-        <AccountSettings account={props.account} onSignOut={props.onSignOut} />
-        <Button size="sm" variant="plain" leadingIcon={<Bot />} onClick={() => window.location.replace("/connections")}>Connected agents</Button>
-      </Popover>
+      />
+
+      <AccountSettings
+        account={props.account}
+        open={accountSettingsOpen}
+        onOpenChange={setAccountSettingsOpen}
+      />
     </Toolbar>
   );
 }
