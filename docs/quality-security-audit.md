@@ -108,6 +108,6 @@ The browser tracing integration needed for reliable production Core Web Vitals w
 
 `convex/planner.ts`, `src/features/outline/outline-view.tsx`, and the timeline interaction modules remain large. Further decomposition should follow stable responsibilities—query assembly, mutation families, gesture state, or row rendering—and retain end-to-end behavior tests. Line count alone is not a reason to split tightly coupled logic.
 
-## Google SSO decision
+## Authentication direction
 
-Google must launch as a separate provider-bound identity with `allowDangerousEmailAccountLinking: false`. Matching an OAuth email is not sufficient evidence to merge accounts. If linking is later offered, it must start from an authenticated account, require fresh authentication to both providers, disclose both data sets, detect an already-linked or already-existing destination identity, and perform a previewable, recoverable merge with explicit conflict rules. See [authentication.md](authentication.md).
+Issue #63 selects email verification codes as the final sign-in method; additional social providers are out of scope. Retained GitHub accounts migrate only with authenticated proof of the existing account and verification of the destination email. Matching email metadata never authorizes a merge. See [authentication.md](authentication.md) for migration, retirement, session, and recovery policies.

@@ -16,6 +16,7 @@ export const pruneExpiredMcpData = internalMutation({
     undoRecords: v.number(),
     idempotencyRecords: v.number(),
     rateLimitRecords: v.number(),
+    emailAuthRecords: v.number(),
   }),
   handler: async (ctx) => {
     const now = Date.now();
@@ -43,6 +44,10 @@ export const pruneExpiredMcpData = internalMutation({
       .query("mcpRateLimits")
       .withIndex("by_window", (q) => q.lt("window", Math.floor(now / 60_000) - RATE_LIMIT_RETENTION_MINUTES))
       .take(PRUNE_BATCH_SIZE);
+    const expiredSendLimits = await ctx.db
+      .query("authEmailSendLimits")
+      .withIndex("by_window_start", (q) => q.lt("windowStart", now - 24 * 60 * 60 * 1_000))
+      .take(PRUNE_BATCH_SIZE);
 
     for (const row of [
       ...authorizationCodes,
@@ -51,6 +56,7 @@ export const pruneExpiredMcpData = internalMutation({
       ...auditEntries,
       ...idempotencyRecords,
       ...rateLimitRecords,
+      ...expiredSendLimits,
     ]) {
       await ctx.db.delete(row._id);
     }
@@ -62,6 +68,7 @@ export const pruneExpiredMcpData = internalMutation({
       undoRecords: undoRecords.length,
       idempotencyRecords: idempotencyRecords.length,
       rateLimitRecords: rateLimitRecords.length,
+      emailAuthRecords: expiredSendLimits.length,
     };
   },
 });

@@ -24,7 +24,6 @@ import {
   Command,
   Download,
   FlaskConical,
-  LogOut,
   MoreHorizontal,
   PanelLeft,
   Plus,
@@ -33,6 +32,7 @@ import {
   UserRound,
 } from "lucide-react";
 import type { PlannerAccount } from "@/auth/use-planner-auth";
+import { AccountSettings } from "@/auth/account-settings";
 import {
   AnimationSpeedControl,
   AppearanceControl,
@@ -184,28 +184,16 @@ export function AppToolbar(props: {
         }}
       />
 
-      <DropdownMenu
-        label="Account"
+      <Popover
+        side="bottom"
         align="end"
-        items={[
-          {
-            label: "Connected agents",
-            icon: <Bot />,
-            onSelect: () => window.location.replace("/connections"),
-          },
-          { label: "Sign out", icon: <LogOut />, onSelect: props.onSignOut },
-        ]}
         trigger={
-          <Button
-            size="sm"
-            variant="plain"
-            leadingIcon={<UserRound />}
-            title={props.account?.email ?? undefined}
-          >
-            {props.account?.name ?? props.account?.email ?? "Account"}
-          </Button>
+          <span><Button size="sm" variant="plain" leadingIcon={<UserRound />} title={props.account?.email ?? undefined}>{props.account?.name ?? props.account?.email ?? "Account"}</Button></span>
         }
-      />
+      >
+        <AccountSettings account={props.account} onSignOut={props.onSignOut} />
+        <Button size="sm" variant="plain" leadingIcon={<Bot />} onClick={() => window.location.replace("/connections")}>Connected agents</Button>
+      </Popover>
     </Toolbar>
   );
 }

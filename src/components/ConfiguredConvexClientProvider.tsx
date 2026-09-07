@@ -1,13 +1,14 @@
 "use client";
 
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
-import { ConvexReactClient } from "convex/react";
+import { ConvexReactClient, useQuery } from "convex/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { ConvexPlannerAuthProvider } from "@/auth/convex-planner-auth";
 import { usePlannerAuth } from "@/auth/use-planner-auth";
 import { ConvexRepositoryProvider } from "@/data/convex-repository-provider";
 import { Button, Spinner, TextField } from "@/ui";
+import { api } from "../../convex/_generated/api";
 
 /** The application's single Convex/Auth runtime. */
 export function ConfiguredConvexClientProvider({
@@ -56,6 +57,7 @@ type SignInStep = "email" | "code";
 /** Email OTP gate. The same page owns the email and code so MCP consent return state survives. */
 export function EmailSignIn() {
   const auth = usePlannerAuth();
+  const authConfiguration = useQuery(api.account.authConfiguration);
   const [step, setStep] = useState<SignInStep>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -101,6 +103,13 @@ export function EmailSignIn() {
     finally { setPending(false); }
   };
 
+  const migrateGitHub = async () => {
+    setPending(true); setError(null);
+    try { await auth.signIn("github"); }
+    catch { setError("GitHub migration is unavailable right now. Use email sign-in instead."); }
+    finally { setPending(false); }
+  };
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-content px-6">
       <div className="w-full max-w-sm">
@@ -110,6 +119,7 @@ export function EmailSignIn() {
           <form className="mt-6 flex flex-col gap-4" onSubmit={submitEmail}>
             <TextField label="Email address" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} error={error ?? undefined} autoFocus />
             <Button variant="accent" type="submit" disabled={pending}>{pending ? "Sending code…" : "Send sign-in code"}</Button>
+            {authConfiguration?.githubMigrationEnabled ? <Button variant="plain" type="button" disabled={pending} onClick={() => void migrateGitHub()}>Migrate existing GitHub account</Button> : null}
           </form>
         ) : (
           <form className="mt-6 flex flex-col gap-4" onSubmit={submitCode}>

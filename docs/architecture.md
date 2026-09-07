@@ -3,7 +3,7 @@
 Study Planner is a client-heavy Next.js application with a pure planning core and one account-owned persistence path.
 
 ```text
-GitHub sign-in -> Convex Auth -> authenticated repository -> Convex planner API
+Email verification code -> Convex Auth -> authenticated repository -> Convex planner API
                                          |
 React features -> PlannerRepository -----+----> pure domain calculations
 ```
@@ -36,7 +36,7 @@ ConvexReactClient
         -> ConvexRepositoryProvider (authenticated only)
 ```
 
-While auth is loading, the application shows a stable loading screen. Signed-out users see only the GitHub authentication gate. The repository and protected query watches are created only in the authenticated branch; sign-out unmounts them and clears account data from the React tree.
+While auth is loading, the application shows a stable loading screen. Signed-out users see the email-code authentication gate. The repository and protected query watches are created only in the authenticated branch; sign-out unmounts them and clears account data from the React tree.
 
 ### Features: `src/features`
 

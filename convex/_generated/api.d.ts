@@ -8,8 +8,11 @@
  * @module
  */
 
+import type * as EmailChange from "../EmailChange.js";
+import type * as ResendOTP from "../ResendOTP.js";
 import type * as account from "../account.js";
 import type * as auth from "../auth.js";
+import type * as authEmail from "../authEmail.js";
 import type * as browserMutation from "../browserMutation.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
@@ -28,8 +31,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  EmailChange: typeof EmailChange;
+  ResendOTP: typeof ResendOTP;
   account: typeof account;
   auth: typeof auth;
+  authEmail: typeof authEmail;
   browserMutation: typeof browserMutation;
   crons: typeof crons;
   http: typeof http;

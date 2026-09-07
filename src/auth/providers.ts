@@ -7,6 +7,7 @@
  */
 export const AUTH_PROVIDERS = [{ id: "email-otp", label: "Email" }] as const;
 
-export type AuthProviderId = (typeof AUTH_PROVIDERS)[number]["id"];
+/** Internal migration providers remain callable only from explicit account flows. */
+export type AuthProviderId = (typeof AUTH_PROVIDERS)[number]["id"] | "email-change" | "github";
 
 export const DEFAULT_AUTH_PROVIDER: AuthProviderId = AUTH_PROVIDERS[0].id;

@@ -165,6 +165,15 @@ const idempotentResult = v.union(
 export default defineSchema({
   ...authTables,
 
+  /** Fixed-window counters for email sends. Keys are SHA-256 digests, never raw addresses. */
+  authEmailSendLimits: defineTable({
+    key: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+  })
+    .index("by_key_and_window_start", ["key", "windowStart"])
+    .index("by_window_start", ["windowStart"]),
+
   /** Surfaced in the UI as a "Semester". */
   plans: defineTable({
     ownerId: v.id("users"),

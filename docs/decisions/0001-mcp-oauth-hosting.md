@@ -20,7 +20,7 @@ The Next.js adapter invokes ordinary narrowly-scoped public Convex functions wit
 ## Consequences
 
 - The MCP resource URL and authorization issuer share one deployment lifecycle and origin.
-- Development, preview, and production need separate Convex deployments, OAuth issuer URLs, GitHub OAuth apps, and data.
+- Development, preview, and production need separate Convex deployments, OAuth issuer URLs, email delivery credentials, and data. GitHub callbacks are needed only during migration of retained legacy accounts.
 - Revoking a grant immediately blocks access validation and refresh, independent of token expiry.
 - Stateless transport does not provide resumable MCP sessions/tasks; current planner operations are bounded Convex transactions and do not need them.
 - `MCP_ISSUER` must be the exact externally visible origin in production so Host, issuer, audience, metadata, and challenges agree.
