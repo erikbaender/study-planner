@@ -2,6 +2,7 @@ import { Email } from "@convex-dev/auth/providers/Email";
 import { RandomReader, generateRandomString } from "@oslojs/crypto/random";
 import { Resend } from "resend";
 import { normalizeEmail, sha256 } from "./authEmail";
+import { isAllowedRecipient } from "./emailRecipientPolicy";
 
 const random: RandomReader = { read: (bytes) => crypto.getRandomValues(bytes) };
 
@@ -39,12 +40,9 @@ function resendOtp(id: "email-otp" | "email-change-verification", subject: strin
     if (!provider.apiKey || !provider.from) throw new Error("Email delivery is not configured.");
     const mode = process.env.AUTH_EMAIL_MODE ?? "preview";
     if (mode !== "production" && mode !== "preview") throw new Error("Email delivery mode is invalid.");
-    if (mode === "preview") {
-      const allowed = (process.env.AUTH_EMAIL_PREVIEW_RECIPIENTS ?? "")
-        .split(",")
-        .map(normalizeEmail)
-        .filter(Boolean);
-      if (!allowed.includes(identifier)) throw new Error("Email delivery is restricted in this preview.");
+    const allowedRecipients = process.env.AUTH_EMAIL_ALLOWED_RECIPIENTS;
+    if (allowedRecipients?.trim() && !isAllowedRecipient(identifier, allowedRecipients)) {
+      throw new Error("Email delivery is restricted to the configured recipients.");
     }
     const { error } = await new Resend(provider.apiKey).emails.send({
       from: provider.from,

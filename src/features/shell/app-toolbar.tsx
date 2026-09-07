@@ -32,6 +32,7 @@ import {
   UserRound,
 } from "lucide-react";
 import type { PlannerAccount } from "@/auth/use-planner-auth";
+import { usePlannerAuth } from "@/auth/use-planner-auth";
 import { AccountSettings } from "@/auth/account-settings";
 import {
   AnimationSpeedControl,
@@ -67,6 +68,9 @@ export function AppToolbar(props: {
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const auth = usePlannerAuth();
+  const currentAccountId = auth.account?.email?.trim().toLowerCase();
+  const otherAccounts = (auth.accounts ?? []).filter((account) => account.id !== currentAccountId);
 
   return (
     <Toolbar>
@@ -189,6 +193,13 @@ export function AppToolbar(props: {
         label="Account"
         align="end"
         items={[
+          ...otherAccounts.map((account) => ({
+            label: account.name ?? account.email ?? "Account",
+            icon: <UserRound />,
+            onSelect: () => auth.switchAccount?.(account.id),
+          })),
+          { label: "Add account", icon: <Plus />, onSelect: () => auth.addAccount?.() },
+          { type: "separator" },
           { label: "Settings", icon: <Settings2 />, onSelect: () => setAccountSettingsOpen(true) },
           { label: "Sign out", icon: <LogOut />, onSelect: props.onSignOut },
         ]}

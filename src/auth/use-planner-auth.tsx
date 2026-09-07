@@ -2,6 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import type { AuthProviderId } from "./providers";
+import type { PlannerAccountEntry } from "./account-sessions";
 
 export type PlannerAuthStatus = "loading" | "signed-out" | "authenticated";
 
@@ -23,6 +24,9 @@ export type PlannerAuth = {
   account: PlannerAccount | null;
   signIn: (provider?: AuthProviderId, options?: PlannerSignInOptions) => void | Promise<unknown>;
   signOut: () => void | Promise<unknown>;
+  accounts?: readonly PlannerAccountEntry[];
+  switchAccount?: (id: string) => void;
+  addAccount?: () => void;
 };
 
 const PlannerAuthContext = createContext<PlannerAuth | null>(null);

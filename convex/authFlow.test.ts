@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { isAllowedRecipient } from "./emailRecipientPolicy";
 
 const sentMail = vi.hoisted(() => [] as Array<{ to: string; text: string }>);
 
@@ -32,14 +33,7 @@ beforeAll(() => {
   process.env.AUTH_RESEND_KEY = "re_test";
   process.env.AUTH_EMAIL_FROM = "Study Planner <auth@example.com>";
   process.env.AUTH_EMAIL_MODE = "preview";
-  process.env.AUTH_EMAIL_PREVIEW_RECIPIENTS = [
-    "new@example.com",
-    "later@example.com",
-    "victim@example.com",
-    "taken@example.com",
-    "limited@example.com",
-    "locked@example.com",
-  ].join(",");
+  process.env.AUTH_EMAIL_ALLOWED_RECIPIENTS = "example.com,partner.net,specific@users.test";
   // Convex Auth enriches an action context by spreading `ctx.auth`. The
   // convex-test auth implementation keeps getUserIdentity on its prototype,
   // so the spread drops it. Supply the same identity method on the resulting
@@ -110,6 +104,13 @@ async function verifyEmailChange(
 }
 
 describe("Convex Auth email flows", () => {
+  it("matches exact users and whole domains from the dashboard whitelist", async () => {
+    expect(isAllowedRecipient("specific@users.test", process.env.AUTH_EMAIL_ALLOWED_RECIPIENTS!)).toBe(true);
+    expect(isAllowedRecipient("person@partner.net", process.env.AUTH_EMAIL_ALLOWED_RECIPIENTS!)).toBe(true);
+    expect(isAllowedRecipient("person@sub.partner.net", process.env.AUTH_EMAIL_ALLOWED_RECIPIENTS!)).toBe(false);
+    expect(isAllowedRecipient("other@users.test", process.env.AUTH_EMAIL_ALLOWED_RECIPIENTS!)).toBe(false);
+  });
+
   it("requests and verifies a change through the real auth provider and preserves ownership", async () => {
     const t = convexTest(schema, modules);
     const owner = await seedSignedInUser(t);
@@ -124,8 +125,8 @@ describe("Convex Auth email flows", () => {
       }),
     );
 
-    await expect(startEmailChange(t, owner.subject, "New@Example.com")).resolves.toEqual({ tokens: null });
-    const result = await verifyEmailChange(t, "new@example.com", latestCode("new@example.com"));
+    await expect(startEmailChange(t, owner.subject, "Unlisted@Example.com")).resolves.toEqual({ tokens: null });
+    const result = await verifyEmailChange(t, "unlisted@example.com", latestCode("unlisted@example.com"));
     expect(result.tokens?.token).toEqual(expect.any(String));
 
     const state = await t.run(async (ctx) => ({
@@ -134,7 +135,7 @@ describe("Convex Auth email flows", () => {
       emailAccount: await ctx.db
         .query("authAccounts")
         .withIndex("providerAndAccountId", (q) =>
-          q.eq("provider", "email-otp").eq("providerAccountId", "new@example.com"),
+          q.eq("provider", "email-otp").eq("providerAccountId", "unlisted@example.com"),
         )
         .unique(),
       github: await ctx.db
@@ -142,7 +143,7 @@ describe("Convex Auth email flows", () => {
         .withIndex("userIdAndProvider", (q) => q.eq("userId", owner.userId).eq("provider", "github"))
         .unique(),
     }));
-    expect(state.user?.email).toBe("new@example.com");
+    expect(state.user?.email).toBe("unlisted@example.com");
     expect(state.emailAccount?.userId).toBe(owner.userId);
     expect(state.plan?.ownerId).toBe(owner.userId);
     expect(state.github).toBeNull();

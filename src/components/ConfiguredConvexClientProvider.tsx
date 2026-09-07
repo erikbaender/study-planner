@@ -5,6 +5,7 @@ import { ConvexReactClient, useQuery } from "convex/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { ConvexPlannerAuthProvider } from "@/auth/convex-planner-auth";
+import { AccountSessionsProvider, AddAccountFlow, useAccountSessions } from "@/auth/account-sessions";
 import { usePlannerAuth } from "@/auth/use-planner-auth";
 import { ConvexRepositoryProvider } from "@/data/convex-repository-provider";
 import { Button, Spinner, TextField } from "@/ui";
@@ -21,16 +22,27 @@ export function ConfiguredConvexClientProvider({
   const convex = useMemo(() => new ConvexReactClient(url), [url]);
 
   return (
-    <ConvexAuthProvider client={convex}>
-      <ConvexPlannerAuthProvider>
-        <AuthenticatedPlanner>{children}</AuthenticatedPlanner>
-      </ConvexPlannerAuthProvider>
+    <AccountSessionsProvider url={url}>
+      <MainConvexAuthProvider client={convex} url={url}>
+        <ConvexPlannerAuthProvider>
+          <AuthenticatedPlanner url={url}>{children}</AuthenticatedPlanner>
+        </ConvexPlannerAuthProvider>
+      </MainConvexAuthProvider>
+    </AccountSessionsProvider>
+  );
+}
+
+function MainConvexAuthProvider({ client, url, children }: { client: ConvexReactClient; url: string; children: ReactNode }) {
+  const { activeSessionId, activeStorage } = useAccountSessions();
+  return (
+    <ConvexAuthProvider key={activeSessionId} client={client} storage={activeStorage} storageNamespace={url}>
+      {children}
     </ConvexAuthProvider>
   );
 }
 
 /** Prevents protected planner queries from starting until authentication succeeds. */
-export function AuthenticatedPlanner({ children }: { children: ReactNode }) {
+export function AuthenticatedPlanner({ children, url }: { children: ReactNode; url: string }) {
   const pathname = usePathname();
   const auth = usePlannerAuth();
 
@@ -49,7 +61,12 @@ export function AuthenticatedPlanner({ children }: { children: ReactNode }) {
     return <EmailSignIn />;
   }
 
-  return <ConvexRepositoryProvider>{children}</ConvexRepositoryProvider>;
+  return (
+    <ConvexRepositoryProvider>
+      <AddAccountFlow url={url} />
+      {children}
+    </ConvexRepositoryProvider>
+  );
 }
 
 type SignInStep = "email" | "code";
