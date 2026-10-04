@@ -1,0 +1,15 @@
+{
+  "status": 200,
+  "body": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Complete plan expands beyond the 100-command transaction limit; split the plan"
+        }
+      ],
+      "isError": true
+    },
+    "jsonrpc": "2.0"
+  }
+}

@@ -1,0 +1,178 @@
+[
+  {
+    "finding": "F01",
+    "priority": "P1",
+    "title": "[Feature]: Represent mixed study materials with a common time budget",
+    "labels": [
+      "enhancement",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/70",
+    "number": 70
+  },
+  {
+    "finding": "F02",
+    "priority": "P1",
+    "title": "[Bug]: Enforce prerequisite completion dates during schedule generation",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/71",
+    "number": 71
+  },
+  {
+    "finding": "F03",
+    "priority": "P1",
+    "title": "[Bug]: Report manual study sessions after the exam as a preparation shortfall",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/72",
+    "number": 72
+  },
+  {
+    "finding": "F04",
+    "priority": "P1",
+    "title": "[Bug]: Keep progress-log deltas consistent with bounded topic completion",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/73",
+    "number": 73
+  },
+  {
+    "finding": "F05",
+    "priority": "P1",
+    "title": "[Feature]: Expose study weekdays, blackout dates and timezone in the web UI",
+    "labels": [
+      "enhancement",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/74",
+    "number": 74
+  },
+  {
+    "finding": "F06",
+    "priority": "P2",
+    "title": "[Feature]: Make full-semester MCP creation limits explicit and workable",
+    "labels": [
+      "enhancement",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/75",
+    "number": 75
+  },
+  {
+    "finding": "F07",
+    "priority": "P1",
+    "title": "[Feature]: Make MCP setup and Connected agents discoverable from the planner",
+    "labels": [
+      "enhancement",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/76",
+    "number": 76
+  },
+  {
+    "finding": "F08",
+    "priority": "P1",
+    "title": "[Feature]: Expose agent change history, undo and dated study logs in the web UI",
+    "labels": [
+      "enhancement",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/77",
+    "number": 77
+  },
+  {
+    "finding": "F09",
+    "priority": "P2",
+    "title": "[Bug]: Provide usable recovery for concurrent browser and MCP edits",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/78",
+    "number": 78
+  },
+  {
+    "finding": "F10",
+    "priority": "P2",
+    "title": "[Feature]: Allow planned workload on manually created study blocks",
+    "labels": [
+      "enhancement",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/79",
+    "number": 79
+  },
+  {
+    "finding": "F11",
+    "priority": "P2",
+    "title": "[Bug]: Prevent German bulk-import units from inheriting incorrect workload units",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/80",
+    "number": 80
+  },
+  {
+    "finding": "F12",
+    "priority": "P2",
+    "title": "[Bug]: Prevent Load existing topics from silently duplicating the outline",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/81",
+    "number": 81
+  },
+  {
+    "finding": "F13",
+    "priority": "P2",
+    "title": "[Bug]: Align MCP capacity, preference-patch and completion-state semantics",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/82",
+    "number": 82
+  },
+  {
+    "finding": "F14",
+    "priority": "P2",
+    "title": "[Bug]: Distinguish unknown study pace from being behind schedule",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/83",
+    "number": 83
+  },
+  {
+    "finding": "F15",
+    "priority": "P2",
+    "title": "[Bug]: Preserve the selected semester and view across reload and navigation",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/84",
+    "number": 84
+  },
+  {
+    "finding": "F16",
+    "priority": "P3",
+    "title": "[Bug]: Show accurate empty-plan and unsized-work guidance",
+    "labels": [
+      "bug",
+      "usability-test"
+    ],
+    "url": "https://github.com/erikbaender/study-planner/issues/85",
+    "number": 85
+  }
+]

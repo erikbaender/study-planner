@@ -1,0 +1,12 @@
+[
+  {
+    "tool": "planner.list",
+    "status": 401,
+    "body": "Invalid or expired access token"
+  },
+  {
+    "tool": "planner.apply_changes",
+    "status": 401,
+    "body": "Invalid or expired access token"
+  }
+]

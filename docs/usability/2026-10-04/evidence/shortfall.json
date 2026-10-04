@@ -1,0 +1,59 @@
+{
+  "status": 200,
+  "body": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Updated scheduling preferences; Regenerated 5 study blocks. No writes applied; 5 warning(s)."
+        }
+      ],
+      "structuredContent": {
+        "generatedBlocks": [
+          {
+            "endDate": "2026-10-06",
+            "plannedUnits": 2,
+            "startDate": "2026-10-05",
+            "topicId": "kd76tn6bh3qgbdvnmghvxpfajh8fmgt4"
+          },
+          {
+            "endDate": "2026-10-30",
+            "plannedUnits": 19,
+            "startDate": "2026-10-08",
+            "topicId": "kd76tn6bh3qgbdvnmghvxpfajh8fmgt4"
+          },
+          {
+            "endDate": "2026-11-06",
+            "plannedUnits": 6,
+            "startDate": "2026-10-31",
+            "topicId": "kd7d704traw368b7590k9xsa018fm598"
+          },
+          {
+            "endDate": "2026-11-10",
+            "plannedUnits": 3,
+            "startDate": "2026-11-07",
+            "topicId": "kd7bczem64wc506t10vgnmtqk18fnjjp"
+          },
+          {
+            "endDate": "2026-11-13",
+            "plannedUnits": 3,
+            "startDate": "2026-11-11",
+            "topicId": "kd7dny4mvqd0rbd64d3kpg64z58fnm91"
+          }
+        ],
+        "resultingRevision": 2,
+        "revision": 1,
+        "summary": "Updated scheduling preferences; Regenerated 5 study blocks",
+        "warnings": [
+          "Physiologie 2: 201 units could not be scheduled before 2026-10-30",
+          "Biochemie: 457 units could not be scheduled before 2026-11-13",
+          "Diagnostische Methoden / OSCE: 3 units could not be scheduled before 2026-11-10",
+          "Humangenetik I: 60 units could not be scheduled before 2026-11-13",
+          "Psychologie und Soziologie: 114 units could not be scheduled before 2026-11-06"
+        ],
+        "writesApplied": false
+      }
+    },
+    "jsonrpc": "2.0"
+  }
+}

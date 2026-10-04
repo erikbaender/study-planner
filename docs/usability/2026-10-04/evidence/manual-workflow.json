@@ -1,0 +1,104 @@
+{
+  "revision": 10,
+  "courses": [
+    {
+      "name": "Physiologie — manuell",
+      "exams": [
+        {
+          "courseId": "jx78ks03k5t2wgk07ptp4xm5mn8fmw0q",
+          "id": "kn7fqnkfxf6480dh6xx056hwed8fm7hh",
+          "kind": "exam",
+          "name": "Modulklausur Physiologie",
+          "notes": "",
+          "order": 0,
+          "startDate": "2026-10-21",
+          "status": "confirmed"
+        }
+      ],
+      "topics": [
+        {
+          "name": "Atmung",
+          "unit": "slides",
+          "totalUnits": 40,
+          "blockCount": 1
+        },
+        {
+          "name": "Blut",
+          "unit": "slides",
+          "totalUnits": 30,
+          "blockCount": 1
+        },
+        {
+          "name": "Niere",
+          "unit": "hours",
+          "totalUnits": 2.5,
+          "blockCount": 1
+        },
+        {
+          "name": "Anki",
+          "unit": "cards",
+          "totalUnits": 100,
+          "blockCount": 1
+        },
+        {
+          "name": "Übung",
+          "unit": "hours",
+          "totalUnits": 4,
+          "blockCount": 1
+        },
+        {
+          "name": "Ungetrackt",
+          "unit": "hours",
+          "totalUnits": 0,
+          "blockCount": 0
+        },
+        {
+          "name": "Atmung",
+          "unit": "slides",
+          "totalUnits": 40,
+          "blockCount": 0
+        },
+        {
+          "name": "Blut",
+          "unit": "slides",
+          "totalUnits": 30,
+          "blockCount": 0
+        },
+        {
+          "name": "Niere",
+          "unit": "hours",
+          "totalUnits": 2.5,
+          "blockCount": 0
+        },
+        {
+          "name": "Anki",
+          "unit": "cards",
+          "totalUnits": 100,
+          "blockCount": 0
+        },
+        {
+          "name": "Übung",
+          "unit": "hours",
+          "totalUnits": 4,
+          "blockCount": 0
+        },
+        {
+          "name": "Ungetrackt",
+          "unit": "hours",
+          "totalUnits": 0,
+          "blockCount": 0
+        }
+      ]
+    }
+  ],
+  "studyLog": [
+    {
+      "date": "2026-10-04",
+      "units": -40
+    },
+    {
+      "date": "2026-10-04",
+      "units": 40
+    }
+  ]
+}
