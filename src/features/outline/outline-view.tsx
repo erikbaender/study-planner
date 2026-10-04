@@ -108,6 +108,7 @@ const EMPTY_COURSE_SELECTION: readonly string[] = [];
 
 export function OutlineView({
   courses,
+  emptyPlan = false,
   health,
   today,
   query,
@@ -122,6 +123,7 @@ export function OutlineView({
   onEditCourse,
 }: {
   courses: readonly Course[];
+  emptyPlan?: boolean;
   health: Map<string, CourseHealth>;
   today: string;
   snapshot: PlannerSnapshot;
@@ -392,7 +394,7 @@ export function OutlineView({
           cards still have their own space to close while it arrives. */}
       {emptyPhase === null ? null : (
         <Fade phase={emptyPhase} className="absolute inset-0 flex items-center justify-center">
-          <EmptyFocus />
+          <EmptyFocus emptyPlan={emptyPlan} />
         </Fade>
       )}
     </div>

@@ -29,7 +29,7 @@ import type {
   Topic,
 } from "@/domain";
 import type { PlannerSnapshot, StudyBlock } from "@/domain";
-import { countStudyDays, isStudyDay, studyStreak, velocity, VELOCITY_WINDOW_DAYS } from "@/domain";
+import { effortLog, minutesPerUnit, UNIT_LABELS, countStudyDays, isStudyDay, studyStreak, velocity, VELOCITY_WINDOW_DAYS } from "@/domain";
 import { courseColorValue } from "@/domain";
 import {
   Badge,
@@ -108,7 +108,7 @@ const TodayTopicRow = memo(function TodayTopicRow({
       today={today}
       courseId={course.id}
       courseColor={courseColorValue(course.color)}
-      prefix={units === undefined ? course.name : `${course.name} · ${units} today`}
+      prefix={units === undefined ? course.name : `${course.name} · ${units} ${UNIT_LABELS[topic.unit].plural} today · ${Math.ceil(units * minutesPerUnit(topic))} min`}
       selected={selected}
       onSelect={() => onSelect(course, topic)}
       onDelete={() => onDelete(course, topic)}
@@ -123,6 +123,7 @@ const continueKey = (row: ContinueRow) => row.topic.id;
 
 export function TodayView({
   courses,
+  emptyPlan = false,
   health,
   studyLog,
   snapshot,
@@ -133,6 +134,7 @@ export function TodayView({
   onDeleteTopic,
 }: {
   courses: readonly Course[];
+  emptyPlan?: boolean;
   health: Map<string, CourseHealth>;
   studyLog: readonly StudyLogEntry[];
   snapshot: PlannerSnapshot;
@@ -173,7 +175,7 @@ export function TodayView({
     () =>
       courses.filter((course) => {
         const pace = health.get(course.id)?.pace;
-        return pace ? !pace.onTrack : false;
+        return pace ? pace.hasObservedPace && !pace.onTrack : false;
       }),
     [courses, health],
   );
@@ -210,7 +212,7 @@ export function TodayView({
   // rather than the person. Memoized because none of the three depend on the
   // focus at all, and the view now renders four times per filter change.
   const pace = useMemo(
-    () => velocity(snapshot.studyLog, today, snapshot.preferences, VELOCITY_WINDOW_DAYS),
+    () => velocity(effortLog(snapshot.studyLog, snapshot.plans.flatMap(plan => plan.courses.flatMap(course => course.topics))), today, snapshot.preferences, VELOCITY_WINDOW_DAYS),
     [snapshot, today],
   );
   const streak = useMemo(
@@ -219,10 +221,10 @@ export function TodayView({
   );
   const loggedToday = useMemo(
     () =>
-      studyLog
+      effortLog(studyLog, snapshot.plans.flatMap(plan => plan.courses.flatMap(course => course.topics)))
         .filter((entry) => entry.date === today)
         .reduce((sum, entry) => sum + entry.units, 0),
-    [studyLog, today],
+    [studyLog, today, snapshot.plans],
   );
 
   // Held still for the rows above, which are memoized on them.
@@ -264,7 +266,7 @@ export function TodayView({
             <h2 className="text-title1 font-semibold">{formatToday(today)}</h2>
             <p className="text-body text-secondary">
               {loggedToday > 0
-                ? `${loggedToday} units logged today`
+                ? `${Math.round(loggedToday)} estimated minutes logged today`
                 : // Not "0 units logged" — the day is not over, and a zero reads
                   // like a verdict rather than a starting point.
                   "Nothing logged yet today"}
@@ -274,7 +276,7 @@ export function TodayView({
                 <dt className="text-callout text-tertiary">Pace</dt>
                 <dd className="text-body tabular-nums">
                   {pace > 0
-                    ? `${pace.toFixed(1)} / day`
+                    ? `${pace.toFixed(1)} min / day`
                     : // No work in the window is not a pace of zero, it is no
                       // measurement. A "0.0 / day" here would be a verdict drawn
                       // from an empty week.
@@ -295,7 +297,7 @@ export function TodayView({
               <h3 className="text-title3 font-semibold">Today’s plan</h3>
               {plannedToday.length > 0 ? (
                 <span className="text-callout tabular-nums text-secondary">
-                  {plannedToday.reduce((sum, row) => sum + row.units, 0)} units across{" "}
+                  {Math.ceil(plannedToday.reduce((sum, row) => sum + row.units * minutesPerUnit(row.topic), 0))} estimated minutes across{" "}
                   {plannedToday.length} topic{plannedToday.length === 1 ? "" : "s"}
                 </span>
               ) : null}
@@ -336,6 +338,12 @@ export function TodayView({
 
           <Card className="mb-4 flex flex-col gap-3">
             <h3 className="text-title3 font-semibold">Coming up</h3>
+            {exams.length > 0 ? (
+              <p className="text-footnote text-tertiary">
+                Status uses estimated time from material logged in the last 7 days; without recent logs, it compares the
+                remaining work with the planning capacity estimate.
+              </p>
+            ) : null}
             <div className="flex flex-col">
               {noExamsPhase === null ? null : (
                 <Collapse phase={noExamsPhase} className="text-body text-secondary">
@@ -361,9 +369,25 @@ export function TodayView({
                       {item.exam.name}
                     </span>
                     {item.health.pace ? (
-                      <Badge tone={item.health.pace.onTrack ? "positive" : "warning"}>
-                        {item.health.pace.onTrack ? "On track" : "Behind"}
-                      </Badge>
+                      <span
+                        title={
+                          item.health.pace.hasObservedPace
+                            ? "Based on estimated time from material logged in the last 7 days."
+                            : "No recent pace is measured; this uses the planning capacity estimate."
+                        }
+                      >
+                        <Badge tone={item.health.pace.onTrack ? "positive" : "warning"}>
+                          {item.health.pace.hasObservedPace
+                            ? item.health.pace.onTrack
+                              ? "On track"
+                              : "Behind"
+                            : item.health.pace.plannedFeasible === true
+                              ? "Fits by capacity"
+                              : item.health.pace.plannedFeasible === false
+                                ? "Capacity shortfall"
+                                : "Pace not measured"}
+                        </Badge>
+                      </span>
                     ) : null}
                     <span className="w-24 shrink-0 text-right text-callout tabular-nums text-secondary">
                       {item.exam.startDate}
@@ -406,7 +430,7 @@ export function TodayView({
                         {pace ? (
                           <>
                             <span className="shrink-0 text-callout tabular-nums text-secondary">
-                              {pace.remainingUnits} units left
+                              {Math.ceil(pace.remainingUnits)} {pace.workloadUnit ?? "units"} left
                             </span>
                             <Badge tone="warning">
                               {Number.isFinite(pace.requiredPace)
@@ -421,8 +445,8 @@ export function TodayView({
                 </ul>
                 <p className="text-footnote text-tertiary">
                   {behind.length > behindShown.length
-                    ? `${behind.length - behindShown.length} more behind. Needed pace counts only the days you have marked as study days.`
-                    : "Needed pace counts only the days you have marked as study days."}
+                    ? `${behind.length - behindShown.length} more behind. This list uses pace measured from the last 7 days; needed pace counts only marked study days.`
+                    : "This list uses pace measured from the last 7 days; needed pace counts only marked study days."}
                 </p>
               </Card>
             </Collapse>
@@ -457,7 +481,7 @@ export function TodayView({
 
       {emptyPhase === null ? null : (
         <Fade phase={emptyPhase} className="absolute inset-0 flex items-center justify-center">
-          <EmptyFocus />
+          <EmptyFocus emptyPlan={emptyPlan} />
         </Fade>
       )}
     </div>

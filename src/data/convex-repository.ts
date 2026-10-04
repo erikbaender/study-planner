@@ -70,6 +70,7 @@ function toTopic(topic: TopicTree, blocks: StudyBlock[]): Topic {
     name: topic.name,
     unit: topic.unit,
     totalUnits: topic.totalUnits,
+    minutesPerUnit: topic.minutesPerUnit,
     completedUnits: topic.completedUnits,
     status: topic.status,
     priority: topic.priority,
@@ -132,12 +133,14 @@ function toLogEntry(entry: Doc<"studyLog">): StudyLogEntry {
 function toPreferences(row: NonNullable<PreferencesRow>): Preferences {
   return {
     dailyCapacityUnits: row.dailyCapacityUnits,
+    dailyCapacityMinutes: row.dailyCapacityMinutes,
     // Stored as plain numbers because Convex has no narrower numeric type;
     // anything outside 0–6 is corrupt data and is dropped rather than trusted.
     studyDaysOfWeek: row.studyDaysOfWeek.filter(
       (day): day is Weekday => Number.isInteger(day) && day >= 0 && day <= 6,
     ),
     blackoutDates: row.blackoutDates,
+    timezone: row.timezone,
     theme: row.theme,
     accentColor: row.accentColor,
   };
@@ -272,8 +275,10 @@ export function createConvexRepository(client: ConvexReactClient, revisions?: Re
     blocks.map((block) => ({ ...block, topicId: asId<"topics">(block.topicId) }));
   const preferenceArgs = (preferences: Preferences) => ({
     dailyCapacityUnits: preferences.dailyCapacityUnits,
+    dailyCapacityMinutes: preferences.dailyCapacityMinutes,
     studyDaysOfWeek: [...preferences.studyDaysOfWeek],
     blackoutDates: [...preferences.blackoutDates],
+    ...(preferences.timezone === undefined ? {} : { timezone: preferences.timezone }),
     theme: preferences.theme,
     accentColor: preferences.accentColor,
   });
@@ -383,6 +388,20 @@ export function createConvexRepository(client: ConvexReactClient, revisions?: Re
 
   return {
     subscribe,
+    subscribeHistory(planId, listener, asOf = Date.now()) {
+      const watch = client.watchQuery(api.planner.recentChanges, { planId: asId<"plans">(planId), asOf });
+      const read = () => {
+        try { const value = watch.localQueryResult(); if (value) listener(value); }
+        catch (cause) { listener(cause instanceof Error ? cause : new Error(String(cause))); }
+      };
+      const unsubscribe = watch.onUpdate(read); read(); return unsubscribe;
+    },
+    async undoChange(planId, auditId) {
+      await mutate(api.planner.undoChange, { planId: asId<"plans">(planId), auditId: auditId as Id<"plannerAudit"> });
+    },
+    async updateStudyLog(logId, input) {
+      await mutate(api.planner.updateStudyLog, { logId: logId as Id<"studyLog">, ...input });
+    },
     atSnapshot(snapshot) {
       const expected = snapshotRevisions.get(snapshot);
       if (!expected) throw new Error("Cannot save an unknown planner snapshot");

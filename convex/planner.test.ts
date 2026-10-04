@@ -80,8 +80,23 @@ describe("authenticated planner ownership", () => {
       dailyCapacityUnits: 40,
       studyDaysOfWeek: [1, 2, 3, 4, 5],
       blackoutDates: [],
+      timezone: "Europe/Berlin",
       theme: "system",
       accentColor: "violet",
+    });
+
+    // Older browser/MCP callers omit timezone when changing preferences. A
+    // missing optional field must preserve the timezone already saved.
+    await alice.mutation(api.planner.savePreferences, {
+      dailyCapacityUnits: 45,
+      studyDaysOfWeek: [1, 2, 3, 4, 5, 6],
+      blackoutDates: ["2026-10-16"],
+      theme: "system",
+      accentColor: "violet",
+    });
+    expect(await alice.query(api.planner.getPreferences, {})).toMatchObject({
+      timezone: "Europe/Berlin",
+      blackoutDates: ["2026-10-16"],
     });
 
     expect(await bob.query(api.planner.listPlanTrees, {})).toEqual([]);
@@ -171,7 +186,9 @@ describe("authenticated planner ownership", () => {
     expect(await aliceSecondSession.query(api.planner.listStudyLog, {})).toHaveLength(1);
     expect(await aliceSecondSession.query(api.planner.getPreferences, {})).toMatchObject({
       ownerId: aliceId,
-      dailyCapacityUnits: 40,
+      dailyCapacityUnits: 45,
+      timezone: "Europe/Berlin",
+      blackoutDates: ["2026-10-16"],
     });
   });
 });

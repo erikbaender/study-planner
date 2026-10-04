@@ -41,7 +41,7 @@ export function CourseInspector({ course, onDelete }: { course: Course; onDelete
         kind="Course"
         entityId={course.id}
         name={course.name}
-        onCommit={(name) => name && patch({ name })}
+        onCommit={(name) => name ? patch({ name }) : undefined}
       />
 
       <Separator />

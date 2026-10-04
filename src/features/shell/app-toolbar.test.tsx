@@ -52,7 +52,8 @@ describe("AppToolbar account action", () => {
     renderToolbar();
 
     await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
-    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(4);
+    expect(screen.getByRole("menuitem", { name: "Connected agents" })).toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Settings" }));
 
     expect(screen.getByRole("dialog", { name: "Account settings" })).toBeInTheDocument();

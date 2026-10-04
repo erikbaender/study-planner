@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EMPTY_SNAPSHOT, FALLBACK_CAPACITY_UNITS } from "@/domain";
+import { EMPTY_SNAPSHOT, DEFAULT_DAILY_CAPACITY_MINUTES, type Preferences } from "@/domain";
 import { course as makeCourse, topic as makeTopic } from "@/test/factories";
 import type { PlanningPreview } from "./planning-summary";
 
@@ -11,7 +11,7 @@ const repository = {
 const run = vi.fn();
 const { createPlanningPreview } = vi.hoisted(() => ({
   createPlanningPreview: vi.fn((): PlanningPreview => ({
-    result: { blocks: [], shortfalls: [] },
+    result: { blocks: [], shortfalls: [], warnings: [] },
     topicIds: [],
     days: 0,
   })),
@@ -59,7 +59,7 @@ describe("PlanningActions", () => {
       courses: [course],
       today: "2026-05-01",
       calendar: EMPTY_SNAPSHOT.preferences,
-      dailyCapacityUnits: FALLBACK_CAPACITY_UNITS,
+      dailyCapacityMinutes: DEFAULT_DAILY_CAPACITY_MINUTES,
     });
 
     const callsWhileOpen = createPlanningPreview.mock.calls.length;
@@ -86,7 +86,7 @@ describe("PlanningActions", () => {
       plannedUnits: 20,
     };
     createPlanningPreview.mockReturnValue({
-      result: { blocks: [block], shortfalls: [] },
+      result: { blocks: [block], shortfalls: [], warnings: [] },
       topicIds: [topic.id],
       days: 2,
     });
@@ -100,10 +100,69 @@ describe("PlanningActions", () => {
     expect(repository.applySchedule).toHaveBeenCalledOnce();
     expect(repository.applySchedule).toHaveBeenCalledWith([topic.id], [block], {
       ...EMPTY_SNAPSHOT.preferences,
-      dailyCapacityUnits: FALLBACK_CAPACITY_UNITS,
+      dailyCapacityMinutes: DEFAULT_DAILY_CAPACITY_MINUTES,
     });
     expect(run).toHaveBeenCalledOnce();
     expect(run).toHaveBeenCalledWith(operation);
     expect(screen.queryByRole("dialog", { name: "Plan Course" })).not.toBeInTheDocument();
+  });
+
+  it("reports unsized topics separately from what fits", async () => {
+    const user = userEvent.setup();
+    const course = makeCourse({ topics: [makeTopic({ id: "unknown_size", totalUnits: 0 })] });
+    createPlanningPreview.mockReturnValue({
+      result: {
+        blocks: [],
+        shortfalls: [],
+        warnings: [
+          {
+            type: "unsized-topic",
+            courseId: course.id,
+            topicId: "unknown_size",
+            message: "Topic size is unknown.",
+          },
+        ],
+      },
+      topicIds: ["unknown_size"],
+      days: 0,
+    });
+
+    render(<PlanningActions courses={[course]} snapshot={EMPTY_SNAPSHOT} today="2026-05-01" />);
+    await user.click(screen.getByRole("button", { name: "Reflow" }));
+
+    expect(await screen.findByText("Sized work fits")).toBeInTheDocument();
+    expect(screen.getByText("1 unsized topic was excluded from feasibility. Add sizes for a complete estimate.")).toBeInTheDocument();
+  });
+
+  it("shows every active calendar constraint in the preview", async () => {
+    const user = userEvent.setup();
+    const preferences: Preferences = {
+      ...EMPTY_SNAPSHOT.preferences,
+      studyDaysOfWeek: [1, 3, 5],
+      blackoutDates: ["2026-10-16", "2026-12-24"],
+      timezone: "Europe/Berlin",
+    };
+    render(
+      <PlanningActions
+        courses={[makeCourse({ topics: [makeTopic()] })]}
+        snapshot={{ ...EMPTY_SNAPSHOT, preferences }}
+        today="2026-10-01"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reflow" }));
+
+    expect(screen.getByRole("region", { name: "Active calendar constraints" })).toHaveTextContent(
+      "Study weekdays: Monday, Wednesday, Friday",
+    );
+    expect(screen.getByRole("region", { name: "Active calendar constraints" })).toHaveTextContent(
+      "Timezone: Europe/Berlin",
+    );
+    expect(screen.getByRole("region", { name: "Active calendar constraints" })).toHaveTextContent(
+      "2026-10-16",
+    );
+    expect(screen.getByRole("region", { name: "Active calendar constraints" })).toHaveTextContent(
+      "2026-12-24",
+    );
   });
 });

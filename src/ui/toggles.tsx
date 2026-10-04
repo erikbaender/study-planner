@@ -14,7 +14,7 @@
 import { clsx } from "clsx";
 import { Checkbox as RadixCheckbox, Switch as RadixSwitch } from "radix-ui";
 import { Check, Minus } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 export function Checkbox({
   checked,
@@ -135,6 +135,7 @@ export function Stepper({
   suffix,
   disabled,
   className,
+  commitOnBlur = false,
 }: {
   value: number;
   onValueChange: (value: number) => void;
@@ -146,9 +147,19 @@ export function Stepper({
   suffix?: ReactNode;
   disabled?: boolean;
   className?: string;
+  /** Persist typed edits once; previews can keep updating on each change. */
+  commitOnBlur?: boolean;
 }) {
   const id = useId();
+  const [draft, setDraft] = useState<string | null>(null);
   const clamp = (next: number) => Math.min(max ?? Infinity, Math.max(min, next));
+  const typedValue = draft === null ? value : Number(draft);
+  const shown = Number.isNaN(typedValue) ? min : typedValue;
+  const nudge = (direction: number) => {
+    const next = clamp((commitOnBlur ? shown : value) + direction * step);
+    setDraft(null);
+    if (next !== value) onValueChange(next);
+  };
 
   return (
     <div className={clsx("inline-flex items-center gap-1.5", className)}>
@@ -157,17 +168,32 @@ export function Stepper({
         type="number"
         inputMode="numeric"
         aria-label={label}
-        value={value}
+        value={commitOnBlur ? draft ?? value : value}
         min={min}
         max={max}
         disabled={disabled}
         onChange={(event) => {
+          if (commitOnBlur) {
+            setDraft(event.currentTarget.value);
+            return;
+          }
           const next = event.currentTarget.valueAsNumber;
-          if (!Number.isNaN(next)) onValueChange(next);
+          if (!Number.isNaN(next) && next !== value) onValueChange(next);
         }}
         onBlur={(event) => {
           const next = event.currentTarget.valueAsNumber;
-          onValueChange(Number.isNaN(next) ? min : clamp(next));
+          const bounded = Number.isNaN(next) ? min : clamp(next);
+          setDraft(null);
+          if (bounded !== value) onValueChange(bounded);
+        }}
+        onKeyDown={(event) => {
+          if (!commitOnBlur) return;
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            event.currentTarget.value = String(value);
+            setDraft(null);
+            event.currentTarget.blur();
+          }
         }}
         className={clsx(
           "h-control-lg w-16 rounded-control bg-content px-2 text-right text-body tabular-nums",
@@ -185,16 +211,18 @@ export function Stepper({
       <span className="inline-flex flex-col overflow-hidden rounded-[5px] shadow-raised inset-ring inset-ring-[var(--mac-control-border)]">
         <StepperButton
           label={`Increase ${label}`}
-          disabled={disabled || (max !== undefined && value >= max)}
-          onClick={() => onValueChange(clamp(value + step))}
+          preserveInputFocus={commitOnBlur}
+          disabled={disabled || (max !== undefined && (commitOnBlur ? shown : value) >= max)}
+          onClick={() => nudge(1)}
         >
           <Chevron />
         </StepperButton>
         <span aria-hidden="true" className="h-px bg-[var(--mac-control-border)]" />
         <StepperButton
           label={`Decrease ${label}`}
-          disabled={disabled || value <= min}
-          onClick={() => onValueChange(clamp(value - step))}
+          preserveInputFocus={commitOnBlur}
+          disabled={disabled || (commitOnBlur ? shown : value) <= min}
+          onClick={() => nudge(-1)}
         >
           <Chevron className="rotate-180" />
         </StepperButton>
@@ -208,17 +236,21 @@ function StepperButton({
   disabled,
   onClick,
   children,
+  preserveInputFocus = false,
 }: {
   label: string;
   disabled?: boolean;
   onClick: () => void;
   children: ReactNode;
+  preserveInputFocus?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
       disabled={disabled}
+      // Let a pointer nudge consume the typed draft without a preceding blur save.
+      onMouseDown={(event) => { if (preserveInputFocus) event.preventDefault(); }}
       onClick={onClick}
       className={clsx(
         "flex h-3.5 w-5 items-center justify-center bg-control text-secondary",

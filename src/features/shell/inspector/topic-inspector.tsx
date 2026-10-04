@@ -11,7 +11,7 @@
 
 import { Crosshair, Plus, Trash2 } from "lucide-react";
 import { useRef, useState, type CSSProperties } from "react";
-import { usePlannerRun, useRepository } from "@/data/use-repository";
+import { usePlannerState, usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   addDays,
   courseColorValue,
@@ -19,6 +19,7 @@ import {
   UNITS,
   UNIT_LABELS,
   PRIORITIES,
+  minutesPerUnit,
   type Course,
   type StudyBlock,
   type Topic,
@@ -41,6 +42,7 @@ import {
 import { CompletionCheckbox, triggerCompletionAnimation } from "@/features/topics/progress-cell";
 import { clampToLimits, limitsFor } from "@/features/timeline/blocks";
 import { sortCoursesAlphabetically } from "@/features/workspace/scope";
+import { StudySessionSheet } from "@/features/history/study-session-sheet";
 import { DraftText, NameSection, Section } from "./shared";
 
 /* ─── Topic ─────────────────────────────────────────────────────────────── */
@@ -62,6 +64,9 @@ export function TopicInspector({
 }) {
   const repository = useRepository();
   const run = usePlannerRun();
+  const state = usePlannerState();
+  const [session, setSession] = useState<"new" | string | null>(null);
+  const logs = state.status === "ready" ? state.snapshot.studyLog.filter(entry => entry.topicId === topic.id).sort((a, b) => b.date.localeCompare(a.date)) : [];
   const unitLabel = UNIT_LABELS[topic.unit].plural;
   const dependencyCandidates = course.topics.filter((candidate) => candidate.id !== topic.id);
   const [preview, setPreview] = useState<number | null>(null);
@@ -90,6 +95,7 @@ export function TopicInspector({
       name: string;
       unit: Unit;
       totalUnits: number;
+      minutesPerUnit: number;
       priority: Priority;
       notes: string;
       color: string;
@@ -100,6 +106,7 @@ export function TopicInspector({
         name: topic.name,
         unit: topic.unit,
         totalUnits: topic.totalUnits,
+        minutesPerUnit: topic.minutesPerUnit,
         completedUnits: topic.completedUnits,
         status: topic.status,
         priority: topic.priority,
@@ -125,7 +132,7 @@ export function TopicInspector({
         kind="Topic"
         entityId={topic.id}
         name={topic.name}
-        onCommit={(name) => name && patch({ name })}
+        onCommit={(name) => name ? patch({ name }) : undefined}
       />
 
       <Separator />
@@ -202,6 +209,7 @@ export function TopicInspector({
           <div className="flex min-w-0 items-center gap-2">
             <Stepper
               label={`Total ${unitLabel} in ${topic.name}`}
+              commitOnBlur
               min={0}
               value={topic.totalUnits}
               onValueChange={(totalUnits) => patch({ totalUnits })}
@@ -229,18 +237,23 @@ export function TopicInspector({
 
       <Separator />
 
-      {/*
-        A block is two dates. That is the whole of it.
-
-        It used to also carry a planned-units stepper, a "set units"/"clear
-        units" pair and a row of action buttons, which made a scheduled window —
-        the simplest object in the app — the most complicated thing in the
-        panel. Auto-planning still records how much work it meant to fit in a
-        block; that is a number the planner writes and the timeline reads, not a
-        field to be nudged from here. Deleting a block and jumping to it on the
-        timeline are actions on an existing row, so they live in its context
-        menu, like every other row action in the app.
-      */}
+      <Section title="Study sessions" action={<IconButton size="sm" label="Log study session" icon={<Plus />} onClick={() => setSession("new")} />}>
+        {logs.length ? <ul className="flex max-h-40 flex-col gap-2 overflow-y-auto">{logs.slice(0, 20).map(entry => <li key={entry.id}>
+          <Button size="sm" variant="plain" onClick={() => setSession(entry.id)}>{entry.date} · {entry.units} {unitLabel}{entry.minutes === undefined ? "" : ` · ${entry.minutes} min`}</Button>
+          {entry.note ? <p className="break-words px-2 text-callout text-secondary">{entry.note}</p> : null}
+        </li>)}</ul> : <p className="text-callout text-tertiary">No sessions recorded. Log a date, duration, and note, or correct earlier progress.</p>}
+      </Section>
+      <Separator />
+      {session ? <StudySessionSheet key={session} topic={topic} today={today} entry={logs.find(entry => entry.id === session)} onClose={() => setSession(null)} /> : null}
+      <Section title="Time estimate">
+        <Stepper label={`Minutes per ${UNIT_LABELS[topic.unit].singular} in ${topic.name}`}
+          commitOnBlur
+          value={minutesPerUnit(topic)} min={0.01} max={10080} step={0.5}
+          onValueChange={(minutesPerUnit) => patch({ minutesPerUnit })} />
+        <p className="text-callout text-tertiary">{topic.minutesPerUnit === undefined ? "Starting estimate. " : "Your estimate. "}Estimated remaining time: {Math.ceil(Math.max(0, topic.totalUnits - topic.completedUnits) * minutesPerUnit(topic))} minutes. Reflow applies changes to the schedule.</p>
+      </Section>
+      <Separator />
+      {/* Auto-planning owns generated workload; manual sessions can set theirs. */}
       <Section
         title="Scheduled"
         action={
@@ -270,7 +283,7 @@ export function TopicInspector({
         ) : (
           <ul aria-label={`Study blocks for ${topic.name}`} className="flex flex-col gap-1.5">
             {blocks.map((block, index) => (
-              <StudyBlockRow
+          <StudyBlockRow
                 key={block.id}
                 block={block}
                 labelled={index === 0}
@@ -412,25 +425,56 @@ function StudyBlockRow({
         { label: "Delete", icon: <Trash2 />, danger: true, onSelect: onRemove },
       ]}
     >
-      <li className="grid min-w-0 grid-cols-2 gap-2 rounded-control">
-        <TextField
-          label="Starts"
-          hideLabel={!labelled}
-          type="date"
-          value={block.startDate}
-          fieldClassName="min-w-0"
-          className="min-w-0 px-1.5 text-callout"
-          onChange={(event) => moveStart(event.target.value)}
-        />
-        <TextField
-          label="Ends"
-          hideLabel={!labelled}
-          type="date"
-          value={block.endDate}
-          fieldClassName="min-w-0"
-          className="min-w-0 px-1.5 text-callout"
-          onChange={(event) => resizeEnd(event.target.value)}
-        />
+      <li className="flex min-w-0 flex-col gap-2 rounded-control">
+        <div className="grid min-w-0 grid-cols-2 gap-2">
+          <TextField
+            label="Starts"
+            hideLabel={!labelled}
+            type="date"
+            value={block.startDate}
+            fieldClassName="min-w-0"
+            className="min-w-0 px-1.5 text-callout"
+            onChange={(event) => moveStart(event.target.value)}
+          />
+          <TextField
+            label="Ends"
+            hideLabel={!labelled}
+            type="date"
+            value={block.endDate}
+            fieldClassName="min-w-0"
+            className="min-w-0 px-1.5 text-callout"
+            onChange={(event) => resizeEnd(event.target.value)}
+          />
+        </div>
+        {block.source === "manual" ? (
+          <div className="flex min-w-0 flex-col gap-1 px-2">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <span className="text-callout text-secondary">Planned {UNIT_LABELS[topic.unit].plural}</span>
+              <Stepper
+                label={`Planned ${UNIT_LABELS[topic.unit].plural} for ${topic.name} on ${block.startDate}`}
+                commitOnBlur
+                value={block.plannedUnits ?? 0}
+                min={0}
+                step={1}
+                suffix={UNIT_LABELS[topic.unit].plural}
+                onValueChange={(plannedUnits) => onUpdate({
+                  startDate: block.startDate,
+                  endDate: block.endDate,
+                  plannedUnits,
+                })}
+              />
+            </div>
+            <p className="text-footnote text-tertiary">
+              {topic.totalUnits === 0
+                ? block.plannedUnits
+                  ? `Reserves ${block.plannedUnits} ${block.plannedUnits === 1 ? UNIT_LABELS[topic.unit].singular : UNIT_LABELS[topic.unit].plural}; the topic has no size, so this adds no topic units.`
+                  : "No workload entered: reserves a full study day and adds no topic units."
+                : block.plannedUnits
+                  ? `Counts ${block.plannedUnits} ${block.plannedUnits === 1 ? UNIT_LABELS[topic.unit].singular : UNIT_LABELS[topic.unit].plural} toward this topic (${Math.ceil(block.plannedUnits * minutesPerUnit(topic))} estimated minutes).`
+                  : "No workload entered: reserves a full study day and covers no topic units."}
+            </p>
+          </div>
+        ) : null}
       </li>
     </ContextMenu>
   );

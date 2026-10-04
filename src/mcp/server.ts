@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import { api } from "../../convex/_generated/api";
 import { convexServerClient } from "./oauth";
+import { plannerError } from "@/domain/errors";
 import { MCP_GUIDE, MCP_SERVER_INSTRUCTIONS } from "./guide";
 
 type ServerIdentity = { tokenDigest: string; issuer: string; resource: string };
@@ -38,12 +39,14 @@ const topicInput = z.object({
   name: z.string().trim().min(1).max(200),
   unit: unit.optional().default("slides"),
   totalUnits: z.number().nonnegative().max(1_000_000_000).optional().default(0),
+  minutesPerUnit: z.number().min(0.01).max(10080).optional().describe("Estimated minutes per material unit; hours default to 60"),
   priority: priority.optional().default("normal"),
   notes: notes.optional(),
   color,
 });
 const preferences = z.object({
-  dailyCapacityUnits: z.number().nonnegative().max(1_000_000_000).optional(),
+  dailyCapacityUnits: z.number().nonnegative().max(1_000_000_000).optional().describe("Legacy raw-unit capacity; prefer dailyCapacityMinutes for mixed materials"),
+  dailyCapacityMinutes: z.number().min(0).max(1440).optional().describe("Common minutes per study day, taking precedence over legacy units"),
   studyDaysOfWeek: z.array(z.number().int().min(0).max(6)).max(7).describe("Distinct weekdays; 0 is Sunday"),
   blackoutDates: z.array(date).max(2_000),
   theme: z.enum(["system", "light", "dark"]),
@@ -62,7 +65,7 @@ export const plannerCommandSchema = z.discriminatedUnion("type", [
     type: z.literal("topic.update"),
     topicId: id("Existing topic ID or earlier topic ref"),
     patch: z.object({
-      name: z.string().trim().min(1).max(200).optional(), unit: unit.optional(), totalUnits: z.number().nonnegative().max(1_000_000_000).optional(), completedUnits: z.number().nonnegative().max(1_000_000_000).optional(), status: topicStatus.optional(), priority: priority.optional(), notes: notes.optional(), color: color.optional(),
+      minutesPerUnit: z.number().min(0.01).max(10080).optional(), name: z.string().trim().min(1).max(200).optional(), unit: unit.optional(), totalUnits: z.number().nonnegative().max(1_000_000_000).optional(), completedUnits: z.number().nonnegative().max(1_000_000_000).optional(), status: topicStatus.optional(), priority: priority.optional(), notes: notes.optional(), color: color.optional(),
     }),
   }),
   z.object({ type: z.literal("topic.reorder"), courseId: id("Course ID or ref"), topicIds: z.array(id("Topic ID or ref")).max(500).describe("Every topic in the course, exactly once, in the desired order") }),
@@ -71,7 +74,7 @@ export const plannerCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("block.move"), blockId: id("Study block ID or ref"), startDate: date, endDate: date }),
   z.object({ type: z.literal("block.resize"), blockId: id("Study block ID or ref"), endDate: date, plannedUnits: z.number().nonnegative().max(1_000_000_000).optional() }),
   z.object({ type: z.literal("schedule.regenerate"), today: date, courseIds: z.array(id("Course ID in this plan")).max(50).optional().describe("Omit to regenerate the full plan") }),
-  z.object({ type: z.literal("preferences.update"), patch: preferences }),
+  z.object({ type: z.literal("preferences.update"), patch: preferences.partial() }),
 ]);
 
 const mutationOutput = {
@@ -83,6 +86,18 @@ const mutationOutput = {
   createdIds: z.record(z.string(), z.string()).optional(),
 };
 
+const errorOutput = z.object({ error: z.object({ code: z.string(), message: z.string(), expectedRevision: z.number().optional(), currentRevision: z.number().optional(), changes: z.string().optional() }) });
+function withToolErrors(shape: z.ZodRawShape) {
+  // MCP requires an object at the schema root. Include errors in its shape,
+  // then retain required-field validation for successful results on the server.
+  return z.object({ ...Object.fromEntries(Object.entries(shape).map(([key, value]) => [key, z.optional(value)])), error: errorOutput.shape.error.optional() })
+    .superRefine((value, context) => {
+      if (value.error) return;
+      const result = z.object(shape).safeParse(value);
+      if (!result.success) for (const issue of result.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
+    });
+}
+
 function args(identity: ServerIdentity) {
   return identity;
 }
@@ -91,16 +106,13 @@ function toolResult(result: Record<string, unknown>, summary: string) {
   return { content: [{ type: "text" as const, text: summary }], structuredContent: result };
 }
 
-function errorMessage(cause: unknown) {
-  return cause instanceof Error ? cause.message.replace(/^\[CONVEX[^\]]*\]\s*/, "") : String(cause);
-}
-
 async function callTool<T extends Record<string, unknown>>(work: () => Promise<T>, summarize: (result: T) => string) {
   try {
     const result = await work();
     return toolResult(result, summarize(result));
   } catch (cause) {
-    throw new Error(errorMessage(cause));
+    const error = plannerError(cause);
+    return { isError: true, content: [{ type: "text" as const, text: error.message }], structuredContent: { error } };
   }
 }
 
@@ -129,7 +141,7 @@ function completePlanCommands(plan: CompletePlan): z.infer<typeof plannerCommand
   for (const course of plan.courses) {
     commands.push({ type: "course.create", ref: course.ref, input: { name: course.name, code: course.code, notes: course.notes, color: course.color } });
     for (const exam of course.exams) commands.push({ type: "exam.create", courseId: course.ref, ref: exam.ref, input: { name: exam.name, kind: exam.kind, startDate: exam.startDate, endDate: exam.endDate, status: exam.status, notes: exam.notes } });
-    for (const topic of course.topics) commands.push({ type: "topic.create", courseId: course.ref, ref: topic.ref, input: { name: topic.name, unit: topic.unit, totalUnits: topic.totalUnits, priority: topic.priority, notes: topic.notes, color: topic.color } });
+    for (const topic of course.topics) commands.push({ type: "topic.create", courseId: course.ref, ref: topic.ref, input: { name: topic.name, unit: topic.unit, totalUnits: topic.totalUnits, minutesPerUnit: topic.minutesPerUnit, priority: topic.priority, notes: topic.notes, color: topic.color } });
   }
   for (const course of plan.courses) {
     for (const topic of course.topics) {
@@ -138,7 +150,7 @@ function completePlanCommands(plan: CompletePlan): z.infer<typeof plannerCommand
     }
   }
   if (plan.generateInitialSchedule) commands.push({ type: "schedule.regenerate", today: plan.today! });
-  if (commands.length > 100) throw new Error("Complete plan expands beyond the 100-command transaction limit; split the plan");
+  if (commands.length > 100) throw new Error(`Complete plan requires ${commands.length} commands; the atomic limit is 100. Count one command per course, exam, topic, dependency set, block, and schedule generation. Create a smaller initial plan, then add courses/topics in planner.apply_changes batches of at most 100 commands using the returned planId and latest revision; refs apply only within each batch. Generate the schedule after all batches are complete.`);
   return commands;
 }
 
@@ -160,10 +172,10 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
     title: "List study plans",
     description: "List up to 50 plans with revisions, sizes, and upcoming deadlines so you can choose a target.",
     inputSchema: { today: date.optional().describe("Optional lower bound for upcoming deadlines") },
-    outputSchema: {
+    outputSchema: withToolErrors({
       plans: z.array(z.object({ planId: z.string(), name: z.string(), revision: z.number(), courseCount: z.number(), topicCount: z.number(), upcomingDeadlines: z.array(z.unknown()), updatedAt: z.number() })),
       limit: z.number(), hasMore: z.boolean(),
-    },
+    }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, ({ today }) => callTool(() => client.query(api.mcpPlanner.listPlans, { ...args(identity), today }), (result) => `Found ${result.plans.length} study plan${result.plans.length === 1 ? "" : "s"}.`));
 
@@ -171,15 +183,15 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
     title: "Get a complete study plan",
     description: "Read one plan's courses, exams, topics, dependencies, blocks, preferences, timezone, revision, and optionally its latest 500 progress records.",
     inputSchema: { planId: id("Plan ID returned by planner.list"), includeStudyLog: z.boolean().optional().default(true) },
-    outputSchema: { plan: z.record(z.string(), z.unknown()), preferences: z.record(z.string(), z.unknown()), timezone: z.string(), studyLog: z.array(z.unknown()), limits: z.record(z.string(), z.unknown()) },
+    outputSchema: withToolErrors({ plan: z.record(z.string(), z.unknown()), preferences: z.record(z.string(), z.unknown()), timezone: z.string(), studyLog: z.array(z.unknown()), limits: z.record(z.string(), z.unknown()) }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, ({ planId, includeStudyLog }) => callTool(() => client.query(api.mcpPlanner.getPlan, { ...args(identity), planId: planId as never, includeStudyLog }), (result) => `Loaded ${String((result.plan as { name?: string }).name ?? "plan")} at revision ${String((result.plan as { revision?: number }).revision ?? "unknown")}.`));
 
   server.registerTool("planner.create", {
     title: "Create a complete study plan",
-    description: "Atomically create one complete multi-course plan using document-local refs; optionally generate its first deterministic schedule.",
+    description: "Atomically create a multi-course plan, up to 100 expanded commands: one per course, exam, topic, dependency set, block, and optional schedule generation. Larger semesters: create an initial subset, then add batches with apply_changes and regenerate last. Refs are local to each batch.",
     inputSchema: { idempotencyKey, plan: completePlanSchema },
-    outputSchema: { planId: z.string(), ...mutationOutput },
+    outputSchema: withToolErrors({ planId: z.string(), ...mutationOutput }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, ({ idempotencyKey, plan }) => callTool(() => client.mutation(api.mcpPlanner.createPlan, { ...args(identity), idempotencyKey, name: plan.name, notes: plan.notes, commands: completePlanCommands(plan) }), (result) => result.summary));
 
@@ -187,7 +199,7 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
     title: "Preview plan changes",
     description: "Validate a bounded command batch and calculate deterministic scheduling effects without writing anything.",
     inputSchema: { planId: id("Target plan ID"), commands: z.array(plannerCommandSchema).min(1).max(100) },
-    outputSchema: { revision: z.number(), resultingRevision: z.number(), summary: z.string(), warnings: z.array(z.string()), generatedBlocks: z.array(z.unknown()), writesApplied: z.literal(false) },
+    outputSchema: withToolErrors({ revision: z.number(), resultingRevision: z.number(), summary: z.string(), warnings: z.array(z.string()), generatedBlocks: z.array(z.unknown()), writesApplied: z.literal(false) }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, ({ planId, commands }) => callTool(() => client.query(api.mcpPlanner.previewChanges, { ...args(identity), planId: planId as never, commands }), (result) => `${result.summary}. No writes applied${result.warnings.length ? `; ${result.warnings.length} warning(s)` : ""}.`));
 
@@ -195,15 +207,15 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
     title: "Apply plan changes",
     description: "Atomically apply an explicit validated command batch. Requires the revision last read and a stable idempotency key; stale writes are rejected.",
     inputSchema: { planId: id("Target plan ID"), expectedRevision: z.number().int().nonnegative(), idempotencyKey, commands: z.array(plannerCommandSchema).min(1).max(100) },
-    outputSchema: mutationOutput,
+    outputSchema: withToolErrors(mutationOutput),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, ({ planId, expectedRevision, idempotencyKey, commands }) => callTool(() => client.mutation(api.mcpPlanner.applyChanges, { ...args(identity), planId: planId as never, expectedRevision, idempotencyKey, commands }), (result) => `${result.summary}. Plan is now revision ${result.revision}.`));
 
   server.registerTool("planner.record_progress", {
     title: "Record study progress",
     description: "Atomically append or correct a bounded progress entry and update the topic's completion/status with revision and idempotency checks.",
-    inputSchema: { planId: id("Owning plan ID"), topicId: id("Topic ID in the plan"), expectedRevision: z.number().int().nonnegative(), idempotencyKey, date, units: z.number().min(-1_000_000_000).max(1_000_000_000).describe("Positive to record progress; negative to correct it"), minutes: z.number().int().nonnegative().max(10_080).optional(), note: z.string().max(4_000).optional() },
-    outputSchema: { revision: z.number(), auditId: z.string(), logId: z.string(), topicId: z.string(), completedUnits: z.number(), status: topicStatus, summary: z.string() },
+    inputSchema: { planId: id("Owning plan ID"), topicId: id("Topic ID in the plan"), expectedRevision: z.number().int().nonnegative(), idempotencyKey, date, units: z.number().min(-1_000_000_000).max(1_000_000_000).describe("Positive to record progress; negative to correct it. Deltas outside 0..totalUnits are clamped; the log and response report the effective delta"), minutes: z.number().int().nonnegative().max(10_080).optional(), note: z.string().max(4_000).optional() },
+    outputSchema: withToolErrors({ revision: z.number(), auditId: z.string(), logId: z.string(), topicId: z.string(), completedUnits: z.number(), appliedUnits: z.number().optional(), requestedUnits: z.number().optional(), status: topicStatus, summary: z.string() }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, ({ planId, topicId, expectedRevision, idempotencyKey, date, units, minutes, note }) => callTool(() => client.mutation(api.mcpPlanner.recordProgress, { ...args(identity), planId: planId as never, topicId: topicId as never, expectedRevision, idempotencyKey, date, units, minutes, note }), (result) => `${result.summary}. Topic is ${result.status}; plan revision ${result.revision}.`));
 
@@ -211,7 +223,7 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
     title: "Read plan change history",
     description: "Read 1–50 recent payload-free transaction summaries. Pass nextCursor as before to continue.",
     inputSchema: { planId: id("Target plan ID"), limit: z.number().int().min(1).max(50).optional().default(20), before: z.number().optional().describe("Cursor returned by the previous page") },
-    outputSchema: { changes: z.array(z.object({ auditId: z.string(), createdAt: z.number(), actorType: z.enum(["user", "mcp"]), baseRevision: z.number(), resultRevision: z.number(), summary: z.string(), affectedEntityIds: z.array(z.string()), undoable: z.boolean() })), nextCursor: z.number().nullable() },
+    outputSchema: withToolErrors({ changes: z.array(z.object({ auditId: z.string(), createdAt: z.number(), actorType: z.enum(["user", "mcp"]), baseRevision: z.number(), resultRevision: z.number(), summary: z.string(), affectedEntityIds: z.array(z.string()), undoable: z.boolean() })), nextCursor: z.number().nullable() }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, ({ planId, limit, before }) => callTool(() => client.query(api.mcpPlanner.history, { ...args(identity), planId: planId as never, limit, before }), (result) => `Returned ${result.changes.length} change summaries.`));
 
@@ -219,7 +231,7 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
     title: "Undo a plan transaction",
     description: "Reverse the latest eligible unexpired transaction, only when no later edits exist and the plan is still at expectedRevision. The undo is itself audited.",
     inputSchema: { planId: id("Target plan ID"), auditId: id("Undoable audit ID from planner.history"), expectedRevision: z.number().int().nonnegative(), idempotencyKey },
-    outputSchema: { revision: z.number(), auditId: z.string(), summary: z.string() },
+    outputSchema: withToolErrors({ revision: z.number(), auditId: z.string(), summary: z.string() }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   }, ({ planId, auditId, expectedRevision, idempotencyKey }) => callTool(() => client.mutation(api.mcpPlanner.undo, { ...args(identity), planId: planId as never, auditId: auditId as never, expectedRevision, idempotencyKey }), (result) => `${result.summary}. Plan is now revision ${result.revision}.`));
 

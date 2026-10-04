@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { TextArea, TextField } from "@/ui";
+import { Button, TextArea, TextField } from "@/ui";
 import { useWorkspace } from "@/features/workspace/store";
 
 /* ─── Shared furniture ──────────────────────────────────────────────────── */
@@ -44,7 +44,7 @@ export function NameSection({
   kind: string;
   entityId: string;
   name: string;
-  onCommit: (next: string) => void;
+  onCommit: (next: string) => void | Promise<boolean | void>;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const renameRequestId = useWorkspace((state) => state.renameRequestId);
@@ -161,7 +161,7 @@ export function DraftText({
 }: {
   label: string;
   value: string;
-  onCommit: (next: string) => void;
+  onCommit: (next: string) => void | Promise<boolean | void>;
   multiline?: boolean;
   placeholder?: string;
   hint?: string;
@@ -170,48 +170,62 @@ export function DraftText({
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
   const [draft, setDraft] = useState(value);
-  // Keep the snapshot-bound callback from when editing began. A later remote
-  // update must not attach a fresh revision to an older draft.
   const [draftCommit, setDraftCommit] = useState<typeof onCommit | null>(null);
   const [settled, setSettled] = useState(value);
+  const [recovery, setRecovery] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [saving, setSaving] = useState(false);
   if (settled !== value) {
     setSettled(value);
-    setDraft(value);
-    setDraftCommit(null);
+    // A remote edit must never erase text that has not been saved.
+    if (!draftCommit && !recovery) setDraft(value);
+    else if (draft.trim() !== value) setRecovery(true);
   }
 
-  const commit = () => {
+  const cancel = () => {
+    setDraftCommit(null); setDraft(value); setRecovery(false); setReviewing(false);
+  };
+  const commit = async (retry = false) => {
+    if (saving || (recovery && !retry)) return;
     const trimmed = draft.trim();
-    if (trimmed === value) return;
-    const save = draftCommit;
-    setDraftCommit(null);
-    save?.(trimmed);
+    if (trimmed === value) { cancel(); return; }
+    const save = retry ? onCommit : draftCommit;
+    if (!save) return;
+    setSaving(true);
+    try {
+      const result = await save(trimmed);
+      if (result === false) setRecovery(true);
+      else { setDraftCommit(null); setRecovery(false); setReviewing(false); }
+    } catch {
+      setRecovery(true);
+    } finally { setSaving(false); }
   };
 
   const props = {
-    label,
-    value: draft,
-    placeholder,
-    hint,
-    hideLabel,
+    label, value: draft, placeholder, hint, hideLabel,
+    disabled: saving,
     onChange: (event: { target: { value: string } }) => {
       if (!draftCommit) setDraftCommit(() => onCommit);
       setDraft(event.target.value);
     },
-    onBlur: commit,
+    onBlur: () => { void commit(); },
     onKeyDown: (event: React.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        // Reverts in place and keeps focus, which is what AppKit does. Blurring
-        // here would fire `onBlur` — and `commit` would still be holding this
-        // render's draft, so Escape would save the very edit it was discarding.
-        setDraftCommit(null);
-        setDraft(value);
-      } else if (event.key === "Enter" && !multiline) {
-        event.preventDefault();
-        commit();
-      }
+      if (event.key === "Escape") cancel();
+      else if (event.key === "Enter" && !multiline) { event.preventDefault(); void commit(); }
     },
   };
 
-  return multiline ? <TextArea rows={3} {...props} /> : <TextField ref={inputRef} {...props} />;
+  return <div className="flex min-w-0 flex-col gap-2">
+    {multiline ? <TextArea rows={3} {...props} /> : <TextField ref={inputRef} {...props} />}
+    {saving ? <p role="status" className="text-callout text-secondary">Saving…</p> : null}
+    {recovery ? <div role="status" className="flex flex-col gap-2 text-callout text-secondary">
+      <p>Your draft is unsaved. Review the latest semester before retrying.</p>
+      {reviewing ? <p className="break-words">Current saved value: {value || "(empty)"}. Retry applies this field to the latest version and preserves its other fields.</p> : null}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => setReviewing(true)}>Review</Button>
+        <Button size="sm" disabled={!reviewing} onClick={() => { void commit(true); }}>Retry</Button>
+        <Button size="sm" onClick={cancel}>Cancel draft</Button>
+      </div>
+    </div> : null}
+  </div>;
 }

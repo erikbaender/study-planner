@@ -9,6 +9,7 @@ import {
   type CourseHealth,
 } from "@/domain";
 import { course as makeCourse, exam as makeExam, topic as makeTopic } from "@/test/factories";
+import { useWorkspace } from "@/features/workspace/store";
 import { TodayView } from "./today-view";
 
 const repository = { logStudy: vi.fn(() => Promise.resolve()) };
@@ -24,13 +25,17 @@ const TODAY = "2026-05-01";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useWorkspace.getState().setCreating(null);
 });
 
-function healthOf(courses: readonly Course[]): Map<string, CourseHealth> {
+function healthOf(
+  courses: readonly Course[],
+  studyLog: Parameters<typeof TodayView>[0]["studyLog"] = [],
+): Map<string, CourseHealth> {
   return new Map(
     courses.map((course) => [
       course.id,
-      assessCourse({ course, today: TODAY, calendar: DEFAULT_PREFERENCES, log: [] }),
+      assessCourse({ course, today: TODAY, calendar: DEFAULT_PREFERENCES, log: studyLog }),
     ]),
   );
 }
@@ -42,9 +47,9 @@ function renderToday(
   render(
     <TodayView
       courses={courses}
-      health={healthOf(courses)}
+      health={healthOf(courses, studyLog)}
       studyLog={studyLog}
-      snapshot={{ ...EMPTY_SNAPSHOT, studyLog: [...studyLog] }}
+      snapshot={{ ...EMPTY_SNAPSHOT, plans: [{ id: "plan_1", name: "Test", notes: "", courses: [...courses] }], studyLog: [...studyLog] }}
       today={TODAY}
       selectedTopicId={null}
       onSelectTopic={vi.fn()}
@@ -74,7 +79,7 @@ describe("TodayView", () => {
         { id: "c", topicId: topic.id, date: "2026-04-30", units: 99 },
       ],
     );
-    expect(screen.getByText("20 units logged today")).toBeInTheDocument();
+    expect(screen.getByText("60 estimated minutes logged today")).toBeInTheDocument();
   });
 
   it("lists the next three exams, soonest first", () => {
@@ -173,6 +178,12 @@ describe("TodayView", () => {
       exams: [makeExam({ startDate: "2026-05-04" })],
     });
     renderToday([doomed]);
+    expect(screen.queryByRole("heading", { name: "Behind" })).not.toBeInTheDocument();
+
+    renderToday(
+      [doomed],
+      [{ id: "log_1", topicId: doomed.topics[0].id, date: "2026-04-30", units: 1 }],
+    );
     expect(within(card("Behind")).getByText("Doomed")).toBeInTheDocument();
   });
 
@@ -198,5 +209,26 @@ describe("TodayView", () => {
     // A filter that has caught everything is not a dead end, so the message
     // does not offer to create anything to escape it.
     expect(screen.queryByRole("button", { name: /outline|course/i })).not.toBeInTheDocument();
+  });
+
+  it("offers the first-course action when the semester itself is empty", async () => {
+    const user = userEvent.setup();
+    render(
+      <TodayView
+        courses={[]}
+        emptyPlan
+        health={new Map()}
+        studyLog={[]}
+        snapshot={EMPTY_SNAPSHOT}
+        today={TODAY}
+        selectedTopicId={null}
+        onSelectTopic={vi.fn()}
+        onDeleteTopic={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Your semester is empty" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "New course" }));
+    expect(useWorkspace.getState().creating).toBe("course");
   });
 });

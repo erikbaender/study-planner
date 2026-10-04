@@ -45,7 +45,7 @@ export function ExamInspector({
         kind="Exam"
         entityId={exam.id}
         name={exam.name}
-        onCommit={(name) => name && patch({ name })}
+        onCommit={(name) => name ? patch({ name }) : undefined}
       />
 
       <Separator />

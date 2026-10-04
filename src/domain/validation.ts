@@ -238,13 +238,16 @@ export function requireValidAutoBlockReplacement(
 
 export type PreferencesValidationInput = {
   dailyCapacityUnits?: number;
+  dailyCapacityMinutes?: number;
   studyDaysOfWeek: readonly number[];
   blackoutDates: readonly string[];
+  timezone?: string;
   theme: unknown;
   accentColor: string;
 };
 
 export function requireValidPreferences(preferences: PreferencesValidationInput): void {
+  if (preferences.dailyCapacityMinutes !== undefined) requireFiniteBoundedNumber(preferences.dailyCapacityMinutes, "Daily minutes", { minimum: 0, maximum: 1440 });
   if (preferences.dailyCapacityUnits !== undefined) {
     requireFiniteBoundedNumber(preferences.dailyCapacityUnits, "Daily capacity", {
       minimum: 0,
@@ -268,6 +271,15 @@ export function requireValidPreferences(preferences: PreferencesValidationInput)
   );
   for (const date of preferences.blackoutDates) {
     requireValidDate(date, "Blackout date");
+  }
+
+  if (preferences.timezone !== undefined) {
+    requireTrimmedBoundedText(preferences.timezone, "Timezone", 64);
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: preferences.timezone });
+    } catch {
+      throw new ValidationError("Timezone must be a valid IANA timezone", "Timezone");
+    }
   }
 
   // Convex's wire validator enforces this enum. Local calls need the same

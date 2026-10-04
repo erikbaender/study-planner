@@ -78,9 +78,21 @@ describe("remote MCP and OAuth protocol", () => {
       const planId = (created.structuredContent as { planId: string }).planId;
       const snapshot = await client.callTool({ name: "planner.get", arguments: { planId } });
       expect(snapshot.structuredContent).toMatchObject({ plan: { name: "Protocol semester", courses: expect.any(Array) } });
+      const partial = await client.callTool({ name: "planner.apply_changes", arguments: { planId, expectedRevision: 1, idempotencyKey: "protocol-partial-preferences", commands: [{ type: "preferences.update", patch: { dailyCapacityUnits: 0 } }] } });
+      expect(partial.isError).not.toBe(true);
+      const oversized = await client.callTool({ name: "planner.create", arguments: { idempotencyKey: "oversized-protocol-plan", plan: {
+        name: "Large semester", generateInitialSchedule: true, today: "2026-09-05",
+        courses: Array.from({ length: 7 }, (_, i) => ({ ref: `c${i}`, name: `Course ${i}`, color: "violet", exams: [{ ref: `e${i}`, name: "Final", startDate: "2026-12-01" }], topics: Array.from({ length: 13 }, (_, j) => ({ ref: `t${i}_${j}`, name: `Topic ${j}`, color: "violet" })) })),
+      } } });
+      expect(oversized.isError).toBe(true);
+      expect(JSON.stringify(oversized.content)).toContain("requires 106 commands");
+      expect(JSON.stringify(oversized.content)).toContain("planner.apply_changes");
+      const listing = await client.callTool({ name: "planner.list", arguments: {} });
+      expect((listing.structuredContent as { plans: unknown[] }).plans).toHaveLength(1);
       const stale = await client.callTool({ name: "planner.apply_changes", arguments: { planId, expectedRevision: 0, idempotencyKey: "protocol-stale-request", commands: [{ type: "plan.update", patch: { name: "Stale" } }] } });
       expect(stale.isError).toBe(true);
-      expect(JSON.stringify(stale.content)).toContain("Revision conflict");
+      expect(stale.structuredContent).toMatchObject({ error: { code: "REVISION_CONFLICT", expectedRevision: 0 } });
+      expect(JSON.stringify(stale)).not.toContain("at handler");
     } finally { await client.close(); }
   });
 

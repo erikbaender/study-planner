@@ -35,13 +35,15 @@ export function createPlanningPreview({
   today,
   calendar,
   dailyCapacityUnits,
+  dailyCapacityMinutes,
 }: {
   courses: readonly Course[];
   today: IsoDate;
   calendar: StudyCalendar;
-  dailyCapacityUnits: number;
+  dailyCapacityUnits?: number;
+  dailyCapacityMinutes?: number;
 }): PlanningPreview {
-  const result = schedule({ courses, today, calendar, dailyCapacityUnits });
+  const result = schedule({ courses, today, calendar, dailyCapacityUnits, dailyCapacityMinutes });
 
   return {
     result,

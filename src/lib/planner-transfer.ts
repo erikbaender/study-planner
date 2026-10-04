@@ -63,6 +63,7 @@ export type TransferredTopic = {
   name: string;
   unit: Unit;
   totalUnits: number;
+  minutesPerUnit?: number;
   completedUnits: number;
   status: TopicStatus;
   priority: Priority;
@@ -202,6 +203,7 @@ export function serializePlans(
             name: topic.name,
             unit: topic.unit,
             totalUnits: topic.totalUnits,
+            ...(topic.minutesPerUnit === undefined ? {} : { minutesPerUnit: topic.minutesPerUnit }),
             completedUnits: topic.completedUnits,
             status: topic.status,
             priority: topic.priority,
@@ -507,6 +509,7 @@ export function assertPlannerTransferIntegrity(document: PlannerTransferDocument
         if (!isCourseColorId(topic.color)) {
           throw new PlannerTransferError(`${topicLabel} has an unknown color.`);
         }
+        if (topic.minutesPerUnit !== undefined) assertFiniteNumber(topic.minutesPerUnit, `${topicLabel} minutes per unit`, 0.01, 10080);
         assertFiniteNumber(
           topic.totalUnits,
           `${topicLabel} total units`,

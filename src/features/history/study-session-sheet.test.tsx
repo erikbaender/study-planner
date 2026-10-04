@@ -1,0 +1,40 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, expect, it, vi } from "vitest";
+import { topic } from "@/test/factories";
+import { StudySessionSheet } from "./study-session-sheet";
+
+const repository = { logStudy: vi.fn(async () => {}), updateStudyLog: vi.fn(async () => {}) };
+vi.mock("@/data/use-repository", () => ({ useRepository: () => repository }));
+beforeEach(() => vi.clearAllMocks());
+it("submits a previous day's session with material, duration and note", async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StudySessionSheet topic={topic({ id: "t", totalUnits: 100 })} today="2026-10-04" onClose={onClose} />);
+  await user.clear(screen.getByLabelText("Study date"));
+  await user.type(screen.getByLabelText("Study date"), "2026-10-03");
+  await user.clear(screen.getByLabelText("slides studied"));
+  await user.type(screen.getByLabelText("slides studied"), "12");
+  await user.type(screen.getByLabelText("Minutes studied"), "45");
+  await user.type(screen.getByLabelText("Session note"), "Yesterday’s reading");
+  await user.click(screen.getByRole("button", { name: "Save session" }));
+  expect(repository.logStudy).toHaveBeenCalledWith({ topicId: "t", date: "2026-10-03", units: 12, minutes: 45, note: "Yesterday’s reading" });
+  expect(onClose).toHaveBeenCalledOnce();
+});
+it("retains a conflicting correction and requires review before retry", async () => {
+  repository.updateStudyLog.mockRejectedValueOnce(new Error("[CONVEX M(planner:updateStudyLog)] Server Error\nUncaught Error: Revision conflict: expected 2, current 3. Reload planner.get and rebase the command batch.\n    at handler (convex/planner.ts:1:1)"));
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StudySessionSheet topic={topic({ id: "t", totalUnits: 100, completedUnits: 20 })} today="2026-10-04" entry={{ id: "log", topicId: "t", date: "2026-10-02", units: 10, minutes: 30, note: "Saved note" }} onClose={onClose} />);
+  await user.clear(screen.getByLabelText("Session slides"));
+  await user.type(screen.getByLabelText("Session slides"), "5");
+  await user.click(screen.getByRole("button", { name: "Save session" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("changed elsewhere");
+  expect(screen.getByRole("alert")).not.toHaveTextContent("convex/planner.ts");
+  expect(screen.getByLabelText("Session slides")).toHaveValue(5);
+  expect(screen.getByRole("button", { name: "Retry save" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Review latest progress" }));
+  await user.click(screen.getByRole("button", { name: "Retry save" }));
+  expect(repository.updateStudyLog).toHaveBeenLastCalledWith("log", { date: "2026-10-02", units: 5, minutes: 30, note: "Saved note" });
+  expect(onClose).toHaveBeenCalledOnce();
+});

@@ -29,6 +29,7 @@ import {
 } from "@/domain";
 import {
   Button,
+  Checkbox,
   SegmentedControl,
   SelectField,
   Sheet,
@@ -42,6 +43,10 @@ export type TopicCreationInput = {
   unit: Unit;
   totalUnits: number;
 };
+
+function normalizeTopicName(name: string) {
+  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
 
 export function TopicCreationSheet({
   open,
@@ -62,8 +67,15 @@ export function TopicCreationSheet({
   const [totalUnits, setTotalUnits] = useState(0);
   const [unit, setUnit] = useState<Unit>(defaultUnit);
   const [text, setText] = useState("");
+  const [duplicatesAcknowledged, setDuplicatesAcknowledged] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   const parsed = parseOutline(text, { defaultUnit: unit });
+  const existingNames = new Set(course.topics.map(({ name }) => normalizeTopicName(name)));
+  const duplicateNames = [...new Set(
+    parsed.topics
+      .filter(({ name }) => existingNames.has(normalizeTopicName(name)))
+      .map(({ name }) => name),
+  )];
 
   const [wasOpen, setWasOpen] = useState(open);
   if (wasOpen !== open) {
@@ -73,6 +85,7 @@ export function TopicCreationSheet({
     setTotalUnits(0);
     setUnit(defaultUnit);
     setText("");
+    setDuplicatesAcknowledged(false);
   }
 
   const submitOne = (keepOpen: boolean) => {
@@ -115,14 +128,24 @@ export function TopicCreationSheet({
         ) : (
           <>
             {course.topics.length > 0 ? (
-              <Button className="mr-auto" onClick={() => setText(formatOutline(course.topics))}>
-                Load existing topics
+              <Button
+                className="mr-auto"
+                onClick={() => {
+                  setText(formatOutline(course.topics));
+                  setDuplicatesAcknowledged(false);
+                }}
+              >
+                Copy existing topics into list
               </Button>
             ) : null}
             <Button onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button
               variant="accent"
-              disabled={parsed.topics.length === 0}
+              disabled={
+                parsed.topics.length === 0 ||
+                parsed.issues.length > 0 ||
+                (duplicateNames.length > 0 && !duplicatesAcknowledged)
+              }
               onClick={() => {
                 onCreateMany(
                   parsed.topics.map((topic) => ({
@@ -201,7 +224,10 @@ export function TopicCreationSheet({
               autoFocus
               placeholder={"Glycolysis — 42 slides\nCitric acid cycle — 38\nLipid metabolism — 61"}
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => {
+                setText(event.target.value);
+                setDuplicatesAcknowledged(false);
+              }}
               className="font-mono"
             />
 
@@ -224,6 +250,19 @@ export function TopicCreationSheet({
                   </li>
                 ))}
               </ul>
+            ) : null}
+
+            {duplicateNames.length > 0 ? (
+              <div className="flex flex-col gap-2 rounded-control bg-fill p-2">
+                <p className="text-footnote text-secondary">
+                  {duplicateNames.length} title{duplicateNames.length === 1 ? " matches" : "s match"} existing topics. Adding this list will create duplicate topics: {duplicateNames.join(", ")}.
+                </p>
+                <Checkbox
+                  checked={duplicatesAcknowledged}
+                  onCheckedChange={setDuplicatesAcknowledged}
+                  label="Add these duplicate topics"
+                />
+              </div>
             ) : null}
 
             {parsed.topics.length > 0 ? (

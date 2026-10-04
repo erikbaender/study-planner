@@ -6,6 +6,7 @@
  * topic sizes at all — none of this is computable from dates alone.
  */
 
+import { minutesPerUnit, effortLog, DEFAULT_DAILY_CAPACITY_MINUTES } from "./effort";
 import {
   addDays,
   compareDates,
@@ -14,7 +15,14 @@ import {
   isStudyDay,
   type StudyCalendar,
 } from "./dates";
-import type { Course, Exam, IsoDate, StudyLogEntry, Topic } from "./types";
+import {
+  DEFAULT_DAILY_CAPACITY_UNITS,
+  type Course,
+  type Exam,
+  type IsoDate,
+  type StudyLogEntry,
+  type Topic,
+} from "./types";
 
 /** Trailing window for velocity. Long enough to smooth a bad day, short enough to react within a week. */
 export const VELOCITY_WINDOW_DAYS = 7;
@@ -45,7 +53,15 @@ export function progressOf(topics: readonly Topic[]): Progress {
 }
 
 export function courseProgress(course: Course): Progress {
-  return progressOf(course.topics);
+  const mixed = new Set(course.topics.filter(topic => topic.totalUnits > 0).map(topic => topic.unit)).size > 1;
+  return mixed ? effortProgress(course.topics) : progressOf(course.topics);
+}
+
+export function effortProgress(topics: readonly Topic[]): Progress {
+  return progressOf(topics.map(topic => ({ ...topic,
+    totalUnits: topic.totalUnits * minutesPerUnit(topic),
+    completedUnits: topic.completedUnits * minutesPerUnit(topic),
+  })));
 }
 
 export function topicProgress(topic: Topic): Progress {
@@ -111,6 +127,7 @@ export function velocityForTopics(
 }
 
 export type PaceAssessment = {
+  workloadUnit?: "minutes";
   remainingUnits: number;
   /** Available study days in `[today, deadline]`, inclusive. */
   studyDaysLeft: number;
@@ -118,15 +135,21 @@ export type PaceAssessment = {
   requiredPace: number;
   /** Observed units per study day over the trailing window. */
   actualVelocity: number;
-  /** `null` when velocity is zero — an unknowable finish date, not a distant one. */
+  /** Whether any work was logged for this course in the trailing window. */
+  hasObservedPace: boolean;
+  /** Whether the remaining work fits the configured or default planning capacity. */
+  plannedFeasible: boolean;
+  /** `null` when there is no observed progress to project from. */
   projectedFinish: IsoDate | null;
+  /** Uses observed pace when available, otherwise the planning-capacity estimate. */
   onTrack: boolean;
   /** How far past the deadline the projection lands. `0` when on time or unknowable. */
   daysLate: number;
 };
 
 /**
- * Can this course be finished by its deadline at the current rate?
+ * Whether the course fits its deadline, based on observed pace when available
+ * and planning capacity before there is recent study history.
  *
  * `projectedFinish` walks forward day by day rather than dividing, because
  * weekends and blackout dates make the answer non-linear — 100 units at 20/day
@@ -138,6 +161,7 @@ export function assessPace(options: {
   deadline: IsoDate;
   calendar: StudyCalendar;
   actualVelocity: number;
+  hasObservedPace?: boolean;
   dailyCapacityUnits?: number;
 }): PaceAssessment {
   const { remainingUnits, today, deadline, calendar, actualVelocity } = options;
@@ -157,16 +181,28 @@ export function assessPace(options: {
     projectedFinish && projectedFinish > deadline ? differenceInDays(deadline, projectedFinish) : 0;
 
   const capacity = options.dailyCapacityUnits;
-  const sustainablePace = capacity ? Math.min(capacity, Math.max(actualVelocity, 0)) : actualVelocity;
+  const planningCapacity = capacity ?? DEFAULT_DAILY_CAPACITY_UNITS;
+  const sustainablePace =
+    capacity !== undefined ? Math.min(capacity, Math.max(actualVelocity, 0)) : actualVelocity;
+  const hasObservedPace = options.hasObservedPace ?? actualVelocity > 0;
+  const plannedFeasible =
+    remainingUnits === 0 || (Number.isFinite(requiredPace) && requiredPace <= planningCapacity);
+  const onTrack =
+    remainingUnits === 0 ||
+    (hasObservedPace
+      ? Number.isFinite(requiredPace) && requiredPace <= sustainablePace
+      : plannedFeasible !== false);
 
   return {
     remainingUnits,
     studyDaysLeft,
     requiredPace,
     actualVelocity,
+    hasObservedPace,
+    plannedFeasible,
     projectedFinish,
     // Nothing left to do is trivially on track, whatever the velocity.
-    onTrack: remainingUnits === 0 || (Number.isFinite(requiredPace) && requiredPace <= sustainablePace),
+    onTrack,
     daysLate,
   };
 }
@@ -247,15 +283,27 @@ export type CourseHealth = {
  */
 export function assessCourse(options: {
   course: Course;
+  dailyCapacityMinutes?: number;
   today: IsoDate;
   calendar: StudyCalendar;
   log: readonly StudyLogEntry[];
   dailyCapacityUnits?: number;
 }): CourseHealth {
   const { course, today, calendar, log, dailyCapacityUnits } = options;
+  const timeBudget = options.dailyCapacityMinutes !== undefined || dailyCapacityUnits === undefined;
+  const paceProgress = timeBudget ? effortProgress(course.topics) : progressOf(course.topics);
+  const paceLog = timeBudget ? effortLog(log, course.topics) : log;
   const progress = courseProgress(course);
   const exam = nextExam(course, today);
   const topicIds = new Set(course.topics.map((topic) => topic.id));
+  const recentLogStart = addDays(today, -(VELOCITY_WINDOW_DAYS - 1));
+  const hasObservedPace = log.some(
+    (entry) =>
+      topicIds.has(entry.topicId) &&
+      entry.units > 0 &&
+      entry.date >= recentLogStart &&
+      entry.date <= today,
+  );
 
   return {
     courseId: course.id,
@@ -263,14 +311,15 @@ export function assessCourse(options: {
     exam,
     daysUntilExam: exam ? daysUntil(effectiveDeadline(exam), today) : null,
     pace: exam
-      ? assessPace({
-          remainingUnits: progress.remainingUnits,
+      ? { ...assessPace({
+          remainingUnits: paceProgress.remainingUnits,
           today,
           deadline: effectiveDeadline(exam),
           calendar,
-          actualVelocity: velocityForTopics(log, topicIds, today, calendar),
-          dailyCapacityUnits,
-        })
+          actualVelocity: velocityForTopics(paceLog, topicIds, today, calendar),
+          hasObservedPace,
+          dailyCapacityUnits: timeBudget ? options.dailyCapacityMinutes ?? DEFAULT_DAILY_CAPACITY_MINUTES : dailyCapacityUnits,
+        }), ...(timeBudget ? { workloadUnit: "minutes" as const } : {}) }
       : null,
   };
 }

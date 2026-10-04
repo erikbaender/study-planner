@@ -12,9 +12,9 @@
  *     Membrane transport — 85
  *     Glycolysis — 140 pages
  *
- * Sizes are optional. A bare number inherits the unit from the previous topic,
- * so a run of same-unit lines needs the word only once. Indentation is
- * presentation noise rather than hierarchy.
+ * Sizes are optional. A bare number inherits the last recognized unit, starting
+ * with the selected default. Indentation is presentation noise rather than
+ * hierarchy.
  */
 
 import { UNITS, type Unit } from "./types";
@@ -44,12 +44,18 @@ const SIZE_PATTERN = /\s*[—–\-:]\s*(\d+(?:[.,]\d+)?)\s*([A-Za-z]*)\s*$/;
 const UNIT_ALIASES: Record<string, Unit> = {
   slide: "slides",
   slides: "slides",
+  folie: "slides",
+  folien: "slides",
   page: "pages",
   pages: "pages",
+  seite: "pages",
+  seiten: "pages",
   pp: "pages",
   p: "pages",
   card: "cards",
   cards: "cards",
+  karte: "cards",
+  karten: "cards",
   flashcard: "cards",
   flashcards: "cards",
   video: "videos",
@@ -58,6 +64,8 @@ const UNIT_ALIASES: Record<string, Unit> = {
   lectures: "videos",
   hour: "hours",
   hours: "hours",
+  stunde: "hours",
+  stunden: "hours",
   h: "hours",
   hr: "hours",
   hrs: "hours",
@@ -83,7 +91,8 @@ export function parseOutline(
   // Tabs count as whitespace just like spaces; expanding them keeps trimming
   // behavior uniform across tab and space users.
   const lines = rawLines.map((line) => line.replace(/\t/g, "  "));
-  let inheritedUnit: Unit = options.defaultUnit ?? "slides";
+  const defaultUnit = options.defaultUnit ?? "slides";
+  let inheritedUnit = defaultUnit;
 
   lines.forEach((line, index) => {
     const lineNumber = index + 1;
@@ -118,11 +127,15 @@ export function parseOutline(
           unit = parsed;
           inheritedUnit = parsed;
         } else {
+          // An unrecognized explicit unit must not inherit an unrelated unit
+          // from a preceding line. Keep the preview grounded in the selected
+          // default and make the issue visible so callers can block submission.
           issues.push({
             line: lineNumber,
             text,
-            message: `Unknown unit "${match[2]}" — using ${inheritedUnit}`,
+            message: `Unknown unit "${match[2]}" — using default ${defaultUnit}; correct this unit before adding`,
           });
+          unit = defaultUnit;
         }
       }
     }

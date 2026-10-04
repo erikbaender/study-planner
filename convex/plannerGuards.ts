@@ -161,12 +161,20 @@ export function assertReorderComplete(
 
 export type PreferencesInput = {
   dailyCapacityUnits?: number;
+  dailyCapacityMinutes?: number;
+  timezone?: string;
   studyDaysOfWeek: readonly number[];
   blackoutDates: readonly string[];
   accentColor: string;
 };
 
 export function assertPreferences(input: PreferencesInput): void {
+  if (input.timezone !== undefined) {
+    assertTrimmedBoundedText(input.timezone, "Timezone", 100);
+    try { new Intl.DateTimeFormat("en", { timeZone: input.timezone }); }
+    catch { throw new Error("Timezone must be a valid IANA timezone"); }
+  }
+  if (input.dailyCapacityMinutes !== undefined) assertFiniteBoundedNumber(input.dailyCapacityMinutes, "Daily minutes", { min: 0, max: 1440 });
   if (input.dailyCapacityUnits !== undefined) {
     assertFiniteBoundedNumber(input.dailyCapacityUnits, "Daily capacity", {
       min: 0,
@@ -243,6 +251,7 @@ type ImportTopicInput = {
   key: string;
   name: string;
   totalUnits: number;
+  minutesPerUnit?: number;
   completedUnits: number;
   notes: string;
   dependencies: readonly string[];
@@ -437,6 +446,7 @@ export function assertImportPayload(
         assertImportName(topic.name, "Topic name", budget);
         assertImportNotes(topic.notes, "Topic notes", budget);
         assertProgress(topic.completedUnits, topic.totalUnits);
+      if (topic.minutesPerUnit !== undefined) assertFiniteBoundedNumber(topic.minutesPerUnit, "Minutes per unit", { min: 0.01, max: 10080 });
         assertDistinctBoundedArray(
           topic.dependencies,
           `Dependencies for ${topic.name}`,

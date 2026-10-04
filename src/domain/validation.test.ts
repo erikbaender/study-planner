@@ -172,6 +172,9 @@ describe("collection validation", () => {
 describe("preferences validation", () => {
   it("accepts canonical preferences", () => {
     expect(() => requireValidPreferences(DEFAULT_PREFERENCES)).not.toThrow();
+    expect(() =>
+      requireValidPreferences({ ...DEFAULT_PREFERENCES, timezone: "Europe/Berlin" }),
+    ).not.toThrow();
   });
 
   it("rejects invalid capacity, days, dates, theme, and accent values", () => {
@@ -193,6 +196,9 @@ describe("preferences validation", () => {
     expect(() =>
       requireValidPreferences({ ...DEFAULT_PREFERENCES, accentColor: " accent " }),
     ).toThrow("whitespace");
+    expect(() =>
+      requireValidPreferences({ ...DEFAULT_PREFERENCES, timezone: "Not/A_Timezone" }),
+    ).toThrow("valid IANA timezone");
   });
 });
 

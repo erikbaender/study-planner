@@ -22,13 +22,17 @@ import { CalendarSync, Wand2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   describeShortfall,
-  FALLBACK_CAPACITY_UNITS,
+  DEFAULT_DAILY_CAPACITY_MINUTES,
+  minutesPerUnit,
+  UNIT_LABELS,
   type Course,
   type IsoDate,
   type PlannerSnapshot,
 } from "@/domain";
 import { Badge, Button, Sheet, Stepper } from "@/ui";
 import { createPlanningPreview, type PlanningPreview } from "./planning-summary";
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /**
  * Memoized, because it is a button in front of a Radix dialog and the views it
@@ -109,13 +113,13 @@ function PlanSheet({
   const repository = useRepository();
   const run = usePlannerRun();
 
-  const stored = snapshot.preferences.dailyCapacityUnits;
-  const [capacity, setCapacity] = useState(stored ?? FALLBACK_CAPACITY_UNITS);
+  const stored = snapshot.preferences.dailyCapacityMinutes;
+  const [capacity, setCapacity] = useState(stored ?? DEFAULT_DAILY_CAPACITY_MINUTES);
 
   const [wasOpen, setWasOpen] = useState(open);
   if (wasOpen !== open) {
     setWasOpen(open);
-    setCapacity(stored ?? FALLBACK_CAPACITY_UNITS);
+    setCapacity(stored ?? DEFAULT_DAILY_CAPACITY_MINUTES);
   }
 
   // Closed sheets remain mounted so Radix can play their exit animation. Keep
@@ -128,7 +132,7 @@ function PlanSheet({
             courses,
             today,
             calendar: snapshot.preferences,
-            dailyCapacityUnits: capacity,
+            dailyCapacityMinutes: capacity,
           })
         : null,
     [capacity, courses, open, snapshot.preferences, today],
@@ -146,6 +150,11 @@ function PlanSheet({
     : retainedPreview;
   const result = visiblePreview?.preview.result;
   const visibleCapacity = visiblePreview?.capacity ?? capacity;
+  const unsizedTopicCount = result?.warnings.filter((warning) => warning.type === "unsized-topic").length ?? 0;
+  const planningWarnings = result?.warnings.filter((warning) => warning.type !== "unsized-topic") ?? [];
+  const studyDays = snapshot.preferences.studyDaysOfWeek
+    .map((day) => WEEKDAY_NAMES[day])
+    .filter(Boolean);
 
   const apply = () => {
     if (!visiblePreview) return;
@@ -158,7 +167,7 @@ function PlanSheet({
         visiblePreview.preview.result.blocks,
         {
           ...snapshot.preferences,
-          dailyCapacityUnits: visibleCapacity,
+          dailyCapacityMinutes: visibleCapacity,
         },
       ),
     );
@@ -174,22 +183,43 @@ function PlanSheet({
       footer={
         <>
           <Button onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="accent" onClick={apply} disabled={!result || result.blocks.length === 0}>
+          <Button variant="accent" onClick={apply} disabled={!result}>
             Apply plan
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
+        <section className="flex flex-col gap-1 rounded-control bg-fill p-3" aria-label="Active calendar constraints">
+          <h3 className="text-body font-semibold">Calendar constraints</h3>
+          <p className="text-callout text-secondary">
+            Study weekdays: {studyDays.length ? studyDays.join(", ") : "none"}
+          </p>
+          <p className="text-callout text-secondary">
+            Timezone: {snapshot.preferences.timezone ?? "not set"}
+          </p>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-callout text-secondary">Blackout dates</span>
+            {snapshot.preferences.blackoutDates.length ? (
+              <ul className="max-h-20 overflow-y-auto text-callout text-secondary">
+                {snapshot.preferences.blackoutDates.map((date) => <li key={date}>{date}</li>)}
+              </ul>
+            ) : (
+              <span className="text-callout text-secondary">None</span>
+            )}
+          </div>
+        </section>
+
         <div className="flex items-end gap-3">
           <div className="flex flex-col gap-1">
-            <span className="text-callout font-medium text-secondary">Units per study day</span>
+            <span className="text-callout font-medium text-secondary">Minutes per study day</span>
             <Stepper
-              label="Units per study day"
+              label="Minutes per study day"
               value={visibleCapacity}
               onValueChange={setCapacity}
-              step={5}
-              min={1}
+              step={15}
+              min={0}
+              max={1440}
             />
           </div>
           <p className="pb-1.5 text-callout text-tertiary">
@@ -197,6 +227,14 @@ function PlanSheet({
           </p>
         </div>
 
+        <section aria-label="Time estimates" className="flex flex-col gap-1 text-callout text-secondary">
+          <p>Workload uses estimated study time; material counts stay on each topic. Adjust estimates in the topic inspector.</p>
+          <ul className="max-h-32 overflow-y-auto">
+            {courses.flatMap(course => course.topics).filter(topic => topic.totalUnits > 0).map(topic => (
+              <li key={topic.id}>{topic.name}: {minutesPerUnit(topic)} min/{UNIT_LABELS[topic.unit].singular}{topic.minutesPerUnit === undefined ? " (starting estimate)" : ""}</li>
+            ))}
+          </ul>
+        </section>
         <dl className="flex flex-wrap gap-x-8 gap-y-2">
           <div>
             <dt className="text-caption tracking-wide text-tertiary uppercase">Blocks</dt>
@@ -210,7 +248,9 @@ function PlanSheet({
             <dt className="text-caption tracking-wide text-tertiary uppercase">Fits</dt>
             <dd>
               {!result || result.shortfalls.length === 0 ? (
-                <Badge tone="positive">Everything fits</Badge>
+                <Badge tone="positive">
+                  {unsizedTopicCount > 0 ? "Sized work fits" : "Everything fits"}
+                </Badge>
               ) : (
                 <Badge tone="negative">
                   {result.shortfalls.length} course{result.shortfalls.length === 1 ? "" : "s"} short
@@ -232,6 +272,24 @@ function PlanSheet({
               Applying it anyway is still better than not planning: it schedules everything that
               does fit, in deadline order, so what gets dropped is the work with the most time left.
             </p>
+          </div>
+        ) : null}
+
+        {result && (unsizedTopicCount > 0 || planningWarnings.length > 0) ? (
+          <div className="flex flex-col gap-1.5 rounded-control bg-warning/10 p-3">
+            <h3 className="text-body font-semibold">Planning notes</h3>
+            {unsizedTopicCount > 0 ? (
+              <p className="text-body">
+                {unsizedTopicCount} unsized topic{unsizedTopicCount === 1 ? " was" : "s were"} excluded from feasibility. Add sizes for a complete estimate.
+              </p>
+            ) : null}
+            {planningWarnings.length > 0 ? (
+              <ul className="flex flex-col gap-1 text-body">
+                {planningWarnings.map((warning) => (
+                  <li key={`${warning.type}:${warning.topicId}:${warning.message}`}>{warning.message}</li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ) : null}
       </div>

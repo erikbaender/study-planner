@@ -1,5 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { plannerError } from "@/domain/errors";
+import { HistorySheet } from "@/features/history/history-sheet";
+import { CalendarSettingsSheet } from "@/features/planning/calendar-settings-sheet";
+
 /**
  * The three-column split view.
  *
@@ -25,6 +30,7 @@
 import { Plus } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useId, useMemo, useRef, useState } from "react";
+import { useWorkspacePersistence } from "@/features/workspace/persistence";
 import { usePlannerAuth } from "@/auth/use-planner-auth";
 import { usePlannerErrors, usePlannerState, useRepository } from "@/data/use-repository";
 import {
@@ -114,17 +120,25 @@ const KEEPS_SELECTION = [
 ].join(", ");
 
 /** Read once per mount: the planner is day-granular, so a re-render mid-day is not worth it. */
-function useToday() {
-  return useState(() => toIsoDate(new Date()))[0];
+function useToday(timezone?: string) {
+  const [now] = useState(() => new Date());
+  if (!timezone) return toIsoDate(now);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
 }
 
 export function AppShell() {
+  const router = useRouter();
   const repository = useRepository();
   const state = usePlannerState();
   const snapshot = state.status === "ready" ? state.snapshot : EMPTY_SNAPSHOT;
   const { error, run, clear } = usePlannerErrors();
-  const { account, signOut } = usePlannerAuth();
-  const today = useToday();
+  const { account, signOut, status: authStatus } = usePlannerAuth();
+  const today = useToday(snapshot.preferences.timezone);
 
   const contentId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -134,10 +148,13 @@ export function AppShell() {
    * no UI while making the server and hydration renders disagree.
    */
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [calendarSettingsOpen, setCalendarSettingsOpen] = useState(false);
   const [sampleDataOpen, setSampleDataOpen] = useState(false);
   const [editPlanOpen, setEditPlanOpen] = useState(false);
   const [deletePlanOpen, setDeletePlanOpen] = useState(false);
 
+  useWorkspacePersistence({ accountEmail: account?.email, deploymentUrl: process.env.NEXT_PUBLIC_CONVEX_URL, ready: authStatus === "authenticated" && state.status === "ready", planIds: snapshot.plans.map(plan => plan.id) });
   const workspace = useWorkspace();
 
   const plan =
@@ -321,6 +338,9 @@ export function AppShell() {
           newCourse: () => workspace.setCreating("course"),
           loadSampleData: () => setSampleDataOpen(true),
           exportJson,
+          history: () => setHistoryOpen(true),
+          calendarSettings: () => setCalendarSettingsOpen(true),
+          connectedAgents: () => router.push("/connections"),
         },
       }),
     // `plan` and the snapshot are what the list is built from; the action
@@ -343,6 +363,9 @@ export function AppShell() {
         onOpenPalette={() => workspace.setPaletteOpen(true)}
         onNewPlan={() => workspace.setCreating("plan")}
         onNewCourse={() => workspace.setCreating("course")}
+        onConnectedAgents={() => router.push("/connections")}
+        onHistory={() => setHistoryOpen(true)}
+        onCalendarSettings={() => setCalendarSettingsOpen(true)}
         onLoadSampleData={() => setSampleDataOpen(true)}
         onExport={exportJson}
         onImport={importJson}
@@ -356,7 +379,7 @@ export function AppShell() {
           role="alert"
           className="flex items-center gap-3 border-b border-separator bg-negative/10 px-4 py-2 text-body"
         >
-          <span className="text-negative">{error.message}</span>
+          <span className="text-negative">{plannerError(error).message}</span>
           {state.status !== "error" ? (
             <Button size="sm" variant="plain" className="ml-auto" onClick={clear}>
               Dismiss
@@ -433,6 +456,7 @@ export function AppShell() {
                 view === "today" ? (
                   <TodayView
                     courses={filteredFocused}
+                    emptyPlan={plan?.courses.length === 0}
                     health={health}
                     studyLog={snapshot.studyLog}
                     snapshot={snapshot}
@@ -449,6 +473,7 @@ export function AppShell() {
                 ) : view === "timeline" ? (
                   <TimelineView
                     courses={filteredFocused}
+                    emptyPlan={plan?.courses.length === 0}
                     health={health}
                     today={today}
                     query={workspace.query}
@@ -459,6 +484,7 @@ export function AppShell() {
                 ) : (
                   <OutlineView
                     courses={filteredFocused}
+                    emptyPlan={plan?.courses.length === 0}
                     health={health}
                     today={today}
                     query={workspace.query}
@@ -530,6 +556,9 @@ export function AppShell() {
         onOpenChange={(open) => workspace.setCreating(open ? "plan" : null)}
         onCreate={(input) => run(repository.createPlan(input).then(workspace.setPlan))}
       />
+
+      {plan ? <HistorySheet key={plan.id} open={historyOpen} onOpenChange={setHistoryOpen} plan={plan} /> : null}
+      <CalendarSettingsSheet open={calendarSettingsOpen} onOpenChange={setCalendarSettingsOpen} preferences={snapshot.preferences} onSave={(preferences) => run(repository.savePreferences(preferences).then(() => setCalendarSettingsOpen(false)))} />
 
       <EditPlanSheet
         plan={plan}

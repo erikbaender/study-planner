@@ -8,6 +8,10 @@ describe("normalizeUnit", () => {
     expect(normalizeUnit("pp")).toBe("pages");
     expect(normalizeUnit("  Flashcards ")).toBe("cards");
     expect(normalizeUnit("lectures")).toBe("videos");
+    expect(normalizeUnit("Folien")).toBe("slides");
+    expect(normalizeUnit("Seiten")).toBe("pages");
+    expect(normalizeUnit("Karten")).toBe("cards");
+    expect(normalizeUnit("Stunden")).toBe("hours");
   });
 
   it("returns null for anything it does not know", () => {
@@ -87,15 +91,34 @@ describe("parseOutline", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("reports an unknown unit and falls back rather than dropping the topic", () => {
-    const result = parseOutline("Anatomy atlas — 30 chapters");
-    expect(result.topics[0]).toMatchObject({ name: "Anatomy atlas", totalUnits: 30, unit: "slides" });
+  it("reports an unknown unit and falls back to the selected default", () => {
+    const result = parseOutline("Anatomy atlas — 30 chapters", { defaultUnit: "cards" });
+    expect(result.topics[0]).toMatchObject({ name: "Anatomy atlas", totalUnits: 30, unit: "cards" });
     expect(result.issues).toEqual([
       {
         line: 1,
         text: "Anatomy atlas — 30 chapters",
-        message: 'Unknown unit "chapters" — using slides',
+        message: 'Unknown unit "chapters" — using default cards; correct this unit before adding',
       },
+    ]);
+  });
+
+  it("recognizes German units in explicit lines and inherits them afterward", () => {
+    const result = parseOutline([
+      "Anatomie — 12 Folien",
+      "Herzzyklus — 8 Seiten",
+      "Karten — 5 Karten",
+      "Vorlesungen — 3 Stunden",
+      "Nacharbeit — 2",
+    ].join("\n"));
+
+    expect(result.issues).toEqual([]);
+    expect(result.topics.map(({ unit }) => unit)).toEqual([
+      "slides",
+      "pages",
+      "cards",
+      "hours",
+      "hours",
     ]);
   });
 

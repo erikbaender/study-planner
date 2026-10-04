@@ -31,7 +31,7 @@ type RepositoryActions = {
    * grows its own `.catch`, and the ones that forget fail silently — which is
    * how the old code lost validation errors.
    */
-  run: (action: Promise<unknown>) => void;
+  run: (action: Promise<unknown>) => Promise<boolean>;
 };
 
 type RepositoryErrorState = {
@@ -67,12 +67,13 @@ export function RepositoryStoreProvider({
   const run = useCallback(
     (action: Promise<unknown>) => {
       setFailure(null);
-      void action.catch((cause: unknown) =>
+      return action.then(() => true, (cause: unknown) => {
         setFailure({
           repository,
           error: cause instanceof Error ? cause : new Error(String(cause)),
-        }),
-      );
+        });
+        return false;
+      });
     },
     [repository],
   );
@@ -121,7 +122,7 @@ export function useRepository(): PlannerRepository {
  * every row. Keep the error-aware hook for surfaces that render the error, but
  * let leaf controls obtain the stable runner without becoming subscribers.
  */
-export function usePlannerRun(): (action: Promise<unknown>) => void {
+export function usePlannerRun(): (action: Promise<unknown>) => Promise<boolean> {
   return usePlannerContext().run;
 }
 
