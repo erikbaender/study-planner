@@ -1,13 +1,12 @@
 "use client";
 
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient, useQuery } from "convex/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { ConvexPlannerAuthProvider } from "@/auth/convex-planner-auth";
 import { AccountSessionsProvider, AddAccountFlow, useAccountSessions } from "@/auth/account-sessions";
 import { usePlannerAuth } from "@/auth/use-planner-auth";
-import { shouldHandleApplicationCode } from "@/auth/oauth-callback";
+import { ApplicationConvexAuthProvider } from "@/auth/application-convex-auth-provider";
 import { ConvexRepositoryProvider } from "@/data/convex-repository-provider";
 import { Button, Spinner, TextField } from "@/ui";
 import { api } from "../../convex/_generated/api";
@@ -36,20 +35,14 @@ export function ConfiguredConvexClientProvider({
 function MainConvexAuthProvider({ client, url, children }: { client: ConvexReactClient; url: string; children: ReactNode }) {
   const { activeSessionId, activeStorage } = useAccountSessions();
   return (
-    <ConvexAuthProvider
+    <ApplicationConvexAuthProvider
       key={activeSessionId}
       client={client}
       storage={activeStorage}
-      storageNamespace={url}
-      shouldHandleCode={() => shouldHandleApplicationCode(activeStorage, url)}
-      replaceURL={(relativeUrl) => {
-        const destination = new URL(relativeUrl, window.location.origin);
-        destination.searchParams.delete("authCallback");
-        window.history.replaceState({}, "", destination.pathname + destination.search + destination.hash);
-      }}
+      namespace={url}
     >
       {children}
-    </ConvexAuthProvider>
+    </ApplicationConvexAuthProvider>
   );
 }
 

@@ -1,8 +1,11 @@
-import { ConvexAuthProvider, useAuthActions, useAuthToken } from "@convex-dev/auth/react";
+import { useAuthActions, useAuthToken } from "@convex-dev/auth/react";
+import { StrictMode } from "react";
 import type { ConvexReactClient } from "convex/react";
+import { getFunctionName } from "convex/server";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAccountTokenStorage } from "@/auth/account-sessions";
+import { ApplicationConvexAuthProvider } from "@/auth/application-convex-auth-provider";
 import { githubMigrationRedirect, shouldHandleApplicationCode } from "@/auth/oauth-callback";
 
 const deployment = "https://test.convex.cloud";
@@ -76,10 +79,12 @@ describe("account auth storage", () => {
 
 function SessionProbe() {
   const token = useAuthToken();
-  const { signIn } = useAuthActions();
+  const { signIn, signOut } = useAuthActions();
   return <>
     {token ? <p>Existing plan</p> : <p>Signed out</p>}
+    <output aria-label="Session token">{token}</output>
     <button onClick={() => void signIn("github", { code: "invalid" }).catch(() => {})}>Reject code</button>
+    <button onClick={() => void signOut()}>Sign out</button>
   </>;
 }
 
@@ -106,8 +111,9 @@ describe("application OAuth callbacks", () => {
     const action = vi.fn().mockRejectedValue(new Error("Invalid code"));
     // Exercise the real auth library without opening a backend subscription.
     const client = { action, setAuth: vi.fn(), clearAuth: vi.fn() } as unknown as ConvexReactClient;
-    render(<ConvexAuthProvider client={client} storage={storage} storageNamespace={deployment}
-      shouldHandleCode={() => shouldHandleApplicationCode(storage, deployment)}><SessionProbe /></ConvexAuthProvider>);
+    render(<ApplicationConvexAuthProvider client={client} storage={storage} namespace={deployment}>
+      <SessionProbe />
+    </ApplicationConvexAuthProvider>);
 
     expect(await screen.findByText("Existing plan")).toBeInTheDocument();
     expect(action).not.toHaveBeenCalled();
@@ -121,22 +127,77 @@ describe("application OAuth callbacks", () => {
     expect(screen.getByText("Existing plan")).toBeInTheDocument();
   });
 
-  it("exchanges a marked GitHub return using the account's verifier", async () => {
+  it.each([false, true])("exchanges a marked GitHub return using the account's verifier (existing session: %s)", async (existingSession) => {
     window.history.replaceState({}, "", "/?authCallback=github&code=github-code");
     const storage = createAccountTokenStorage("ada", deployment);
+    if (existingSession) {
+      storage.setItem(jwt, "old-jwt");
+      storage.setItem(refresh, "old-refresh");
+    }
     storage.setItem(verifier, "github-verifier");
     const action = vi.fn().mockResolvedValue({ tokens: { token: "github-jwt", refreshToken: "github-refresh" } });
     const client = { action, setAuth: vi.fn(), clearAuth: vi.fn() } as unknown as ConvexReactClient;
-    render(<ConvexAuthProvider client={client} storage={storage} storageNamespace={deployment}
-      shouldHandleCode={() => shouldHandleApplicationCode(storage, deployment)}><SessionProbe /></ConvexAuthProvider>);
+    render(<StrictMode><ApplicationConvexAuthProvider client={client} storage={storage} namespace={deployment}>
+      <SessionProbe />
+    </ApplicationConvexAuthProvider></StrictMode>);
 
     expect(await screen.findByText("Existing plan")).toBeInTheDocument();
-    expect(action).toHaveBeenCalledWith("auth:signIn", {
-      provider: undefined, params: { code: "github-code" }, verifier: "github-verifier",
+    expect(getFunctionName(action.mock.calls[0][0])).toBe("auth:signIn");
+    expect(action.mock.calls[0][1]).toEqual({
+      params: { code: "github-code" }, verifier: "github-verifier",
     });
-    expect(storage.getItem(jwt)).toBe("github-jwt");
+    expect(action).toHaveBeenCalledOnce();
+    await waitFor(() => expect(storage.getItem(jwt)).toBe("github-jwt"));
+    await waitFor(() => expect(screen.getByLabelText("Session token")).toHaveTextContent("github-jwt"));
     expect(storage.getItem(refresh)).toBe("github-refresh");
     expect(storage.getItem(verifier)).toBeNull();
     expect(window.location.search).not.toContain("code=");
+    expect(window.location.search).not.toContain("authCallback=");
+  });
+
+  it.each(["null tokens", "exception"])("keeps the active session after a marked callback fails with %s", async (failure) => {
+    window.history.replaceState({}, "", "/?authCallback=github&code=invalid-github-code&state=consent#return");
+    const storage = createAccountTokenStorage("ada", deployment);
+    storage.setItem(jwt, "active-jwt");
+    storage.setItem(refresh, "active-refresh");
+    storage.setItem(verifier, "pending-verifier");
+    const action = failure === "null tokens"
+      ? vi.fn().mockResolvedValue({ tokens: null })
+      : vi.fn().mockRejectedValue(new Error("Invalid code"));
+    const client = { action, setAuth: vi.fn(), clearAuth: vi.fn() } as unknown as ConvexReactClient;
+    render(<StrictMode><ApplicationConvexAuthProvider client={client} storage={storage} namespace={deployment}>
+      <SessionProbe />
+    </ApplicationConvexAuthProvider></StrictMode>);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("GitHub migration failed");
+    expect(await screen.findByText("Existing plan")).toBeInTheDocument();
+    expect(action).toHaveBeenCalledOnce();
+    expect(storage.getItem(jwt)).toBe("active-jwt");
+    expect(storage.getItem(refresh)).toBe("active-refresh");
+    expect(storage.getItem(verifier)).toBeNull();
+    expect(window.location.search).toBe("?state=consent");
+    expect(window.location.hash).toBe("#return");
+
+    // Callback rejection must not interfere with an intentional sign-out.
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByText("Signed out")).toBeInTheDocument();
+    expect(storage.getItem(jwt)).toBeNull();
+    expect(storage.getItem(refresh)).toBeNull();
+  });
+
+  it("shows a failed signed-out migration without leaving authentication loading", async () => {
+    window.history.replaceState({}, "", "/?authCallback=github&code=invalid-github-code");
+    const storage = createAccountTokenStorage("ada", deployment);
+    storage.setItem(verifier, "pending-verifier");
+    const action = vi.fn().mockResolvedValue({ tokens: null });
+    const client = { action, setAuth: vi.fn(), clearAuth: vi.fn() } as unknown as ConvexReactClient;
+    render(<ApplicationConvexAuthProvider client={client} storage={storage} namespace={deployment}>
+      <SessionProbe />
+    </ApplicationConvexAuthProvider>);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("GitHub migration failed");
+    expect(screen.getByText("Signed out")).toBeInTheDocument();
+    expect(storage.getItem(jwt)).toBeNull();
+    expect(storage.getItem(refresh)).toBeNull();
   });
 });
