@@ -11,6 +11,7 @@ import {
 } from "./use-planner-auth";
 import { DEFAULT_AUTH_PROVIDER } from "./providers";
 import { useAccountSessions } from "./account-sessions";
+import { githubMigrationRedirect } from "./oauth-callback";
 
 /** Adapts Convex Auth to the provider-neutral contract used by app features. */
 export function ConvexPlannerAuthProvider({ children }: { children: ReactNode }) {
@@ -43,10 +44,13 @@ export function ConvexPlannerAuthProvider({ children }: { children: ReactNode })
     () => ({
       status,
       account: account ?? null,
-      signIn: (provider = DEFAULT_AUTH_PROVIDER, options = {}) => signIn(provider, {
-        ...options,
-        redirectTo: options.redirectTo ?? window.location.pathname + window.location.search,
-      }),
+      signIn: (provider = DEFAULT_AUTH_PROVIDER, options = {}) => {
+        const redirectTo = options.redirectTo ?? window.location.pathname + window.location.search;
+        return signIn(provider, {
+          ...options,
+          redirectTo: provider === "github" ? githubMigrationRedirect(redirectTo) : redirectTo,
+        });
+      },
       signOut: signOutCurrent,
       accounts,
       switchAccount,

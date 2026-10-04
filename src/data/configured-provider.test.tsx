@@ -54,6 +54,9 @@ function AuthProbe() {
       <button type="button" onClick={() => void auth.signOut()}>
         Sign out probe
       </button>
+      <button type="button" onClick={() => void auth.signIn("github", { redirectTo: "/oauth/authorize?state=consent" })}>
+        Migrate probe
+      </button>
     </>
   );
 }
@@ -150,5 +153,15 @@ describe("ConfiguredConvexClientProvider", () => {
     );
     expect(screen.getByRole("button", { name: "Send sign-in code" })).toBeInTheDocument();
     expect(screen.queryByTestId("configured-repository-provider")).not.toBeInTheDocument();
+  });
+
+  it("marks the GitHub migration callback without losing its consent destination", async () => {
+    mocks.auth.isAuthenticated = true;
+    mocks.currentAccount = { name: "Ada Lovelace", email: "ada@example.com", image: null };
+    renderProvider();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Migrate probe" }));
+    expect(mocks.signIn).toHaveBeenCalledWith("github", {
+      redirectTo: "/oauth/authorize?state=consent&authCallback=github",
+    });
   });
 });
