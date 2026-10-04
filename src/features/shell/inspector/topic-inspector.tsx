@@ -209,6 +209,7 @@ export function TopicInspector({
           <div className="flex min-w-0 items-center gap-2">
             <Stepper
               label={`Total ${unitLabel} in ${topic.name}`}
+              commitOnBlur
               min={0}
               value={topic.totalUnits}
               onValueChange={(totalUnits) => patch({ totalUnits })}
@@ -246,6 +247,7 @@ export function TopicInspector({
       {session ? <StudySessionSheet key={session} topic={topic} today={today} entry={logs.find(entry => entry.id === session)} onClose={() => setSession(null)} /> : null}
       <Section title="Time estimate">
         <Stepper label={`Minutes per ${UNIT_LABELS[topic.unit].singular} in ${topic.name}`}
+          commitOnBlur
           value={minutesPerUnit(topic)} min={0.01} max={10080} step={0.5}
           onValueChange={(minutesPerUnit) => patch({ minutesPerUnit })} />
         <p className="text-callout text-tertiary">{topic.minutesPerUnit === undefined ? "Starting estimate. " : "Your estimate. "}Estimated remaining time: {Math.ceil(Math.max(0, topic.totalUnits - topic.completedUnits) * minutesPerUnit(topic))} minutes. Reflow applies changes to the schedule.</p>
@@ -450,6 +452,7 @@ function StudyBlockRow({
               <span className="text-callout text-secondary">Planned {UNIT_LABELS[topic.unit].plural}</span>
               <Stepper
                 label={`Planned ${UNIT_LABELS[topic.unit].plural} for ${topic.name} on ${block.startDate}`}
+                commitOnBlur
                 value={block.plannedUnits ?? 0}
                 min={0}
                 step={1}

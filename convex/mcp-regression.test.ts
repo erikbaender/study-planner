@@ -265,6 +265,39 @@ it("round-trips topic throughput through MCP, schedules in minutes, and undoes a
   expect(undone.plan.courses[0].topics[0].minutesPerUnit).toBeUndefined();
 });
 
+it.each([
+  { dailyCapacityUnits: 60 },
+  { dailyCapacityMinutes: 90 },
+  {},
+])("undo restores absent optional preferences from an existing document: %j", async (capacity) => {
+  const { t, identity, created } = await setup();
+  const original = { ...capacity, studyDaysOfWeek: [1, 3, 5], blackoutDates: ["2026-09-09"], theme: "dark" as const, accentColor: "violet" };
+  const preferenceId = await t.run(async ctx => {
+    const plan = await ctx.db.get(created.planId);
+    const existing = await ctx.db.query("preferences").withIndex("by_owner", q => q.eq("ownerId", plan!.ownerId)).unique();
+    if (existing) await ctx.db.delete(existing._id);
+    return ctx.db.insert("preferences", { ownerId: plan!.ownerId, ...original, revision: 1, updatedAt: Date.now() });
+  });
+  const before = await t.query(api.mcpPlanner.getPlan, { ...identity, planId: created.planId });
+  const applied = await t.mutation(api.mcpPlanner.applyChanges, {
+    ...identity, planId: created.planId, expectedRevision: 1, idempotencyKey: "introduce-optional-preferences",
+    commands: [{ type: "preferences.update", patch: { dailyCapacityUnits: 30, dailyCapacityMinutes: 120, timezone: "Europe/Berlin" } }, { type: "schedule.regenerate", today: "2026-09-07" }],
+  });
+  // Exercise the persisted inverse, where absent properties cannot survive as undefined.
+  await t.run(async ctx => {
+    const undo = await ctx.db.query("plannerUndo").withIndex("by_audit", q => q.eq("auditId", applied.auditId)).unique();
+    await ctx.db.patch(undo!._id, { inverseCommands: JSON.parse(JSON.stringify(undo!.inverseCommands)) });
+  });
+  await t.mutation(api.mcpPlanner.undo, { ...identity, planId: created.planId, auditId: applied.auditId, expectedRevision: applied.revision, idempotencyKey: "undo-optional-preferences" });
+  const after = await t.query(api.mcpPlanner.getPlan, { ...identity, planId: created.planId });
+  expect(after.preferences).toEqual(before.preferences);
+  expect(after.plan.courses[0].topics[0].blocks).toEqual(before.plan.courses[0].topics[0].blocks);
+  const stored = await t.run(ctx => ctx.db.get(preferenceId));
+  expect(stored).not.toHaveProperty("timezone");
+  if (!("dailyCapacityUnits" in capacity)) expect(stored).not.toHaveProperty("dailyCapacityUnits");
+  if (!("dailyCapacityMinutes" in capacity)) expect(stored).not.toHaveProperty("dailyCapacityMinutes");
+});
+
 it("expires browser undo display, validates timezones, and preserves bulk throughput", async () => {
   const { t, owner, created } = await setup();
   const prefs = { studyDaysOfWeek: [1], blackoutDates: [], theme: "dark" as const, accentColor: "violet", dailyCapacityMinutes: 120 };

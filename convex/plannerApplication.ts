@@ -890,7 +890,16 @@ async function executeInverseCommands(ctx: MutationCtx, ownerId: Id<"users">, pl
         const existing = await ctx.db.query("preferences").withIndex("by_owner", (q) => q.eq("ownerId", ownerId)).unique();
         if (command.value === null) {
           if (existing) await ctx.db.delete(existing._id);
-        } else if (existing) await ctx.db.patch(existing._id, { ...command.value, revision: (existing.revision ?? 0) + 1, updatedAt: Date.now() });
+        } else if (existing) await ctx.db.patch(existing._id, {
+          ...command.value,
+          // Stored inverses omit undefined fields. Explicitly remove optional
+          // preferences introduced by the transaction being undone.
+          dailyCapacityUnits: command.value.dailyCapacityUnits,
+          dailyCapacityMinutes: command.value.dailyCapacityMinutes,
+          timezone: command.value.timezone,
+          revision: (existing.revision ?? 0) + 1,
+          updatedAt: Date.now(),
+        });
         else await ctx.db.insert("preferences", { ownerId, ...command.value, revision: 1, updatedAt: Date.now() });
         break;
       }

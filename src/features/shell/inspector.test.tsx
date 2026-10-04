@@ -359,6 +359,27 @@ describe("Inspector", () => {
       });
     });
 
+    it("moves a single-day manual booking by its start without first resizing its end", () => {
+      const block = { id: "single_day", topicId: topic.id, startDate: "2026-05-04", endDate: "2026-05-04", source: "manual" as const, plannedUnits: 12 };
+      const scheduledTopic = makeTopic({ ...topic, blocks: [block] });
+      const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
+      render(<Inspector {...inspectorNavigation} selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }} today={TODAY} onDelete={vi.fn()} />);
+      fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-05-10" } });
+      expect(repository.updateStudyBlock).toHaveBeenCalledExactlyOnceWith("single_day", { startDate: "2026-05-10", endDate: "2026-05-10", plannedUnits: 12 });
+    });
+
+    it("saves a typed time estimate once after the field is left", async () => {
+      const user = userEvent.setup();
+      renderTopic();
+      const field = screen.getByRole("spinbutton", { name: "Minutes per slide in Glycolysis" });
+      await user.clear(field);
+      await user.type(field, "2.5");
+      expect(repository.updateTopic).not.toHaveBeenCalled();
+      await user.tab();
+      expect(repository.updateTopic).toHaveBeenCalledOnce();
+      expect(repository.updateTopic).toHaveBeenCalledWith(topic.id, expect.objectContaining({ minutesPerUnit: 2.5, completedUnits: 40 }));
+    });
+
     it("saves planned workload on a manual block without changing its dates", async () => {
       const block = {
         id: "manual_workload",

@@ -29,13 +29,17 @@ The remaining implementation gaps were #70, #77 and #78. The PR now includes all
 
 The full review caught and fixed missing throughput persistence in bulk topic creation, missing server-side timezone validation, undo eligibility becoming stale as retention expires, and duplicate React keys for multiple capacity warnings on one topic. Session component and backend regressions were added for consequential behavior. The initially suspected workspace-selection race was not reproduced: the stored semester/view survived reload after initialization completed.
 
+## Independent live retest follow-up
+
+The subsequent [automotive-student SDK/HTTP and browser audit](./pr-87-live-retest.md) found two blockers missed by the initial acceptance review: undo retained newly introduced optional account preferences, and typed numeric edits could save twice and display a false conflict. Both are fixed, covered by eight additional regression cases, and verified against their real MCP/browser reproductions. The initially suspected block-date limitation was disproved after waiting for the asynchronous save; its existing move behavior now has regression coverage.
+
 ## Validation and merge assessment
 
-- `pnpm check`: ESLint, TypeScript and **539 tests across 56 files passed**.
+- `pnpm check`: ESLint, TypeScript and **547 tests across 56 files passed**.
 - `pnpm build`: passed.
 - `pnpm exec convex dev --once`: development backend synced successfully.
 - Review included scheduling/metrics, browser/MCP mutation parity, authorization and revision guards, undo payload handling, input/output validation, imports, workspace persistence and the changed UI controls.
-- Desktop browser checks used the authenticated non-production deployment through T3 preview at 1280 × 800. Session entry stored material progress, actual minutes and note; correction changed the study date to the previous day while retaining completion. This review does not claim an exhaustive repeat of every original live HTTP/browser scenario; the table distinguishes automated evidence from browser evidence.
+- Desktop browser checks used the authenticated non-production deployment through T3 preview at 1280 × 800. Session entry stored material progress, actual minutes and note; correction changed the study date to the previous day while retaining completion. The follow-up report records the broader automotive-student SDK/HTTP and browser scenario and both fixed reproductions; the table above retains the initial acceptance evidence.
 
 No unresolved blocker was found in the 16 issue acceptance criteria. The PR is ready to merge once the final commit's CI and deployment checks pass. Production Convex deployment remains the existing main-branch CI step; the PR workflow skips that step as configured.
 

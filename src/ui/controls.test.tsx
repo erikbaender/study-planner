@@ -184,6 +184,43 @@ function StepperHarness({ initial = 0, ...props }: { initial?: number } & Record
 }
 
 describe("Stepper", () => {
+  it("commits typed persistent edits once on blur even before props acknowledge the save", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Stepper label="Minutes per card" value={1.5} onValueChange={onValueChange} commitOnBlur min={0.01} />);
+    const field = screen.getByRole("spinbutton", { name: "Minutes per card" });
+    await user.clear(field);
+    await user.type(field, "2.25");
+    expect(field).toHaveValue(2.25);
+    expect(onValueChange).not.toHaveBeenCalled();
+    await user.tab();
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith(2.25);
+  });
+
+  it("does not persist an unchanged value and cancels a typed edit on Escape", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Stepper label="Minutes" value={120} onValueChange={onValueChange} commitOnBlur />);
+    const field = screen.getByRole("spinbutton", { name: "Minutes" });
+    await user.click(field);
+    await user.tab();
+    await user.clear(field);
+    await user.type(field, "90{Escape}");
+    expect(field).toHaveValue(120);
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it("commits a typed value and arrow adjustment in a single save", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Stepper label="Minutes" value={1.5} onValueChange={onValueChange} commitOnBlur step={0.5} />);
+    const field = screen.getByRole("spinbutton", { name: "Minutes" });
+    await user.clear(field);
+    await user.type(field, "3");
+    await user.click(screen.getByRole("button", { name: "Increase Minutes" }));
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith(3.5);
+  });
+
   it("nudges by the step size, not by one", async () => {
     const user = userEvent.setup();
     render(<StepperHarness step={5} />);
