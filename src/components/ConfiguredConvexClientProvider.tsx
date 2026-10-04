@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import { ConvexPlannerAuthProvider } from "@/auth/convex-planner-auth";
 import { AccountSessionsProvider, AddAccountFlow, useAccountSessions } from "@/auth/account-sessions";
 import { usePlannerAuth } from "@/auth/use-planner-auth";
+import { shouldHandleApplicationCode } from "@/auth/oauth-callback";
 import { ConvexRepositoryProvider } from "@/data/convex-repository-provider";
 import { Button, Spinner, TextField } from "@/ui";
 import { api } from "../../convex/_generated/api";
@@ -35,7 +36,18 @@ export function ConfiguredConvexClientProvider({
 function MainConvexAuthProvider({ client, url, children }: { client: ConvexReactClient; url: string; children: ReactNode }) {
   const { activeSessionId, activeStorage } = useAccountSessions();
   return (
-    <ConvexAuthProvider key={activeSessionId} client={client} storage={activeStorage} storageNamespace={url}>
+    <ConvexAuthProvider
+      key={activeSessionId}
+      client={client}
+      storage={activeStorage}
+      storageNamespace={url}
+      shouldHandleCode={() => shouldHandleApplicationCode(activeStorage, url)}
+      replaceURL={(relativeUrl) => {
+        const destination = new URL(relativeUrl, window.location.origin);
+        destination.searchParams.delete("authCallback");
+        window.history.replaceState({}, "", destination.pathname + destination.search + destination.hash);
+      }}
+    >
       {children}
     </ConvexAuthProvider>
   );

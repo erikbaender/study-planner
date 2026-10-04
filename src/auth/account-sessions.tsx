@@ -55,12 +55,15 @@ function readMetadata(url: string): { activeId: string; accounts: PlannerAccount
 }
 
 function removeTokenPair(sessionId: string, url: string) {
+  removeToken(sessionId, "jwt", url);
+  removeToken(sessionId, "refresh", url);
+}
+
+function removeToken(sessionId: string, kind: "jwt" | "refresh", url: string) {
   try {
-    window.localStorage.removeItem(tokenStorageKey(sessionId, "jwt", url));
-    window.localStorage.removeItem(tokenStorageKey(sessionId, "refresh", url));
+    window.localStorage.removeItem(tokenStorageKey(sessionId, kind, url));
     if (sessionId === LEGACY_SESSION_ID) {
-      window.localStorage.removeItem(legacyStorageKey("__convexAuthJWT", url));
-      window.localStorage.removeItem(legacyStorageKey("__convexAuthRefreshToken", url));
+      window.localStorage.removeItem(legacyStorageKey(kind === "jwt" ? "__convexAuthJWT" : "__convexAuthRefreshToken", url));
     }
   } catch {
     // Ignore storage cleanup failures; Convex Auth has already signed out.
@@ -104,13 +107,36 @@ function writeToken(sessionId: string, kind: "jwt" | "refresh", value: string, u
   }
 }
 
-/** Adapts Convex Auth's two token keys to one account's stored session. */
+function tokenKind(key: string): "jwt" | "refresh" | null {
+  // Convex Auth appends an underscore and its escaped storage namespace.
+  if (key === "__convexAuthJWT" || key.startsWith("__convexAuthJWT_")) return "jwt";
+  if (key === "__convexAuthRefreshToken" || key.startsWith("__convexAuthRefreshToken_")) return "refresh";
+  return null;
+}
+
+/** Keeps token compatibility while isolating every temporary/metadata key. */
 export function createAccountTokenStorage(sessionId: string, url: string) {
+  const storageKey = (key: string) =>
+    `${ACCOUNT_TOKEN_PREFIX}:${url.replace(/[^a-zA-Z0-9]/g, "")}:${sessionId}:key:${encodeURIComponent(key)}`;
   return {
-    getItem: (key: string) => readToken(sessionId, key.includes("RefreshToken") ? "refresh" : "jwt", url),
-    setItem: (key: string, value: string) =>
-      writeToken(sessionId, key.includes("RefreshToken") ? "refresh" : "jwt", value, url),
-    removeItem: () => removeTokenPair(sessionId, url),
+    getItem: (key: string) => {
+      const kind = tokenKind(key);
+      if (kind) return readToken(sessionId, kind, url);
+      try { return window.localStorage.getItem(storageKey(key)); }
+      catch { return null; }
+    },
+    setItem: (key: string, value: string) => {
+      const kind = tokenKind(key);
+      if (kind) return writeToken(sessionId, kind, value, url);
+      try { window.localStorage.setItem(storageKey(key), value); }
+      catch { /* Match the token storage's tolerance for unavailable browser storage. */ }
+    },
+    removeItem: (key: string) => {
+      const kind = tokenKind(key);
+      if (kind) return removeToken(sessionId, kind, url);
+      try { window.localStorage.removeItem(storageKey(key)); }
+      catch { /* Ignore temporary-state cleanup failures. */ }
+    },
   };
 }
 
@@ -222,6 +248,7 @@ export function AddAccountFlow({ url }: { url: string }) {
       client={client}
       storage={createAccountTokenStorage(PENDING_SESSION_ID, url)}
       storageNamespace="study-planner-add-account"
+      shouldHandleCode={false}
     >
       <AddAccountSignIn onCancel={closeAddAccount} />
     </ConvexAuthProvider>
