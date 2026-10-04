@@ -17,6 +17,7 @@ import {
   PLANNER_LIMITS,
 } from "./plannerGuards";
 import { schedule } from "../src/domain/scheduling";
+import { DEFAULT_PREFERENCES } from "../src/domain/types";
 import type { Course, Preferences, Topic } from "../src/domain/types";
 
 const unitValidator = v.union(
@@ -62,10 +63,10 @@ const topicInputValidator = v.object({
 });
 const preferencesValidator = v.object({
   dailyCapacityUnits: v.optional(v.number()),
-  studyDaysOfWeek: v.array(v.number()),
-  blackoutDates: v.array(v.string()),
-  theme: themeValidator,
-  accentColor: v.string(),
+  studyDaysOfWeek: v.optional(v.array(v.number())),
+  blackoutDates: v.optional(v.array(v.string())),
+  theme: v.optional(themeValidator),
+  accentColor: v.optional(v.string()),
   timezone: v.optional(v.string()),
 });
 
@@ -289,7 +290,7 @@ function validateCommandShape(command: PlannerCommand) {
       if (command.courseIds) assertDistinctBoundedArray(command.courseIds, "Course ids", 50);
       break;
     case "preferences.update":
-      assertPreferences(command.patch);
+      assertPreferences({ ...DEFAULT_PREFERENCES, ...command.patch });
       if (command.patch.timezone !== undefined) {
         try {
           new Intl.DateTimeFormat("en", { timeZone: command.patch.timezone });
@@ -440,6 +441,7 @@ async function loadCommandPlan(ctx: CommandContext, ownerId: Id<"users">, planId
   const preferences: Preferences = row
     ? {
         dailyCapacityUnits: row.dailyCapacityUnits,
+        timezone: row.timezone,
         studyDaysOfWeek: row.studyDaysOfWeek.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6) as Preferences["studyDaysOfWeek"],
         blackoutDates: row.blackoutDates,
         theme: row.theme,
@@ -670,6 +672,9 @@ async function evaluateCommands(
         const totalUnits = command.patch.totalUnits ?? before.totalUnits;
         const completedUnits = command.patch.completedUnits ?? before.completedUnits;
         assertProgress(completedUnits, totalUnits);
+        if ((command.patch.status ?? before.status) === "done" && totalUnits > 0 && completedUnits < totalUnits) {
+          throw new Error("A sized topic marked done must have completedUnits equal to totalUnits. Set both fields together, or change status to active/planned.");
+        }
         await ctx.db.patch(id, { ...command.patch, updatedAt: now });
         inverseCommands.unshift({
           type: "topic.update",
@@ -763,6 +768,7 @@ async function evaluateCommands(
       case "schedule.regenerate": {
         const regenerated = await regenerateSchedule(ctx, args.ownerId, args.planId, command.today, command.courseIds?.map(id => resolveId(ctx, refs, "courses", id)));
         generatedBlocks = regenerated.result.blocks;
+        warnings.push(...regenerated.result.warnings.map(warning => warning.message));
         regenerated.topicIds.forEach((id) => affected.add(id));
         warnings.push(...regenerated.result.shortfalls.map((shortfall) => `${shortfall.courseName}: ${shortfall.unscheduledUnits} units could not be scheduled before ${shortfall.deadline}`));
         inverseCommands.unshift({ type: "schedule.restore", topicIds: regenerated.topicIds, blocks: regenerated.oldAuto });
@@ -771,8 +777,10 @@ async function evaluateCommands(
       }
       case "preferences.update": {
         const before = (await ctx.db.list("preferences", "ownerId", args.ownerId, 2))[0] ?? null;
+        const merged = { ...DEFAULT_PREFERENCES, ...(before ?? {}), ...command.patch };
+        assertPreferences(merged);
         if (before) await ctx.db.patch(before._id, { ...command.patch, revision: (before.revision ?? 0) + 1, updatedAt: now });
-        else await ctx.db.insert("preferences", { ownerId: args.ownerId, ...command.patch, revision: 1, updatedAt: now });
+        else await ctx.db.insert("preferences", { ownerId: args.ownerId, ...DEFAULT_PREFERENCES, ...command.patch, revision: 1, updatedAt: now });
         inverseCommands.unshift({ type: "preferences.restore", value: before ? { dailyCapacityUnits: before.dailyCapacityUnits, studyDaysOfWeek: before.studyDaysOfWeek, blackoutDates: before.blackoutDates, theme: before.theme, accentColor: before.accentColor, timezone: before.timezone } : null });
         summaries.push("Updated scheduling preferences");
         break;

@@ -75,6 +75,8 @@ type ProgressResult = {
   logId: Id<"studyLog">;
   topicId: Id<"topics">;
   completedUnits: number;
+  appliedUnits: number;
+  requestedUnits: number;
   status: "planned" | "active" | "done";
 };
 type UndoResult = Pick<CommandMutationResult, "revision" | "auditId" | "summary">;
@@ -203,6 +205,7 @@ export const getPlan = query({
       })),
     }),
     preferences: v.object({
+      timezone: v.optional(v.string()),
       dailyCapacityUnits: v.optional(v.number()),
       studyDaysOfWeek: v.array(v.number()),
       blackoutDates: v.array(v.string()),
@@ -428,6 +431,8 @@ export const recordProgress = mutation({
     logId: v.id("studyLog"),
     topicId: v.id("topics"),
     completedUnits: v.number(),
+    appliedUnits: v.optional(v.number()),
+    requestedUnits: v.optional(v.number()),
     status: topicStatusValidator,
   }),
   handler: async (ctx, args) => {
@@ -446,6 +451,7 @@ export const recordProgress = mutation({
     if (args.note !== undefined) assertBoundedText(args.note, "Study note", PLANNER_LIMITS.logNoteCharacters);
     const completedUnits = Math.max(0, topic.totalUnits > 0 ? Math.min(topic.totalUnits, topic.completedUnits + args.units) : topic.completedUnits + args.units);
     assertProgress(completedUnits, topic.totalUnits);
+    const appliedUnits = completedUnits - topic.completedUnits;
     const status: ProgressResult["status"] = completedUnits === 0
       ? "planned"
       : topic.totalUnits > 0 && completedUnits >= topic.totalUnits
@@ -457,14 +463,14 @@ export const recordProgress = mutation({
       ownerId: principal.ownerId,
       topicId: topic._id,
       date: args.date,
-      units: args.units,
+      units: appliedUnits,
       minutes: args.minutes,
       note: args.note,
       createdAt: now,
     });
     const revision = baseRevision + 1;
     await ctx.db.patch(args.planId, { revision, updatedAt: now });
-    const summary = `Recorded ${args.units} units of progress for ${topic.name}`;
+    const summary = `Recorded ${appliedUnits} units of progress for ${topic.name}${appliedUnits !== args.units ? ` (requested ${args.units}; bounded by current completion and topic size)` : ""}`;
     const auditId = await commitAudit(ctx, {
       ownerId: principal.ownerId,
       planId: args.planId,
@@ -476,7 +482,7 @@ export const recordProgress = mutation({
       affectedEntityIds: [topic._id, logId],
       inverseCommands: [{ type: "progress.restore", topicId: topic._id, logId, completedUnits: topic.completedUnits, status: topic.status }],
     });
-    const result = { revision, auditId, logId, topicId: topic._id, completedUnits, status, summary };
+    const result = { revision, auditId, logId, topicId: topic._id, completedUnits, appliedUnits, requestedUnits: args.units, status, summary };
     await storeIdempotentResult(ctx, principal.grantId, args.idempotencyKey, "planner.record_progress", result);
     return result;
   },

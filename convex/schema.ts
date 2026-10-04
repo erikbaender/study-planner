@@ -154,6 +154,8 @@ const idempotentResult = v.union(
   }),
   v.object({
     ...baseMutationResult,
+    appliedUnits: v.optional(v.number()),
+    requestedUnits: v.optional(v.number()),
     logId: v.id("studyLog"),
     topicId: v.id("topics"),
     completedUnits: v.number(),

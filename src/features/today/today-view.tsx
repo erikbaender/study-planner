@@ -123,6 +123,7 @@ const continueKey = (row: ContinueRow) => row.topic.id;
 
 export function TodayView({
   courses,
+  emptyPlan = false,
   health,
   studyLog,
   snapshot,
@@ -133,6 +134,7 @@ export function TodayView({
   onDeleteTopic,
 }: {
   courses: readonly Course[];
+  emptyPlan?: boolean;
   health: Map<string, CourseHealth>;
   studyLog: readonly StudyLogEntry[];
   snapshot: PlannerSnapshot;
@@ -173,7 +175,7 @@ export function TodayView({
     () =>
       courses.filter((course) => {
         const pace = health.get(course.id)?.pace;
-        return pace ? !pace.onTrack : false;
+        return pace ? pace.hasObservedPace && !pace.onTrack : false;
       }),
     [courses, health],
   );
@@ -336,6 +338,12 @@ export function TodayView({
 
           <Card className="mb-4 flex flex-col gap-3">
             <h3 className="text-title3 font-semibold">Coming up</h3>
+            {exams.length > 0 ? (
+              <p className="text-footnote text-tertiary">
+                Status uses units logged in the last 7 days; without recent logs, it compares the
+                remaining work with the planning capacity estimate.
+              </p>
+            ) : null}
             <div className="flex flex-col">
               {noExamsPhase === null ? null : (
                 <Collapse phase={noExamsPhase} className="text-body text-secondary">
@@ -361,9 +369,25 @@ export function TodayView({
                       {item.exam.name}
                     </span>
                     {item.health.pace ? (
-                      <Badge tone={item.health.pace.onTrack ? "positive" : "warning"}>
-                        {item.health.pace.onTrack ? "On track" : "Behind"}
-                      </Badge>
+                      <span
+                        title={
+                          item.health.pace.hasObservedPace
+                            ? "Based on units logged in the last 7 days."
+                            : "No recent pace is measured; this uses the planning capacity estimate."
+                        }
+                      >
+                        <Badge tone={item.health.pace.onTrack ? "positive" : "warning"}>
+                          {item.health.pace.hasObservedPace
+                            ? item.health.pace.onTrack
+                              ? "On track"
+                              : "Behind"
+                            : item.health.pace.plannedFeasible === true
+                              ? "Fits by capacity"
+                              : item.health.pace.plannedFeasible === false
+                                ? "Capacity shortfall"
+                                : "Pace not measured"}
+                        </Badge>
+                      </span>
                     ) : null}
                     <span className="w-24 shrink-0 text-right text-callout tabular-nums text-secondary">
                       {item.exam.startDate}
@@ -421,8 +445,8 @@ export function TodayView({
                 </ul>
                 <p className="text-footnote text-tertiary">
                   {behind.length > behindShown.length
-                    ? `${behind.length - behindShown.length} more behind. Needed pace counts only the days you have marked as study days.`
-                    : "Needed pace counts only the days you have marked as study days."}
+                    ? `${behind.length - behindShown.length} more behind. This list uses pace measured from the last 7 days; needed pace counts only marked study days.`
+                    : "This list uses pace measured from the last 7 days; needed pace counts only marked study days."}
                 </p>
               </Card>
             </Collapse>
@@ -457,7 +481,7 @@ export function TodayView({
 
       {emptyPhase === null ? null : (
         <Fade phase={emptyPhase} className="absolute inset-0 flex items-center justify-center">
-          <EmptyFocus />
+          <EmptyFocus emptyPlan={emptyPlan} />
         </Fade>
       )}
     </div>

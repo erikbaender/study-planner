@@ -42,8 +42,20 @@ function finished(name: string): Course {
 describe("isBehind", () => {
   it("is true when the projection misses the exam", () => {
     const plan = makePlan({ courses: [hopeless("Biochem")] });
-    const health = healthByCourse(plan, snapshotOf(plan), TODAY);
+    const health = healthByCourse(
+      plan,
+      snapshotOf(plan, [
+        { id: "log_1", topicId: plan.courses[0].topics[0].id, date: "2026-04-30", units: 1 },
+      ]),
+      TODAY,
+    );
     expect(isBehind(health.get(plan.courses[0].id))).toBe(true);
+  });
+
+  it("does not call a course behind before any pace has been measured", () => {
+    const plan = makePlan({ courses: [hopeless("Biochem")] });
+    const health = healthByCourse(plan, snapshotOf(plan), TODAY);
+    expect(isBehind(health.get(plan.courses[0].id))).toBe(false);
   });
 
   it("is false for a course with no exam, rather than treating it as late", () => {

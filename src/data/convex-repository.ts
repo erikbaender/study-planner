@@ -138,6 +138,7 @@ function toPreferences(row: NonNullable<PreferencesRow>): Preferences {
       (day): day is Weekday => Number.isInteger(day) && day >= 0 && day <= 6,
     ),
     blackoutDates: row.blackoutDates,
+    timezone: row.timezone,
     theme: row.theme,
     accentColor: row.accentColor,
   };
@@ -274,6 +275,7 @@ export function createConvexRepository(client: ConvexReactClient, revisions?: Re
     dailyCapacityUnits: preferences.dailyCapacityUnits,
     studyDaysOfWeek: [...preferences.studyDaysOfWeek],
     blackoutDates: [...preferences.blackoutDates],
+    ...(preferences.timezone === undefined ? {} : { timezone: preferences.timezone }),
     theme: preferences.theme,
     accentColor: preferences.accentColor,
   });

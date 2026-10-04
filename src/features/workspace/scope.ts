@@ -51,9 +51,9 @@ export function healthByCourse(
 }
 
 export function isBehind(health: CourseHealth | undefined): boolean {
-  // `pace` is null when the course has no upcoming exam. Without a deadline
-  // "behind" has no meaning, so such a course is not behind — it is unscheduled.
-  return health?.pace ? !health.pace.onTrack : false;
+  // A capacity estimate can say the plan will fit, but it cannot say the
+  // student is behind. That requires recent logged work to project from.
+  return health?.pace ? health.pace.hasObservedPace && !health.pace.onTrack : false;
 }
 
 /** An unfinished scheduled block whose window has already closed. */
@@ -78,7 +78,11 @@ export function needsAttention(
   health: CourseHealth | undefined,
   today: IsoDate,
 ): boolean {
-  return isBehind(health) || hasOverdueWork(course, today);
+  return (
+    isBehind(health) ||
+    health?.pace?.plannedFeasible === false ||
+    hasOverdueWork(course, today)
+  );
 }
 
 export function hasExamSoon(health: CourseHealth | undefined, within = EXAM_SOON_DAYS): boolean {

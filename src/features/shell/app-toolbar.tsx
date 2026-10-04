@@ -20,6 +20,8 @@
 
 import { useRef, useState } from "react";
 import {
+  Bot,
+  CalendarDays,
   Command,
   Download,
   FlaskConical,
@@ -60,6 +62,8 @@ export function AppToolbar(props: {
     onNewPlan: () => void;
     onNewCourse: () => void;
     onLoadSampleData: () => void;
+    onCalendarSettings?: () => void;
+    onConnectedAgents?: () => void;
     onExport: () => void;
     onImport: (file: File) => void;
     canExport: boolean;
@@ -151,6 +155,7 @@ export function AppToolbar(props: {
         label="More"
         align="end"
         items={[
+          { label: "Study calendar", icon: <CalendarDays />, onSelect: props.onCalendarSettings ?? (() => {}) },
           { label: "Load sample data", icon: <FlaskConical />, onSelect: props.onLoadSampleData },
           { type: "separator" },
           {
@@ -201,6 +206,7 @@ export function AppToolbar(props: {
           { label: "Add account", icon: <Plus />, onSelect: () => auth.addAccount?.() },
           { type: "separator" },
           { label: "Settings", icon: <Settings2 />, onSelect: () => setAccountSettingsOpen(true) },
+          { label: "Connected agents", icon: <Bot />, onSelect: props.onConnectedAgents ?? (() => {}) },
           { label: "Sign out", icon: <LogOut />, onSelect: props.onSignOut },
         ]}
         trigger={

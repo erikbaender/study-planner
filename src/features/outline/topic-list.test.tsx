@@ -508,6 +508,8 @@ describe("OutlineView course selection", () => {
         studyDaysLeft: 5,
         requiredPace: 2,
         actualVelocity: 1,
+        hasObservedPace: true,
+        plannedFeasible: false,
         projectedFinish: "2026-05-11",
         onTrack: false,
         daysLate: 3,
@@ -548,7 +550,7 @@ describe("OutlineView course selection", () => {
     );
   });
 
-  it("labels an off-track course without a projected finish as unknown", () => {
+  it("labels a course with no observed pace as unmeasured", () => {
     const stalledCourse = makeCourse({
       name: "Pathology",
       exams: [makeExam({ startDate: "2026-05-08" })],
@@ -564,8 +566,10 @@ describe("OutlineView course selection", () => {
         studyDaysLeft: 5,
         requiredPace: 2,
         actualVelocity: 0,
+        hasObservedPace: false,
+        plannedFeasible: true,
         projectedFinish: null,
-        onTrack: false,
+        onTrack: true,
         daysLate: 0,
       },
     };
@@ -589,7 +593,7 @@ describe("OutlineView course selection", () => {
     );
 
     const status = screen.getByLabelText("Pathology status");
-    expect(within(status).getByText("Finish unknown")).toHaveClass("text-warning");
+    expect(within(status).getByText("Pace not measured · capacity fits")).toHaveClass("text-secondary");
     expect(within(status).queryByText("0 days behind")).not.toBeInTheDocument();
   });
 });

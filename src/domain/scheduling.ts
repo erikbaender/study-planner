@@ -20,9 +20,9 @@
  * is the case that actually occurs here, with ten courses and ten exams.
  */
 
-import { addDays, isStudyDay, type StudyCalendar } from "./dates";
+import { addDays, eachDayInclusive, isStudyDay, studyDaysBetween, type StudyCalendar } from "./dates";
 import { effectiveDeadline } from "./metrics";
-import type { Course, IsoDate, Topic } from "./types";
+import { DEFAULT_DAILY_CAPACITY_UNITS, type Course, type IsoDate, type Topic } from "./types";
 
 /** What the caller gets back, before ids exist. */
 export type PlannedBlock = {
@@ -45,24 +45,35 @@ export type Shortfall = {
 export type Schedule = {
   blocks: PlannedBlock[];
   shortfalls: Shortfall[];
+  warnings: ScheduleWarning[];
+};
+
+export type ScheduleWarning = {
+  type: "dependency" | "manual-after-deadline" | "manual-unavailable-day" | "manual-capacity" | "unsized-topic";
+  courseId: string;
+  topicId: string;
+  message: string;
 };
 
 /** Used when the plan has no capacity recorded. Roughly two hours of slides. */
-export const FALLBACK_CAPACITY_UNITS = 40;
+export const FALLBACK_CAPACITY_UNITS = DEFAULT_DAILY_CAPACITY_UNITS;
 
 /**
  * How much of a topic still needs a place in the plan.
  *
- * Units already covered by a `manual` block are excluded: a hand-placed block is
- * a commitment the user made, and scheduling the same material twice would
- * double the apparent workload of every course with one.
+ * Units covered by manual blocks on available days by the deadline are
+ * excluded. Sessions after the deadline or on unavailable days cannot satisfy
+ * preparation requirements.
  */
-function remainingToSchedule(topic: Topic): number {
+function remainingToSchedule(topic: Topic, deadline: IsoDate, calendar: StudyCalendar): number {
   if (topic.totalUnits <= 0) return 0;
   const outstanding = Math.max(0, topic.totalUnits - topic.completedUnits);
-  const manual = topic.blocks
-    .filter((block) => block.source === "manual")
-    .reduce((sum, block) => sum + (block.plannedUnits ?? 0), 0);
+  const manual = topic.blocks.filter((block) => block.source === "manual").reduce((sum, block) => {
+    const days = studyDaysBetween(block.startDate, block.endDate, calendar);
+    if (days.length === 0) return sum;
+    const beforeDeadline = days.filter((day) => day <= deadline).length;
+    return sum + (block.plannedUnits ?? 0) * (beforeDeadline / days.length);
+  }, 0);
   return Math.max(0, outstanding - manual);
 }
 
@@ -84,17 +95,70 @@ export function schedule(options: {
   horizonDays?: number;
 }): Schedule {
   const { courses, today, calendar, horizonDays = 180 } = options;
-  const capacity = options.dailyCapacityUnits || FALLBACK_CAPACITY_UNITS;
+  const capacity = options.dailyCapacityUnits ?? FALLBACK_CAPACITY_UNITS;
 
   /** Units already committed per day, so several courses cannot claim the same hours. */
   const load = new Map<IsoDate, number>();
+  const warnings: ScheduleWarning[] = [];
+  const warningKeys = new Set<string>();
+  const addWarning = (warning: ScheduleWarning) => {
+    const key = `${warning.type}:${warning.topicId}:${warning.message}`;
+    if (warningKeys.has(key)) return;
+    warningKeys.add(key);
+    warnings.push(warning);
+  };
+  const deadlines = new Map(courses.map((course) => [course.id, courseDeadline(course, today, horizonDays)]));
+
+  for (const course of courses) {
+    for (const topic of course.topics) {
+      if (topic.totalUnits !== 0) continue;
+      addWarning({
+        type: "unsized-topic",
+        courseId: course.id,
+        topicId: topic.id,
+        message: `${topic.name} has no size recorded and is excluded from schedule feasibility.`,
+      });
+    }
+  }
 
   // Manual blocks are booked before anything is planned around them.
   for (const course of courses) {
     for (const topic of course.topics) {
       for (const block of topic.blocks) {
         if (block.source !== "manual") continue;
-        spread(load, block.startDate, block.endDate, block.plannedUnits ?? 0, calendar, capacity);
+        const deadline = deadlines.get(course.id)!;
+        if (block.endDate > deadline) {
+          addWarning({
+            type: "manual-after-deadline",
+            courseId: course.id,
+            topicId: topic.id,
+            message: `${topic.name} has a manual block ending after its ${deadline} deadline.`,
+          });
+        }
+        const days = eachDayInclusive(block.startDate, block.endDate);
+        const spanDays = studyDaysBetween(block.startDate, block.endDate, calendar);
+        if (days.some((day) => !isStudyDay(day, calendar))) {
+          addWarning({
+            type: "manual-unavailable-day",
+            courseId: course.id,
+            topicId: topic.id,
+            message: `${topic.name} has a manual block on an unavailable study day.`,
+          });
+        }
+        for (const day of days.filter((value) => isStudyDay(value, calendar))) {
+          const unitsPerDay = block.plannedUnits && spanDays.length > 0
+            ? block.plannedUnits / spanDays.length
+            : capacity;
+          if ((load.get(day) ?? 0) + unitsPerDay > capacity) {
+            addWarning({
+              type: "manual-capacity",
+              courseId: course.id,
+              topicId: topic.id,
+              message: `${topic.name} conflicts with daily capacity on ${day}.`,
+            });
+          }
+          load.set(day, (load.get(day) ?? 0) + unitsPerDay);
+        }
       }
     }
   }
@@ -102,12 +166,96 @@ export function schedule(options: {
   const queue = orderTopics(courses, today, horizonDays);
   const blocks: PlannedBlock[] = [];
   const missed = new Map<string, number>();
+  const finishDates = new Map<string, IsoDate>();
+  const unresolvedTopics = new Set<string>();
 
   for (const entry of queue) {
-    let outstanding = remainingToSchedule(entry.topic);
-    if (outstanding === 0) continue;
+    const dependencyIds = new Set(entry.topic.dependencyIds);
+    const unresolved = [...dependencyIds].filter((id) => unresolvedTopics.has(id));
+    if (unresolved.length > 0) {
+      const pending = remainingToSchedule(entry.topic, entry.deadline, calendar);
+      if (pending > 0) missed.set(entry.courseId, (missed.get(entry.courseId) ?? 0) + pending);
+      unresolvedTopics.add(entry.topic.id);
+      addWarning({
+        type: "dependency",
+        courseId: entry.courseId,
+        topicId: entry.topic.id,
+        message: `${entry.topic.name} cannot be scheduled because a prerequisite is not fully booked before its deadline.`,
+      });
+      continue;
+    }
 
-    let cursor = today;
+    let earliestStart = today;
+    for (const dependencyId of dependencyIds) {
+      const finish = finishDates.get(dependencyId);
+      if (finish && addDays(finish, 1) > earliestStart) earliestStart = addDays(finish, 1);
+    }
+
+    const manualBeforeFinish = entry.topic.blocks.some(
+      (block) => block.source === "manual" && [...dependencyIds].some((dependencyId) => {
+        const finish = finishDates.get(dependencyId);
+        return finish !== undefined && block.startDate <= finish;
+      }),
+    );
+    if (manualBeforeFinish) {
+      addWarning({
+        type: "dependency",
+        courseId: entry.courseId,
+        topicId: entry.topic.id,
+        message: `${entry.topic.name} has a manual block before its prerequisite is complete.`,
+      });
+    }
+
+    if (earliestStart > entry.deadline) {
+      const pending = remainingToSchedule(entry.topic, entry.deadline, calendar);
+      if (pending > 0) {
+        missed.set(entry.courseId, (missed.get(entry.courseId) ?? 0) + pending);
+        unresolvedTopics.add(entry.topic.id);
+        addWarning({
+          type: "dependency",
+          courseId: entry.courseId,
+          topicId: entry.topic.id,
+          message: `${entry.topic.name} cannot start before its ${entry.deadline} deadline because its prerequisite finishes on ${addDays(earliestStart, -1)}.`,
+        });
+      }
+      continue;
+    }
+
+    let outstanding = remainingToSchedule(entry.topic, entry.deadline, calendar);
+    if (entry.topic.totalUnits <= 0) {
+      const manualEnd = entry.topic.blocks
+        .filter((block) => block.source === "manual" && (block.plannedUnits ?? 0) > 0)
+        .map((block) => block.endDate)
+        .sort()
+        .at(-1);
+      if (entry.topic.status === "done" || manualEnd) {
+        finishDates.set(entry.topic.id, manualEnd ?? addDays(today, -1));
+      } else {
+        unresolvedTopics.add(entry.topic.id);
+        addWarning({
+          type: "dependency",
+          courseId: entry.courseId,
+          topicId: entry.topic.id,
+          message: `${entry.topic.name} has no size or booked finish date, so its prerequisites cannot be confirmed.`,
+        });
+      }
+      continue;
+    }
+    if (outstanding === 0) {
+      if (entry.topic.completedUnits >= entry.topic.totalUnits || entry.topic.status === "done") {
+        finishDates.set(entry.topic.id, addDays(today, -1));
+        continue;
+      }
+      const manualEnd = entry.topic.blocks
+        .filter((block) => block.source === "manual" && (block.plannedUnits ?? 0) > 0)
+        .map((block) => block.endDate)
+        .sort()
+        .at(-1);
+      finishDates.set(entry.topic.id, manualEnd ?? addDays(today, -1));
+      continue;
+    }
+
+    let cursor = earliestStart;
     let runStart: IsoDate | null = null;
     let runEnd: IsoDate | null = null;
     let runUnits = 0;
@@ -149,15 +297,33 @@ export function schedule(options: {
 
     flush();
 
+    const finalEnd = blocks.filter((block) => block.topicId === entry.topic.id)
+      .map((block) => block.endDate).sort().at(-1);
+    const manualEnd = entry.topic.blocks
+      .filter((block) => block.source === "manual" && (block.plannedUnits ?? 0) > 0 && block.startDate <= entry.deadline)
+      .map((block) => block.endDate).sort().at(-1);
+    const finishDate = [finalEnd, manualEnd].filter((value): value is IsoDate => Boolean(value)).sort().at(-1);
+
     if (outstanding > 0) {
       missed.set(entry.courseId, (missed.get(entry.courseId) ?? 0) + outstanding);
+      unresolvedTopics.add(entry.topic.id);
+    } else if (finishDate) {
+      finishDates.set(entry.topic.id, finishDate);
     }
   }
 
   return {
     blocks,
     shortfalls: shortfallsFor(courses, today, calendar, capacity, horizonDays, missed),
+    warnings,
   };
+}
+
+function courseDeadline(course: Course, today: IsoDate, horizonDays: number): IsoDate {
+  const exam = course.exams
+    .filter((candidate) => effectiveDeadline(candidate) >= today)
+    .sort((left, right) => (effectiveDeadline(left) < effectiveDeadline(right) ? -1 : 1))[0];
+  return exam ? effectiveDeadline(exam) : addDays(today, horizonDays);
 }
 
 /**
@@ -240,27 +406,6 @@ function orderTopics(
   return ordered.map(({ topic, courseId, deadline }) => ({ topic, courseId, deadline }));
 }
 
-function spread(
-  load: Map<IsoDate, number>,
-  start: IsoDate,
-  end: IsoDate,
-  units: number,
-  calendar: StudyCalendar,
-  capacity: number,
-) {
-  const days: IsoDate[] = [];
-  for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
-    if (isStudyDay(cursor, calendar)) days.push(cursor);
-  }
-  if (days.length === 0) return;
-  // A manual block with no stated size still occupies its days; assuming zero
-  // would let the engine plan a full day's work on top of one.
-  const perDay = units > 0 ? units / days.length : capacity;
-  for (const day of days) {
-    load.set(day, (load.get(day) ?? 0) + perDay);
-  }
-}
-
 function shortfallsFor(
   courses: readonly Course[],
   today: IsoDate,
@@ -285,7 +430,10 @@ function shortfallsFor(
       if (isStudyDay(cursor, calendar)) studyDays += 1;
     }
 
-    const total = course.topics.reduce((sum, topic) => sum + remainingToSchedule(topic), 0);
+    const total = course.topics.reduce(
+      (sum, topic) => sum + remainingToSchedule(topic, deadline, calendar),
+      0,
+    );
 
     shortfalls.push({
       courseId: course.id,
@@ -318,7 +466,7 @@ export function describeShortfall(shortfall: Shortfall, capacity: number): strin
   }
 
   if (shortfall.requiredCapacity <= capacity) {
-    return `${shortfall.courseName} would fit on its own at ${shortfall.requiredCapacity} units a day, but ${shortfall.unscheduledUnits} units lost their place to courses with nearer exams.`;
+    return `${shortfall.courseName} would fit on its own at ${shortfall.requiredCapacity} units a day, but ${shortfall.unscheduledUnits} units could not be booked before the deadline.`;
   }
 
   return `${shortfall.courseName} needs ${shortfall.requiredCapacity} units a day to finish in time; your capacity is ${capacity}. You are ${shortfall.unscheduledUnits} units over.`;

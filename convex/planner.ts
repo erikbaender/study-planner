@@ -922,6 +922,7 @@ const preferenceFields = {
   dailyCapacityUnits: v.optional(v.number()),
   studyDaysOfWeek: v.array(v.number()),
   blackoutDates: v.array(v.string()),
+  timezone: v.optional(v.string()),
   theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")),
   accentColor: v.string(),
 };
@@ -983,7 +984,16 @@ async function writePreferences(
     .query("preferences")
     .withIndex("by_owner", (q) => q.eq("ownerId", userId))
     .unique();
-  const patch = { ...preferences, revision: (existing?.revision ?? 0) + 1, updatedAt: Date.now() };
+  const patch = {
+    ...preferences,
+    // Older browser clients and MCP callers can omit timezone. Keep the value
+    // already recorded by an integration when they update another preference.
+    ...(preferences.timezone === undefined && existing?.timezone !== undefined
+      ? { timezone: existing.timezone }
+      : {}),
+    revision: (existing?.revision ?? 0) + 1,
+    updatedAt: Date.now(),
+  };
 
   if (existing) {
     await ctx.db.patch(existing._id, patch);
@@ -1103,7 +1113,7 @@ export const logStudy = browserMutation({
       ownerId: userId,
       topicId: args.topicId,
       date: args.date,
-      units: args.units,
+      units: completedUnits - topic.completedUnits,
       minutes: args.minutes,
       note: args.note,
       createdAt: now,

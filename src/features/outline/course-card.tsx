@@ -145,14 +145,19 @@ export const CourseCard = memo(function CourseCard({
   const percent = progress.ratio === null ? null : Math.round(progress.ratio * 100);
   const completed = isCourseComplete(course);
   const overdueBlocks = overdueBlockCount(course, today);
-  const paceStatus =
-    health?.pace && !health.pace.onTrack
-      ? health.pace.daysLate > 0
-        ? `${health.pace.daysLate} days behind`
-        : health.pace.projectedFinish === null
-          ? "Finish unknown"
-          : "Capacity shortfall"
-      : null;
+  const paceStatus = health?.pace
+    ? health.pace.hasObservedPace
+      ? health.pace.onTrack
+        ? null
+        : health.pace.daysLate > 0
+          ? `${health.pace.daysLate} days behind`
+          : "Measured pace is short"
+      : health.pace.plannedFeasible === true
+        ? "Pace not measured · capacity fits"
+        : health.pace.plannedFeasible === false
+          ? "Pace not measured · capacity shortfall"
+          : "Pace not measured"
+    : null;
   const hasStatus = paceStatus !== null || overdueBlocks > 0;
 
   /**
@@ -323,7 +328,13 @@ export const CourseCard = memo(function CourseCard({
                 className="pointer-events-none relative mt-2 flex flex-wrap items-center gap-1.5"
               >
                 {paceStatus !== null ? (
-                  <Badge tone="warning">
+                  <Badge
+                    tone={
+                      health?.pace?.hasObservedPace || health?.pace?.plannedFeasible === false
+                        ? "warning"
+                        : "neutral"
+                    }
+                  >
                     <Gauge aria-hidden="true" className="size-3" strokeWidth={2} />
                     {paceStatus}
                   </Badge>

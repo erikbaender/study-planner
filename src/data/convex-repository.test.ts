@@ -137,6 +137,7 @@ function fixture() {
     dailyCapacityUnits: 40,
     studyDaysOfWeek: [1, 2, 3, 4, 5],
     blackoutDates: [],
+    timezone: "Europe/Berlin",
     theme: "system",
     accentColor: "violet",
     updatedAt: 1,
@@ -225,6 +226,7 @@ describe("Convex snapshot translation", () => {
     expect(changed.studyLog).toBe(initial.studyLog);
     expect(changed.preferences).not.toBe(initial.preferences);
     expect(changed.preferences.accentColor).toBe("rose");
+    expect(changed.preferences.timezone).toBe("Europe/Berlin");
   });
 
   it("invalidates a changed topic and its parents while sharing unchanged branches", () => {
@@ -296,6 +298,7 @@ describe("Convex snapshot translation", () => {
       dailyCapacityUnits: 65,
       studyDaysOfWeek: [1, 2, 3, 4, 5],
       blackoutDates: ["2026-12-24"],
+      timezone: "Europe/Berlin",
       theme: "system" as const,
       accentColor: "violet",
     };

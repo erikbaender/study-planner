@@ -71,7 +71,7 @@ export const plannerCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("block.move"), blockId: id("Study block ID or ref"), startDate: date, endDate: date }),
   z.object({ type: z.literal("block.resize"), blockId: id("Study block ID or ref"), endDate: date, plannedUnits: z.number().nonnegative().max(1_000_000_000).optional() }),
   z.object({ type: z.literal("schedule.regenerate"), today: date, courseIds: z.array(id("Course ID in this plan")).max(50).optional().describe("Omit to regenerate the full plan") }),
-  z.object({ type: z.literal("preferences.update"), patch: preferences }),
+  z.object({ type: z.literal("preferences.update"), patch: preferences.partial() }),
 ]);
 
 const mutationOutput = {
@@ -138,7 +138,7 @@ function completePlanCommands(plan: CompletePlan): z.infer<typeof plannerCommand
     }
   }
   if (plan.generateInitialSchedule) commands.push({ type: "schedule.regenerate", today: plan.today! });
-  if (commands.length > 100) throw new Error("Complete plan expands beyond the 100-command transaction limit; split the plan");
+  if (commands.length > 100) throw new Error(`Complete plan requires ${commands.length} commands; the atomic limit is 100. Count one command per course, exam, topic, dependency set, block, and schedule generation. Create a smaller initial plan, then add courses/topics in planner.apply_changes batches of at most 100 commands using the returned planId and latest revision; refs apply only within each batch. Generate the schedule after all batches are complete.`);
   return commands;
 }
 
@@ -177,7 +177,7 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
 
   server.registerTool("planner.create", {
     title: "Create a complete study plan",
-    description: "Atomically create one complete multi-course plan using document-local refs; optionally generate its first deterministic schedule.",
+    description: "Atomically create a multi-course plan, up to 100 expanded commands: one per course, exam, topic, dependency set, block, and optional schedule generation. Larger semesters: create an initial subset, then add batches with apply_changes and regenerate last. Refs are local to each batch.",
     inputSchema: { idempotencyKey, plan: completePlanSchema },
     outputSchema: { planId: z.string(), ...mutationOutput },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -202,8 +202,8 @@ export function createPlannerMcpServer(identity: ServerIdentity) {
   server.registerTool("planner.record_progress", {
     title: "Record study progress",
     description: "Atomically append or correct a bounded progress entry and update the topic's completion/status with revision and idempotency checks.",
-    inputSchema: { planId: id("Owning plan ID"), topicId: id("Topic ID in the plan"), expectedRevision: z.number().int().nonnegative(), idempotencyKey, date, units: z.number().min(-1_000_000_000).max(1_000_000_000).describe("Positive to record progress; negative to correct it"), minutes: z.number().int().nonnegative().max(10_080).optional(), note: z.string().max(4_000).optional() },
-    outputSchema: { revision: z.number(), auditId: z.string(), logId: z.string(), topicId: z.string(), completedUnits: z.number(), status: topicStatus, summary: z.string() },
+    inputSchema: { planId: id("Owning plan ID"), topicId: id("Topic ID in the plan"), expectedRevision: z.number().int().nonnegative(), idempotencyKey, date, units: z.number().min(-1_000_000_000).max(1_000_000_000).describe("Positive to record progress; negative to correct it. Deltas outside 0..totalUnits are clamped; the log and response report the effective delta"), minutes: z.number().int().nonnegative().max(10_080).optional(), note: z.string().max(4_000).optional() },
+    outputSchema: { revision: z.number(), auditId: z.string(), logId: z.string(), topicId: z.string(), completedUnits: z.number(), appliedUnits: z.number().optional(), requestedUnits: z.number().optional(), status: topicStatus, summary: z.string() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, ({ planId, topicId, expectedRevision, idempotencyKey, date, units, minutes, note }) => callTool(() => client.mutation(api.mcpPlanner.recordProgress, { ...args(identity), planId: planId as never, topicId: topicId as never, expectedRevision, idempotencyKey, date, units, minutes, note }), (result) => `${result.summary}. Topic is ${result.status}; plan revision ${result.revision}.`));
 

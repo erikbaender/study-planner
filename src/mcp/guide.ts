@@ -1,6 +1,6 @@
 export const MCP_SERVER_INSTRUCTIONS = `Study Planner manages account-owned semesters (plans). A plan contains courses; courses contain exams and ordered topics; topics contain dependencies and study blocks. IDs returned by tools are opaque. During planner.create or one planner.apply_changes batch, new entities use unique document-local refs so later commands can target them.
 
-Dates are calendar dates in YYYY-MM-DD in the account timezone returned by planner.get. Topic units may be slides, pages, cards, videos, hours, or items. totalUnits=0 means untracked. completedUnits cannot exceed a positive total. Dependencies must stay inside one course and cannot cycle. Priorities are low, normal, or high.
+Dates are calendar dates in YYYY-MM-DD in the account timezone returned by planner.get. Topic units may be slides, pages, cards, videos, hours, or items. totalUnits=0 means untracked. completedUnits cannot exceed a positive total. Marking a sized topic done requires completedUnits equal to totalUnits; update both fields together. preferences.update.patch is partial and preserves omitted fields. A daily capacity of zero disables automatic allocation. Progress deltas are clamped to topic completion bounds; logs and responses contain the effective delta. Dependencies must stay inside one course and cannot cycle. Priorities are low, normal, or high.
 
 Study blocks are manual or auto. A moved or resized auto block becomes manual. schedule.regenerate uses the deterministic scheduler, replaces only auto blocks in scope, preserves manual blocks, and returns explicit capacity/deadline shortfalls.
 
@@ -13,6 +13,10 @@ export const MCP_GUIDE = `# Study Planner MCP guide
 ## Hierarchy and references
 
 A plan is shown in the browser as a semester. It owns courses. Each course owns exams and ordered topics. Each topic owns dependency links, progress, and study blocks. Use opaque IDs exactly as returned. For atomic creation, assign each new course, exam, topic, and block a document-local \`ref\` beginning with a letter; later commands in the same document may use that ref where an ID is requested.
+
+## Creation limits
+
+Atomic creation and apply_changes accept at most 100 commands. Count one command for every course, exam, topic, non-empty dependency set, block, and optional schedule regeneration. Seven courses with one exam and 13 topics each plus regeneration need 106 commands. For larger semesters, create an initial subset, read the returned planId/revision, then add batches of at most 100 commands with fresh idempotency keys and current revisions. Refs only exist within a batch; use returned createdIds in later batches. Generate the final schedule after adding all material.
 
 ## Dates and units
 

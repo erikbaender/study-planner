@@ -110,6 +110,7 @@ const courseKey = (course: Course) => course.id;
 
 type TimelineProps = {
   courses: readonly Course[];
+  emptyPlan?: boolean;
   health: Map<string, CourseHealth>;
   today: IsoDate;
   query?: string;
@@ -169,7 +170,7 @@ export function TimelineView(props: TimelineProps) {
       </div>
       {emptyPhase === null ? null : (
         <Fade phase={emptyPhase} className="absolute inset-0 flex items-center justify-center">
-          <EmptyFocus />
+          <EmptyFocus emptyPlan={props.emptyPlan} />
         </Fade>
       )}
     </div>

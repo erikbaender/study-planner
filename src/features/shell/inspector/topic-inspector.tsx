@@ -229,18 +229,7 @@ export function TopicInspector({
 
       <Separator />
 
-      {/*
-        A block is two dates. That is the whole of it.
-
-        It used to also carry a planned-units stepper, a "set units"/"clear
-        units" pair and a row of action buttons, which made a scheduled window —
-        the simplest object in the app — the most complicated thing in the
-        panel. Auto-planning still records how much work it meant to fit in a
-        block; that is a number the planner writes and the timeline reads, not a
-        field to be nudged from here. Deleting a block and jumping to it on the
-        timeline are actions on an existing row, so they live in its context
-        menu, like every other row action in the app.
-      */}
+      {/* Auto-planning owns generated workload; manual sessions can set theirs. */}
       <Section
         title="Scheduled"
         action={
@@ -270,7 +259,7 @@ export function TopicInspector({
         ) : (
           <ul aria-label={`Study blocks for ${topic.name}`} className="flex flex-col gap-1.5">
             {blocks.map((block, index) => (
-              <StudyBlockRow
+          <StudyBlockRow
                 key={block.id}
                 block={block}
                 labelled={index === 0}
@@ -412,25 +401,55 @@ function StudyBlockRow({
         { label: "Delete", icon: <Trash2 />, danger: true, onSelect: onRemove },
       ]}
     >
-      <li className="grid min-w-0 grid-cols-2 gap-2 rounded-control">
-        <TextField
-          label="Starts"
-          hideLabel={!labelled}
-          type="date"
-          value={block.startDate}
-          fieldClassName="min-w-0"
-          className="min-w-0 px-1.5 text-callout"
-          onChange={(event) => moveStart(event.target.value)}
-        />
-        <TextField
-          label="Ends"
-          hideLabel={!labelled}
-          type="date"
-          value={block.endDate}
-          fieldClassName="min-w-0"
-          className="min-w-0 px-1.5 text-callout"
-          onChange={(event) => resizeEnd(event.target.value)}
-        />
+      <li className="flex min-w-0 flex-col gap-2 rounded-control">
+        <div className="grid min-w-0 grid-cols-2 gap-2">
+          <TextField
+            label="Starts"
+            hideLabel={!labelled}
+            type="date"
+            value={block.startDate}
+            fieldClassName="min-w-0"
+            className="min-w-0 px-1.5 text-callout"
+            onChange={(event) => moveStart(event.target.value)}
+          />
+          <TextField
+            label="Ends"
+            hideLabel={!labelled}
+            type="date"
+            value={block.endDate}
+            fieldClassName="min-w-0"
+            className="min-w-0 px-1.5 text-callout"
+            onChange={(event) => resizeEnd(event.target.value)}
+          />
+        </div>
+        {block.source === "manual" ? (
+          <div className="flex min-w-0 flex-col gap-1 px-2">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <span className="text-callout text-secondary">Planned {UNIT_LABELS[topic.unit].plural}</span>
+              <Stepper
+                label={`Planned ${UNIT_LABELS[topic.unit].plural} for ${topic.name} on ${block.startDate}`}
+                value={block.plannedUnits ?? 0}
+                min={0}
+                step={1}
+                suffix={UNIT_LABELS[topic.unit].plural}
+                onValueChange={(plannedUnits) => onUpdate({
+                  startDate: block.startDate,
+                  endDate: block.endDate,
+                  plannedUnits,
+                })}
+              />
+            </div>
+            <p className="text-footnote text-tertiary">
+              {topic.totalUnits === 0
+                ? block.plannedUnits
+                  ? `Reserves ${block.plannedUnits} ${block.plannedUnits === 1 ? UNIT_LABELS[topic.unit].singular : UNIT_LABELS[topic.unit].plural}; the topic has no size, so this adds no topic units.`
+                  : "No workload entered: reserves a full study day and adds no topic units."
+                : block.plannedUnits
+                  ? `Counts ${block.plannedUnits} ${block.plannedUnits === 1 ? UNIT_LABELS[topic.unit].singular : UNIT_LABELS[topic.unit].plural} toward this topic.`
+                  : "No workload entered: reserves a full study day and covers no topic units."}
+            </p>
+          </div>
+        ) : null}
       </li>
     </ContextMenu>
   );

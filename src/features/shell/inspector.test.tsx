@@ -332,7 +332,7 @@ describe("Inspector", () => {
         source: "auto" as const,
         plannedUnits: 12,
       };
-      const scheduledTopic = makeTopic({ blocks: [block] });
+      const scheduledTopic = makeTopic({ ...topic, blocks: [block] });
       const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
 
       render(
@@ -357,6 +357,40 @@ describe("Inspector", () => {
         endDate: "2026-05-14",
         plannedUnits: 12,
       });
+    });
+
+    it("saves planned workload on a manual block without changing its dates", async () => {
+      const block = {
+        id: "manual_workload",
+        topicId: topic.id,
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        source: "manual" as const,
+        plannedUnits: 12,
+      };
+      const scheduledTopic = makeTopic({ ...topic, blocks: [block] });
+      const scheduledCourse = makeCourse({ topics: [scheduledTopic] });
+      const user = userEvent.setup();
+
+      render(
+        <Inspector
+          {...inspectorNavigation}
+          selection={{ kind: "topic", course: scheduledCourse, topic: scheduledTopic }}
+          today={TODAY}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", {
+        name: "Increase Planned slides for Glycolysis on 2026-05-04",
+      }));
+
+      expect(repository.updateStudyBlock).toHaveBeenCalledWith("manual_workload", {
+        startDate: "2026-05-04",
+        endDate: "2026-05-06",
+        plannedUnits: 13,
+      });
+      expect(screen.getByText("Counts 12 slides toward this topic.")).toBeInTheDocument();
     });
 
     it("removes a block from its context menu", async () => {

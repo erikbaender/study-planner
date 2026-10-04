@@ -230,6 +230,18 @@ describe("assessPace", () => {
     expect(result.onTrack).toBe(false);
   });
 
+  it("uses a zero capacity as zero rather than falling back to measured pace", () => {
+    const result = assessPace({
+      ...base,
+      remainingUnits: 100,
+      deadline: "2026-08-14",
+      actualVelocity: 20,
+      dailyCapacityUnits: 0,
+    });
+    expect(result.plannedFeasible).toBe(false);
+    expect(result.onTrack).toBe(false);
+  });
+
   it("treats a finished course as on track whatever the velocity", () => {
     const result = assessPace({
       ...base,
@@ -263,7 +275,9 @@ describe("assessPace", () => {
     expect(result.projectedFinish).toBeNull();
     // Unknowable, not late: an invented number here would be noise.
     expect(result.daysLate).toBe(0);
-    expect(result.onTrack).toBe(false);
+    expect(result.hasObservedPace).toBe(false);
+    expect(result.plannedFeasible).toBe(true);
+    expect(result.onTrack).toBe(true);
   });
 });
 
@@ -303,6 +317,21 @@ describe("assessCourse", () => {
       log: log([{ date: "2026-07-27", units: 500, topicId: "topic_elsewhere" }]),
     });
     expect(health.pace?.actualVelocity).toBe(0);
+    expect(health.pace?.hasObservedPace).toBe(false);
+  });
+
+  it("separates an unknown observed pace from configured capacity feasibility", () => {
+    const health = assessCourse({
+      course: subject,
+      today: TODAY,
+      calendar: WEEKDAYS_ONLY,
+      log: [],
+      dailyCapacityUnits: 20,
+    });
+
+    expect(health.pace?.hasObservedPace).toBe(false);
+    expect(health.pace?.plannedFeasible).toBe(true);
+    expect(health.pace?.onTrack).toBe(true);
   });
 
   it("has no pace to report without an upcoming exam", () => {

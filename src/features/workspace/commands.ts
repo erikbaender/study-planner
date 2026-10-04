@@ -36,6 +36,8 @@ export type CommandActions = {
   newCourse: () => void;
   loadSampleData: () => void;
   exportJson: () => void;
+  connectedAgents?: () => void;
+  calendarSettings?: () => void;
 };
 
 export function buildCommands(options: {
@@ -114,6 +116,10 @@ export function buildCommands(options: {
       run: actions.loadSampleData,
     },
   ];
+
+  if (actions.calendarSettings) commands.push({ id: "settings:calendar", group: "Actions", title: "Study calendar", keywords: "weekdays blackout holidays timezone availability", run: actions.calendarSettings });
+
+  if (actions.connectedAgents) commands.push({ id: "account:agents", group: "Actions", title: "Connected agents", keywords: "MCP connect setup AI assistant", run: actions.connectedAgents });
 
   if (hasData) {
     commands.push({

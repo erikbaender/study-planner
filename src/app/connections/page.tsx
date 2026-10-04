@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import { Bot, ChevronLeft, ShieldOff } from "lucide-react";
-import { useState } from "react";
+import { Bot, ChevronLeft, Copy, ShieldOff } from "lucide-react";
+import { useEffect, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import { Badge, Button, Card, Spinner } from "@/ui";
+import { Badge, Button, Card, Spinner, TextField } from "@/ui";
 
 function formatTime(value: number | null) {
   if (value === null) return "Never";
@@ -13,10 +13,27 @@ function formatTime(value: number | null) {
 }
 
 export default function ConnectionsPage() {
+  const [copied, setCopied] = useState(false);
+  const [mcpUrl, setMcpUrl] = useState<string | null>(null);
   const connections = useQuery(api.mcpOAuth.listConnections);
   const revoke = useMutation(api.mcpOAuth.revokeConnection);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/.well-known/oauth-protected-resource/mcp")
+      .then(response => { if (!response.ok) throw new Error("Discovery unavailable"); return response.json(); })
+      .then(metadata => { if (active && typeof metadata.resource === "string") setMcpUrl(metadata.resource); })
+      .catch(() => { if (active) setError("The agent setup URL could not be loaded. Reload this page to try again."); });
+    return () => { active = false; };
+  }, []);
+
+  const copyUrl = async () => {
+    if (!mcpUrl) return;
+    try { await navigator.clipboard.writeText(mcpUrl); setCopied(true); }
+    catch { setError("Copy failed. Select and copy the URL from the field."); }
+  };
 
   const revokeConnection = async (grantId: string) => {
     setPending(grantId);
@@ -43,6 +60,16 @@ export default function ConnectionsPage() {
             <p className="mt-1 text-body text-secondary">Review MCP clients that can work with your plans. Revocation takes effect for reads, writes, refreshes, and existing sessions immediately.</p>
           </div>
         </div>
+
+        <Card className="mt-6 p-5">
+          <h2 className="text-body font-semibold text-label">Connect an agent</h2>
+          <p className="mt-1 text-callout text-secondary">In your AI client’s connector or MCP server settings, add this URL. Open its connection prompt, sign in to Study Planner, and review the access it requests.</p>
+          <div className="mt-3 flex items-center gap-2">
+            <TextField label="Study Planner MCP URL" hideLabel value={mcpUrl ?? "Loading setup URL…"} readOnly fieldClassName="min-w-0 flex-1" className="w-full" />
+            <Button leadingIcon={<Copy />} disabled={!mcpUrl} onClick={() => void copyUrl()}>{copied ? "Copied" : "Copy URL"}</Button>
+          </div>
+          <p className="mt-2 text-callout text-secondary">Your client must support remote MCP connections. Once connected, ask it to read your plans before making changes. You can withdraw access here at any time.</p>
+        </Card>
 
         {error ? <p role="alert" className="mt-4 text-body text-negative">{error}</p> : null}
         {connections === undefined ? (

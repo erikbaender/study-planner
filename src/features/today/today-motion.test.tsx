@@ -32,22 +32,28 @@ function startedCourse(name: string): Course {
 const biochemistry = startedCourse("Biochemistry");
 const anatomy = startedCourse("Anatomy");
 
-function healthOf(courses: readonly Course[]): Map<string, CourseHealth> {
+function healthOf(
+  courses: readonly Course[],
+  studyLog: Parameters<typeof TodayView>[0]["studyLog"] = [],
+): Map<string, CourseHealth> {
   return new Map(
     courses.map((course) => [
       course.id,
-      assessCourse({ course, today: TODAY, calendar: DEFAULT_PREFERENCES, log: [] }),
+      assessCourse({ course, today: TODAY, calendar: DEFAULT_PREFERENCES, log: studyLog }),
     ]),
   );
 }
 
-function today(courses: readonly Course[]) {
+function today(
+  courses: readonly Course[],
+  studyLog: Parameters<typeof TodayView>[0]["studyLog"] = [],
+) {
   return (
     <TodayView
       courses={courses}
-      health={healthOf(courses)}
-      studyLog={[]}
-      snapshot={EMPTY_SNAPSHOT}
+      health={healthOf(courses, studyLog)}
+      studyLog={studyLog}
+      snapshot={{ ...EMPTY_SNAPSHOT, studyLog: [...studyLog] }}
       today={TODAY}
       selectedTopicId={null}
       onSelectTopic={vi.fn()}
@@ -102,13 +108,17 @@ describe("Today's lists arriving and leaving", () => {
   });
 
   it("takes the whole 'Behind' card away when nothing is behind any more", () => {
-    // An exam yesterday with work still on it is behind by definition.
+    // Recent study history projects a finish after this near-term exam.
     const slipping = makeCourse({
       name: "Slipping",
-      exams: [makeExam({ name: "Past", startDate: "2026-05-02" })],
+      exams: [makeExam({ name: "Soon", startDate: "2026-05-02" })],
       topics: [makeTopic({ name: "Unfinished", totalUnits: 400, completedUnits: 0 })],
     });
-    const { rerender } = render(today([slipping]));
+    const { rerender } = render(
+      today([slipping], [
+        { id: "log_1", topicId: slipping.topics[0].id, date: "2026-04-30", units: 1 },
+      ]),
+    );
     const card = screen.getByRole("heading", { name: "Behind" }).closest(".collapse-motion");
     expect(card).toHaveAttribute("data-phase", "shown");
 

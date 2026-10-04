@@ -131,9 +131,14 @@ export type Preferences = {
   studyDaysOfWeek: Weekday[];
   /** Days off — holidays, travel. Excluded from scheduling. */
   blackoutDates: IsoDate[];
+  /** IANA timezone used by account integrations. */
+  timezone?: string;
   theme: ThemePreference;
   accentColor: string;
 };
+
+/** Planning capacity used when a user has not set a daily target. */
+export const DEFAULT_DAILY_CAPACITY_UNITS = 40;
 
 export const DEFAULT_PREFERENCES: Preferences = {
   dailyCapacityUnits: undefined,

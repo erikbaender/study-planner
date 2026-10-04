@@ -107,6 +107,110 @@ describe("schedule", () => {
     expect(result.blocks.map((block) => block.startDate)).toEqual([TODAY, "2026-05-05"]);
   });
 
+  it("starts dependent work after a manual prerequisite's booked finish date", () => {
+    const prerequisite = makeTopic({
+      id: "manual-prerequisite",
+      name: "Partner session",
+      totalUnits: 2,
+      unit: "hours",
+      blocks: [{
+        id: "partner-session",
+        topicId: "manual-prerequisite",
+        startDate: "2026-05-20",
+        endDate: "2026-05-20",
+        plannedUnits: 2,
+        source: "manual",
+      }],
+    });
+    const dependent = makeTopic({
+      id: "dependent-session",
+      totalUnits: 10,
+      dependencyIds: [prerequisite.id],
+    });
+
+    const result = plan([
+      makeCourse({ topics: [prerequisite, dependent], exams: [makeExam({ startDate: "2026-06-01" })] }),
+    ]);
+
+    expect(result.blocks.find((block) => block.topicId === dependent.id)?.startDate).toBe("2026-05-21");
+  });
+
+  it("reports a dependency that cannot start before its deadline", () => {
+    const prerequisite = makeTopic({
+      id: "late-prerequisite",
+      totalUnits: 1000,
+      unit: "hours",
+      blocks: [{
+        id: "late-session",
+        topicId: "late-prerequisite",
+        startDate: "2026-06-02",
+        endDate: "2026-06-02",
+        plannedUnits: 1000,
+        source: "manual",
+      }],
+    });
+    const dependent = makeTopic({ id: "blocked-dependent", totalUnits: 10, dependencyIds: [prerequisite.id] });
+
+    const result = plan([
+      makeCourse({ topics: [prerequisite, dependent], exams: [makeExam({ startDate: "2026-06-01" })] }),
+    ]);
+
+    expect(result.blocks.some((block) => block.topicId === dependent.id)).toBe(false);
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      type: "dependency",
+      topicId: dependent.id,
+    }));
+  });
+
+  it("does not guess when an unsized prerequisite has no booked finish", () => {
+    const prerequisite = makeTopic({ id: "unknown-prerequisite", totalUnits: 0 });
+    const dependent = makeTopic({ id: "known-dependent", totalUnits: 10, dependencyIds: [prerequisite.id] });
+    const result = plan([
+      makeCourse({ topics: [prerequisite, dependent], exams: [makeExam({ startDate: "2026-06-01" })] }),
+    ]);
+
+    expect(result.blocks.some((block) => block.topicId === dependent.id)).toBe(false);
+    expect(result.shortfalls).toContainEqual(expect.objectContaining({ unscheduledUnits: 10 }));
+    expect(result.warnings).toContainEqual(expect.objectContaining({ type: "dependency", topicId: dependent.id }));
+  });
+
+  it("warns when a dependent has a manual block before its prerequisite finishes", () => {
+    const prerequisite = makeTopic({
+      id: "manual-finish-prerequisite",
+      totalUnits: 2,
+      blocks: [{
+        id: "prerequisite-booking",
+        topicId: "manual-finish-prerequisite",
+        startDate: "2026-05-20",
+        endDate: "2026-05-20",
+        plannedUnits: 2,
+        source: "manual",
+      }],
+    });
+    const dependent = makeTopic({
+      id: "early-manual-dependent",
+      totalUnits: 10,
+      dependencyIds: [prerequisite.id],
+      blocks: [{
+        id: "early-dependent-booking",
+        topicId: "early-manual-dependent",
+        startDate: TODAY,
+        endDate: TODAY,
+        plannedUnits: 10,
+        source: "manual",
+      }],
+    });
+    const result = plan([
+      makeCourse({ topics: [prerequisite, dependent], exams: [makeExam({ startDate: "2026-06-01" })] }),
+    ]);
+
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      type: "dependency",
+      topicId: dependent.id,
+      message: expect.stringContaining("manual block before its prerequisite"),
+    }));
+  });
+
   it("does not plan the same day twice across courses", () => {
     const a = makeCourse({
       topics: [makeTopic({ totalUnits: 10 })],
@@ -148,6 +252,96 @@ describe("schedule", () => {
 
     expect(result.blocks.some((block) => block.startDate === TODAY)).toBe(false);
     expect(result.blocks.reduce((sum, block) => sum + block.plannedUnits, 0)).toBe(20);
+  });
+
+  it("warns about manual blocks after the deadline, unavailable dates, and capacity conflicts", () => {
+    const topic = makeTopic({
+      id: "manual-overbooked",
+      name: "OSCE practice",
+      totalUnits: 300,
+      blocks: [
+        {
+          id: "manual-before",
+          topicId: "manual-overbooked",
+          startDate: "2026-05-04",
+          endDate: "2026-05-04",
+          plannedUnits: 12,
+          source: "manual",
+        },
+        {
+          id: "manual-late",
+          topicId: "manual-overbooked",
+          startDate: "2026-06-02",
+          endDate: "2026-06-02",
+          plannedUnits: 8,
+          source: "manual",
+        },
+      ],
+    });
+    const result = plan([
+      makeCourse({ topics: [topic], exams: [makeExam({ startDate: "2026-06-01" })] }),
+    ], 10);
+
+    expect(result.warnings.map((warning) => warning.type)).toEqual(expect.arrayContaining([
+      "manual-after-deadline",
+      "manual-capacity",
+    ]));
+    expect(result.shortfalls[0]?.unscheduledUnits).toBeGreaterThan(0);
+
+    const unavailable = schedule({
+      courses: [makeCourse({ topics: [makeTopic({
+        id: "weekend-manual",
+        totalUnits: 10,
+        blocks: [{
+          id: "weekend",
+          topicId: "weekend-manual",
+          startDate: "2026-05-09",
+          endDate: "2026-05-09",
+          plannedUnits: 10,
+          source: "manual",
+        }],
+      })] })],
+      today: TODAY,
+      calendar: { ...DEFAULT_PREFERENCES, studyDaysOfWeek: [1] },
+      dailyCapacityUnits: 10,
+    });
+    expect(unavailable.warnings).toContainEqual(expect.objectContaining({ type: "manual-unavailable-day" }));
+  });
+
+  it("does not count manual work after the exam toward pre-deadline coverage", () => {
+    const topic = makeTopic({
+      totalUnits: 10,
+      blocks: [{
+        id: "post-exam",
+        topicId: "t",
+        startDate: "2026-06-02",
+        endDate: "2026-06-02",
+        plannedUnits: 10,
+        source: "manual",
+      }],
+    });
+    const result = plan([
+      makeCourse({ topics: [topic], exams: [makeExam({ startDate: "2026-06-01" })] }),
+    ]);
+
+    expect(result.blocks.reduce((sum, block) => sum + block.plannedUnits, 0)).toBe(10);
+    expect(result.warnings).toContainEqual(expect.objectContaining({ type: "manual-after-deadline" }));
+  });
+
+  it("reports zero capacity as a shortfall instead of using the fallback", () => {
+    const course = makeCourse({
+      topics: [makeTopic({ totalUnits: 10 })],
+      exams: [makeExam({ startDate: "2026-05-08" })],
+    });
+    const result = schedule({
+      courses: [course],
+      today: TODAY,
+      calendar: { ...EVERY_DAY, studyDaysOfWeek: [...EVERY_DAY.studyDaysOfWeek] },
+      dailyCapacityUnits: 0,
+    });
+
+    expect(result.blocks).toEqual([]);
+    expect(result.shortfalls[0]?.unscheduledUnits).toBe(10);
   });
 
   it("excludes work already done", () => {
@@ -220,7 +414,7 @@ describe("schedule", () => {
       40,
     );
     expect(sentence).toBe(
-      "Immunology would fit on its own at 5 units a day, but 124 units lost their place to courses with nearer exams.",
+      "Immunology would fit on its own at 5 units a day, but 124 units could not be booked before the deadline.",
     );
   });
 

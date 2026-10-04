@@ -68,6 +68,36 @@ async function setup() {
 }
 
 describe("MCP security and transaction regressions", () => {
+  it("records only effective progress deltas for MCP and browser writes, including idempotent retries", async () => {
+    const { t, owner, identity, created } = await setup();
+    const topicId = created.createdIds.topic as never;
+    const record = { ...identity, planId: created.planId, topicId, expectedRevision: 1, idempotencyKey: "bounded-over-completion", date: "2026-09-05", units: 1000 };
+    const first = await t.mutation(api.mcpPlanner.recordProgress, record);
+    expect(first).toMatchObject({ completedUnits: 40, appliedUnits: 40, requestedUnits: 1000 });
+    expect(await t.mutation(api.mcpPlanner.recordProgress, record)).toEqual(first);
+    const correction = await t.mutation(api.mcpPlanner.recordProgress, { ...record, expectedRevision: 2, idempotencyKey: "bounded-correction", units: -1000 });
+    expect(correction).toMatchObject({ completedUnits: 0, appliedUnits: -40 });
+    await owner.mutation(api.planner.logStudy, { topicId, date: "2026-09-05", units: -1000, expectedRevisions: { [created.planId]: 3 } });
+    await owner.mutation(api.planner.logStudy, { topicId, date: "2026-09-05", units: 1000, expectedRevisions: { [created.planId]: 4 } });
+    const logs = await owner.query(api.planner.listStudyLog, {});
+    expect(logs.map(log => log.units).sort((a,b) => a-b)).toEqual([-40, 0, 40, 40]);
+    const snapshot = await t.query(api.mcpPlanner.getPlan, { ...identity, planId: created.planId });
+    expect(logs.reduce((sum, log) => sum + log.units, 0)).toBe(snapshot.plan.courses[0].topics[0].completedUnits);
+  });
+
+  it("preserves omitted preferences, honors zero capacity and rejects inconsistent completion", async () => {
+    const { t, identity, created } = await setup();
+    await t.mutation(api.mcpPlanner.applyChanges, { ...identity, planId: created.planId, expectedRevision: 1, idempotencyKey: "set-calendar-preferences", commands: [{ type: "preferences.update", patch: { studyDaysOfWeek: [1, 3], blackoutDates: ["2026-09-09"], theme: "dark", accentColor: "violet", timezone: "Europe/Berlin" } }] });
+    const result = await t.mutation(api.mcpPlanner.applyChanges, { ...identity, planId: created.planId, expectedRevision: 2, idempotencyKey: "zero-capacity-preferences", commands: [{ type: "preferences.update", patch: { dailyCapacityUnits: 0 } }, { type: "schedule.regenerate", today: "2026-09-05" }] });
+    expect(result.warnings.length).toBeGreaterThan(0);
+    const snapshot = await t.query(api.mcpPlanner.getPlan, { ...identity, planId: created.planId });
+    expect(snapshot.preferences).toMatchObject({ dailyCapacityUnits: 0, studyDaysOfWeek: [1, 3], blackoutDates: ["2026-09-09"], theme: "dark", accentColor: "violet" });
+    expect(snapshot.timezone).toBe("Europe/Berlin");
+    expect(snapshot.plan.courses[0].topics[0].blocks).toHaveLength(0);
+    await expect(t.query(api.mcpPlanner.previewChanges, { ...identity, planId: created.planId, commands: [{ type: "topic.update", topicId: created.createdIds.topic, patch: { status: "done" } }] })).rejects.toThrow("completedUnits equal to totalUnits");
+    await expect(t.mutation(api.mcpPlanner.applyChanges, { ...identity, planId: created.planId, expectedRevision: 3, idempotencyKey: "reject-inconsistent-done", commands: [{ type: "topic.update", topicId: created.createdIds.topic, patch: { status: "done", completedUnits: 0 } }] })).rejects.toThrow("completedUnits equal to totalUnits");
+  });
+
   it("public exchange rejects the observed challenge as a substitute for the secret verifier", async () => {
     const t = convexTest(schema, modules);
     const ownerId = await t.run(ctx => ctx.db.insert("users", { name: "Alice" }));
