@@ -1,0 +1,19 @@
+[
+  {
+    "tool": "planner.list",
+    "status": 200,
+    "isError": false,
+    "planCount": 4
+  },
+  {
+    "tool": "planner.apply_changes",
+    "status": 200,
+    "isError": true,
+    "content": [
+      {
+        "type": "text",
+        "text": "[Request ID: d4a2f0f8f4a73c10] Server Error\nUncaught Error: Invalid, expired, wrong-audience, or insufficient-scope access token\n    at requireMcpPrincipal (../../convex/mcpOAuth.ts:121:16)\n    at async handler (../convex/mcpPlanner.ts:372:8)\n"
+      }
+    ]
+  }
+]

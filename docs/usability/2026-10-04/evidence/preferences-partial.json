@@ -1,0 +1,15 @@
+{
+  "status": 200,
+  "body": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool planner.preview_changes: Invalid input: expected array, received undefined at commands[0].patch.studyDaysOfWeek\nInvalid input: expected array, received undefined at commands[0].patch.blackoutDates\nInvalid option: expected one of \"system\"|\"light\"|\"dark\" at commands[0].patch.theme\nInvalid input: expected string, received undefined at commands[0].patch.accentColor"
+        }
+      ],
+      "isError": true
+    },
+    "jsonrpc": "2.0"
+  }
+}

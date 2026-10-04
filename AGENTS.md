@@ -12,6 +12,16 @@
 - OpenAI's session limit may have `status: "temporarily_removed"`; in that case use its weekly limit when available. If the weekly limit is also unavailable, conserve usage and choose the smallest viable approach.
 - When remaining usage is low or the reset is distant, prioritize the requested outcome and omit exploratory work, broad refactors, polish, and nonessential tests.
 
+## Issue and pull request linking
+
+- When solving a GitHub issue, read its description and acceptance criteria and link the resulting PR to that issue.
+- For each issue fully resolved by the PR, include a standalone closing reference in the PR description, for example `Fixes #123`. Use one closing reference per issue. A mention in the title, a comment, or a commit message alone does not satisfy this requirement.
+- Target the repository's default branch for the PR that completes the fix. GitHub recognizes closing keywords in PR descriptions for that target and automatically closes the linked issue when the PR is merged. For intermediate or partial PRs, use `References #123`; put `Fixes #123` on the final PR into the default branch only when the issue's acceptance criteria are satisfied.
+- Before handing off a PR, verify that GitHub recognizes the intended closing issue link (in the Development section or the PR's `closingIssuesReferences`). Preserve the closing references when updating the PR description. After an authorized merge, verify that the resolved issues closed and report any failure; do not close them ahead of the merge.
+- When T3 Code exposes `link_pull_request`, also register the PR with the current thread. Thread registration and GitHub issue linkage are separate; perform both.
+
+GitHub's linking and automatic-closing behavior is documented in [Linking a pull request to an issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue).
+
 ## Running the app
 
 - Port 3000 is shared across worktrees, and only one worktree can own the development server at a time. Do not start a second server on another port, use a temporary project copy, or create a separate deployment.

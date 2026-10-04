@@ -1,0 +1,23 @@
+{
+  "status": 200,
+  "body": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Recorded -5 units of progress for Herz & Kreislauf — Wiederholung. Topic is planned; plan revision 11."
+        }
+      ],
+      "structuredContent": {
+        "auditId": "mx7a7bh4zk41e1sb39rmvfkcxs8fncdq",
+        "completedUnits": 0,
+        "logId": "m1740gbdytw76qd15k14e6743n8fn4yy",
+        "revision": 11,
+        "status": "planned",
+        "summary": "Recorded -5 units of progress for Herz & Kreislauf — Wiederholung",
+        "topicId": "kd76tn6bh3qgbdvnmghvxpfajh8fmgt4"
+      }
+    },
+    "jsonrpc": "2.0"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "status": 200,
+  "body": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Moved study block; Regenerated 12 study blocks. No writes applied."
+        }
+      ],
+      "structuredContent": {
+        "generatedBlocks": [
+          {
+            "endDate": "2026-10-06",
+            "plannedUnits": 120,
+            "startDate": "2026-10-05",
+            "topicId": "kd76tn6bh3qgbdvnmghvxpfajh8fmgt4"
+          },
+          {
+            "endDate": "2026-10-08",
+            "plannedUnits": 90,
+            "startDate": "2026-10-07",
+            "topicId": "kd721je7tp4747br2tv3t5jx0s8fnjem"
+          },
+          {
+            "endDate": "2026-10-08",
+            "plannedUnits": 12,
+            "startDate": "2026-10-08",
+            "topicId": "kd7c2tbtfqyda0bmfb6y5sppcn8fns5v"
+          },
+          {
+            "endDate": "2026-10-10",
+            "plannedUnits": 80,
+            "startDate": "2026-10-08",
+            "topicId": "kd7d704traw368b7590k9xsa018fm598"
+          },
+          {
+            "endDate": "2026-10-10",
+            "plannedUnits": 40,
+            "startDate": "2026-10-10",
+            "topicId": "kd794zbaxs530deh172063znqx8fnb88"
+          },
+          {
+            "endDate": "2026-10-10",
+            "plannedUnits": 4,
+            "startDate": "2026-10-10",
+            "topicId": "kd7bczem64wc506t10vgnmtqk18fnjjp"
+          },
+          {
+            "endDate": "2026-10-10",
+            "plannedUnits": 2,
+            "startDate": "2026-10-10",
+            "topicId": "kd7dh6qcfgnec5fn74qfag88qd8fn1rf"
+          },
+          {
+            "endDate": "2026-10-13",
+            "plannedUnits": 100,
+            "startDate": "2026-10-10",
+            "topicId": "kd7dny4mvqd0rbd64d3kpg64z58fnm91"
+          },
+          {
+            "endDate": "2026-10-14",
+            "plannedUnits": 40,
+            "startDate": "2026-10-13",
+            "topicId": "kd70zmfr8rycdz75cmvd3gvq3s8fny5z"
+          },
+          {
+            "endDate": "2026-10-15",
+            "plannedUnits": 60,
+            "startDate": "2026-10-14",
+            "topicId": "kd72hfzdzsvkvfxd45xax6ftp18fncb0"
+          },
+          {
+            "endDate": "2026-10-22",
+            "plannedUnits": 300,
+            "startDate": "2026-10-15",
+            "topicId": "kd7caw51rxjkghxddg9fhyg5ss8fn944"
+          },
+          {
+            "endDate": "2026-10-22",
+            "plannedUnits": 20,
+            "startDate": "2026-10-22",
+            "topicId": "kd7839vccrtzwjxawx9xx02vvx8fm9s5"
+          }
+        ],
+        "resultingRevision": 2,
+        "revision": 1,
+        "summary": "Moved study block; Regenerated 12 study blocks",
+        "warnings": [],
+        "writesApplied": false
+      }
+    },
+    "jsonrpc": "2.0"
+  }
+}

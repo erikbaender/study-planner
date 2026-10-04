@@ -1,0 +1,15 @@
+{
+  "status": 200,
+  "body": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[Request ID: 6eea4259947336e3] Server Error\nUncaught Error: Revision conflict: expected 1, current 2. Changes since: Updated topic Herz & Kreislauf; Moved study block. Reload planner.get and rebase the command batch.\n    at handler (../convex/mcpPlanner.ts:378:22)\n"
+        }
+      ],
+      "isError": true
+    },
+    "jsonrpc": "2.0"
+  }
+}
