@@ -14,9 +14,9 @@
 
 ## Issue and pull request linking
 
-- When solving a GitHub issue, including issues labelled `usability-test`, read its description and acceptance criteria and link the resulting PR to that issue.
-- For each issue fully resolved by the PR, include a standalone closing reference in the PR description, for example `Fixes #70`. Use one closing reference per issue. A mention in the title, a comment, or a commit message alone does not satisfy this requirement.
-- Target the repository's default branch (`main`) for the PR that completes the fix. GitHub recognizes closing keywords in PR descriptions for that target and automatically closes the linked issue when the PR is merged. For intermediate or partial PRs, use `References #70`; put `Fixes #70` on the final PR into the default branch only when the issue's acceptance criteria are satisfied.
+- When solving a GitHub issue, read its description and acceptance criteria and link the resulting PR to that issue.
+- For each issue fully resolved by the PR, include a standalone closing reference in the PR description, for example `Fixes #123`. Use one closing reference per issue. A mention in the title, a comment, or a commit message alone does not satisfy this requirement.
+- Target the repository's default branch for the PR that completes the fix. GitHub recognizes closing keywords in PR descriptions for that target and automatically closes the linked issue when the PR is merged. For intermediate or partial PRs, use `References #123`; put `Fixes #123` on the final PR into the default branch only when the issue's acceptance criteria are satisfied.
 - Before handing off a PR, verify that GitHub recognizes the intended closing issue link (in the Development section or the PR's `closingIssuesReferences`). Preserve the closing references when updating the PR description. After an authorized merge, verify that the resolved issues closed and report any failure; do not close them ahead of the merge.
 - When T3 Code exposes `link_pull_request`, also register the PR with the current thread. Thread registration and GitHub issue linkage are separate; perform both.
 
