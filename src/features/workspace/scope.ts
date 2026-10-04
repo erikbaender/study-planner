@@ -45,6 +45,7 @@ export function healthByCourse(
       calendar: snapshot.preferences,
       log: snapshot.studyLog,
       dailyCapacityUnits: snapshot.preferences.dailyCapacityUnits,
+      dailyCapacityMinutes: snapshot.preferences.dailyCapacityMinutes,
     }),
   ]);
   return new Map(entries as Array<[string, CourseHealth]>);

@@ -238,6 +238,7 @@ export function requireValidAutoBlockReplacement(
 
 export type PreferencesValidationInput = {
   dailyCapacityUnits?: number;
+  dailyCapacityMinutes?: number;
   studyDaysOfWeek: readonly number[];
   blackoutDates: readonly string[];
   timezone?: string;
@@ -246,6 +247,7 @@ export type PreferencesValidationInput = {
 };
 
 export function requireValidPreferences(preferences: PreferencesValidationInput): void {
+  if (preferences.dailyCapacityMinutes !== undefined) requireFiniteBoundedNumber(preferences.dailyCapacityMinutes, "Daily minutes", { minimum: 0, maximum: 1440 });
   if (preferences.dailyCapacityUnits !== undefined) {
     requireFiniteBoundedNumber(preferences.dailyCapacityUnits, "Daily capacity", {
       minimum: 0,

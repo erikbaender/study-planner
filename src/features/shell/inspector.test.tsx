@@ -26,7 +26,7 @@ const run = vi.fn();
 vi.mock("@/data/use-repository", () => ({
   useRepository: () => repository,
   usePlannerRun: () => run,
-  usePlannerState: () => ({ status: "ready", snapshot: { plans: [] } }),
+  usePlannerState: () => ({ status: "ready", snapshot: { plans: [], studyLog: [] } }),
   usePlannerErrors: () => ({ run, error: null, clear: () => {} }),
 }));
 
@@ -390,7 +390,7 @@ describe("Inspector", () => {
         endDate: "2026-05-06",
         plannedUnits: 13,
       });
-      expect(screen.getByText("Counts 12 slides toward this topic.")).toBeInTheDocument();
+      expect(screen.getByText("Counts 12 slides toward this topic (36 estimated minutes).")).toBeInTheDocument();
     });
 
     it("removes a block from its context menu", async () => {
@@ -677,4 +677,34 @@ it("keeps an inspector draft bound to the snapshot where typing started", async 
   await user.tab();
   expect(originalSave).toHaveBeenCalledWith("Original draft");
   expect(newerSave).not.toHaveBeenCalled();
+});
+
+it("retains a draft across a remote value change and requires review before retry", async () => {
+  const original = vi.fn();
+  const latest = vi.fn(() => Promise.resolve(true));
+  const user = userEvent.setup();
+  const { rerender } = render(<DraftText label="Name" value="Old" onCommit={original} />);
+  await user.clear(screen.getByLabelText("Name"));
+  await user.type(screen.getByLabelText("Name"), "My draft");
+  rerender(<DraftText label="Name" value="Agent name" onCommit={latest} />);
+  expect(screen.getByLabelText("Name")).toHaveValue("My draft");
+  await user.tab();
+  expect(original).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Review" }));
+  expect(screen.getByText(/Current saved value: Agent name/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Retry" }));
+  expect(latest).toHaveBeenCalledWith("My draft");
+});
+
+it("keeps rejected drafts for retry and can cancel back to the saved value", async () => {
+  const rejected = vi.fn(() => Promise.resolve(false));
+  const user = userEvent.setup();
+  render(<DraftText label="Name" value="Saved" onCommit={rejected} />);
+  await user.type(screen.getByLabelText("Name"), " draft");
+  await user.tab();
+  expect(await screen.findByText(/Your draft is unsaved/)).toBeInTheDocument();
+  expect(screen.getByLabelText("Name")).toHaveValue("Saved draft");
+  await user.click(screen.getByRole("button", { name: "Cancel draft" }));
+  expect(screen.getByLabelText("Name")).toHaveValue("Saved");
 });

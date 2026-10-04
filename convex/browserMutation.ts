@@ -28,6 +28,10 @@ export async function checkBrowserRevisions(
       const exam = await ctx.db.get(value as Id<"exams">);
       if (!exam) throw new Error("Exam not found");
       await target("courseId", exam.courseId);
+    } else if (field === "logId") {
+      const log = await ctx.db.get(value as Id<"studyLog">);
+      if (!log || log.ownerId !== ownerId) throw new Error("Study session not found");
+      await target("topicId", log.topicId);
     } else if (field === "blockId") {
       const block = await ctx.db.get(value as Id<"studyBlocks">);
       if (!block) throw new Error("Study block not found");

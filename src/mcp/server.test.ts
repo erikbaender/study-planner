@@ -91,7 +91,8 @@ describe("remote MCP and OAuth protocol", () => {
       expect((listing.structuredContent as { plans: unknown[] }).plans).toHaveLength(1);
       const stale = await client.callTool({ name: "planner.apply_changes", arguments: { planId, expectedRevision: 0, idempotencyKey: "protocol-stale-request", commands: [{ type: "plan.update", patch: { name: "Stale" } }] } });
       expect(stale.isError).toBe(true);
-      expect(JSON.stringify(stale.content)).toContain("Revision conflict");
+      expect(stale.structuredContent).toMatchObject({ error: { code: "REVISION_CONFLICT", expectedRevision: 0 } });
+      expect(JSON.stringify(stale)).not.toContain("at handler");
     } finally { await client.close(); }
   });
 

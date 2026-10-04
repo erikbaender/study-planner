@@ -37,6 +37,7 @@ export type CommandActions = {
   loadSampleData: () => void;
   exportJson: () => void;
   connectedAgents?: () => void;
+  history?: () => void;
   calendarSettings?: () => void;
 };
 
@@ -153,6 +154,7 @@ export function buildCommands(options: {
     }
   }
 
+  if (plan && actions.history) commands.push({ id: "action:history", group: "Actions", title: "Recent changes", keywords: "agent history undo audit", run: actions.history });
   return commands;
 }
 

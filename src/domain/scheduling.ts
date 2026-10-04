@@ -21,6 +21,7 @@
  */
 
 import { addDays, eachDayInclusive, isStudyDay, studyDaysBetween, type StudyCalendar } from "./dates";
+import { minutesPerUnit, DEFAULT_DAILY_CAPACITY_MINUTES } from "./effort";
 import { effectiveDeadline } from "./metrics";
 import { DEFAULT_DAILY_CAPACITY_UNITS, type Course, type IsoDate, type Topic } from "./types";
 
@@ -38,6 +39,7 @@ export type Shortfall = {
   deadline: IsoDate;
   /** Units that did not fit before the deadline. */
   unscheduledUnits: number;
+  workloadUnit?: "minutes";
   /** What the daily capacity would have to be. `Infinity` when there are no study days left. */
   requiredCapacity: number;
 };
@@ -49,7 +51,7 @@ export type Schedule = {
 };
 
 export type ScheduleWarning = {
-  type: "dependency" | "manual-after-deadline" | "manual-unavailable-day" | "manual-capacity" | "unsized-topic";
+  type: "dependency" | "manual-after-deadline" | "manual-unavailable-day" | "manual-capacity" | "unsized-topic" | "legacy-capacity";
   courseId: string;
   topicId: string;
   message: string;
@@ -86,13 +88,38 @@ const PRIORITY_RANK = { high: 0, normal: 1, low: 2 } as const;
  * never returned — the caller swaps only `auto` blocks, so a hand-placed block
  * cannot be moved or overwritten by a reflow.
  */
-export function schedule(options: {
+export function schedule(options: Parameters<typeof scheduleMaterial>[0] & { dailyCapacityMinutes?: number }): Schedule {
+  // Keep explicit legacy budgets working for existing integrations. New plans
+  // and the browser use a common time budget, with material counts preserved.
+  if (options.dailyCapacityMinutes === undefined && options.dailyCapacityUnits !== undefined) {
+    const units = new Set(options.courses.flatMap(course => course.topics.filter(topic => topic.totalUnits > topic.completedUnits).map(topic => topic.unit)));
+    if (units.size <= 1) return scheduleMaterial(options);
+    const result = schedule({ ...options, dailyCapacityMinutes: 0 });
+    const first = options.courses.find(course => course.topics.length)!;
+    return { ...result, warnings: [...result.warnings, { type: "legacy-capacity", courseId: first.id, topicId: first.topics[0].id,
+      message: "Mixed materials cannot share a raw-unit budget. Set dailyCapacityMinutes and review each topic’s minutesPerUnit estimate before generating a schedule." }] };
+  }
+  const rates = new Map(options.courses.flatMap(course => course.topics.map(topic => [topic.id, minutesPerUnit(topic)] as const)));
+  const courses = options.courses.map(course => ({ ...course, topics: course.topics.map(topic => {
+    const rate = rates.get(topic.id)!;
+    return { ...topic, totalUnits: topic.totalUnits * rate, completedUnits: topic.completedUnits * rate,
+      blocks: topic.blocks.map(block => ({ ...block, plannedUnits: block.plannedUnits === undefined ? undefined : block.plannedUnits * rate })) };
+  }) }));
+  const result = scheduleMaterial({ ...options, courses, splitByDay: true, dailyCapacityUnits: options.dailyCapacityMinutes ?? DEFAULT_DAILY_CAPACITY_MINUTES });
+  return { ...result,
+    blocks: result.blocks.map(block => ({ ...block, plannedUnits: block.plannedUnits / rates.get(block.topicId)! })),
+    shortfalls: result.shortfalls.map(shortfall => ({ ...shortfall, workloadUnit: "minutes" })),
+  };
+}
+
+function scheduleMaterial(options: {
   courses: readonly Course[];
   today: IsoDate;
   calendar: StudyCalendar;
   dailyCapacityUnits?: number;
   /** How far ahead the engine is willing to plan when a course has no exam. */
   horizonDays?: number;
+  splitByDay?: boolean;
 }): Schedule {
   const { courses, today, calendar, horizonDays = 180 } = options;
   const capacity = options.dailyCapacityUnits ?? FALLBACK_CAPACITY_UNITS;
@@ -274,7 +301,7 @@ export function schedule(options: {
       runUnits = 0;
     };
 
-    while (outstanding > 0 && cursor <= entry.deadline) {
+    while (outstanding > 1e-8 && cursor <= entry.deadline) {
       if (isStudyDay(cursor, calendar)) {
         const used = load.get(cursor) ?? 0;
         const free = capacity - used;
@@ -288,6 +315,7 @@ export function schedule(options: {
           if (runStart === null) runStart = cursor;
           runEnd = cursor;
           runUnits += take;
+          if (options.splitByDay) flush();
         } else {
           flush();
         }
@@ -304,7 +332,7 @@ export function schedule(options: {
       .map((block) => block.endDate).sort().at(-1);
     const finishDate = [finalEnd, manualEnd].filter((value): value is IsoDate => Boolean(value)).sort().at(-1);
 
-    if (outstanding > 0) {
+    if (outstanding > 1e-8) {
       missed.set(entry.courseId, (missed.get(entry.courseId) ?? 0) + outstanding);
       unresolvedTopics.add(entry.topic.id);
     } else if (finishDate) {
@@ -461,13 +489,14 @@ function shortfallsFor(
  * sentence produced — is a contradiction the reader has to unpick.
  */
 export function describeShortfall(shortfall: Shortfall, capacity: number): string {
+  const unit = shortfall.workloadUnit ?? "units";
   if (!Number.isFinite(shortfall.requiredCapacity)) {
-    return `${shortfall.courseName} has no study days left before ${shortfall.deadline}, and ${shortfall.unscheduledUnits} units are still unplanned.`;
+    return `${shortfall.courseName} has no study days left before ${shortfall.deadline}, and ${shortfall.unscheduledUnits} ${unit} are still unplanned.`;
   }
 
   if (shortfall.requiredCapacity <= capacity) {
-    return `${shortfall.courseName} would fit on its own at ${shortfall.requiredCapacity} units a day, but ${shortfall.unscheduledUnits} units could not be booked before the deadline.`;
+    return `${shortfall.courseName} would fit on its own at ${shortfall.requiredCapacity} ${unit} a day, but ${shortfall.unscheduledUnits} ${unit} could not be booked before the deadline.`;
   }
 
-  return `${shortfall.courseName} needs ${shortfall.requiredCapacity} units a day to finish in time; your capacity is ${capacity}. You are ${shortfall.unscheduledUnits} units over.`;
+  return `${shortfall.courseName} needs ${shortfall.requiredCapacity} ${unit} a day to finish in time; your capacity is ${capacity}. You are ${shortfall.unscheduledUnits} ${unit} over.`;
 }

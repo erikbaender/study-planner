@@ -69,6 +69,7 @@ const inverseCommand = v.union(
       name: v.optional(v.string()),
       unit: v.optional(unit),
       totalUnits: v.optional(v.number()),
+    minutesPerUnit: v.optional(v.union(v.number(), v.null())),
       completedUnits: v.optional(v.number()),
       status: v.optional(topicStatus),
       priority: v.optional(topicPriority),
@@ -116,6 +117,7 @@ const inverseCommand = v.union(
       v.null(),
       v.object({
         dailyCapacityUnits: v.optional(v.number()),
+    dailyCapacityMinutes: v.optional(v.number()),
         studyDaysOfWeek: v.array(v.number()),
         blackoutDates: v.array(v.string()),
         theme,
@@ -221,6 +223,7 @@ export default defineSchema({
     unit,
     /** `0` means the size is untracked; such topics are excluded from pace maths. */
     totalUnits: v.number(),
+    minutesPerUnit: v.optional(v.number()),
     completedUnits: v.number(),
     status: topicStatus,
     priority: topicPriority,
@@ -265,6 +268,7 @@ export default defineSchema({
     revision: v.optional(v.number()),
     ownerId: v.id("users"),
     dailyCapacityUnits: v.optional(v.number()),
+    dailyCapacityMinutes: v.optional(v.number()),
     /** 0 = Sunday, matching `Date.prototype.getDay`. */
     studyDaysOfWeek: v.array(v.number()),
     blackoutDates: v.array(v.string()),

@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { executeCommandBatch, recordBrowserMutation, type PlannerCommand } from "./plannerApplication";
+import { executeCommandBatch, recordBrowserMutation, undoAudit, type PlannerCommand } from "./plannerApplication";
 import { browserMutation } from "./browserMutation";
 import {
   assertAutoBlockReplacement,
@@ -115,6 +115,7 @@ const topicDocumentFields = {
   section: v.optional(v.string()),
   unit: unitValidator,
   totalUnits: v.number(),
+    minutesPerUnit: v.optional(v.number()),
   completedUnits: v.number(),
   status: statusValidator,
   priority: priorityValidator,
@@ -154,6 +155,7 @@ const preferencesDocumentValidator = v.object({
   _creationTime: v.number(),
   ownerId: v.id("users"),
   dailyCapacityUnits: v.optional(v.number()),
+    dailyCapacityMinutes: v.optional(v.number()),
   studyDaysOfWeek: v.array(v.number()),
   blackoutDates: v.array(v.string()),
   theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")),
@@ -634,6 +636,7 @@ export const createTopic = browserMutation({
     name: v.string(),
     unit: v.optional(unitValidator),
     totalUnits: v.optional(v.number()),
+    minutesPerUnit: v.optional(v.number()),
     priority: v.optional(priorityValidator),
     notes: v.optional(v.string()),
     color: courseColorValidator,
@@ -660,6 +663,7 @@ export const createTopics = browserMutation({
         name: v.string(),
         unit: unitValidator,
         totalUnits: v.number(),
+    minutesPerUnit: v.optional(v.number()),
       }),
     ),
     color: courseColorValidator,
@@ -713,6 +717,7 @@ export const updateTopic = browserMutation({
     name: v.string(),
     unit: unitValidator,
     totalUnits: v.number(),
+    minutesPerUnit: v.optional(v.number()),
     completedUnits: v.number(),
     status: statusValidator,
     priority: priorityValidator,
@@ -920,6 +925,7 @@ type GeneratedBlockInput = (typeof generatedBlockValidator)["type"];
 
 const preferenceFields = {
   dailyCapacityUnits: v.optional(v.number()),
+    dailyCapacityMinutes: v.optional(v.number()),
   studyDaysOfWeek: v.array(v.number()),
   blackoutDates: v.array(v.string()),
   timezone: v.optional(v.string()),
@@ -1121,8 +1127,9 @@ export const logStudy = browserMutation({
     await recordBrowserMutation(ctx, {
       ownerId: userId,
       planId: course.planId,
-      summary: `Recorded progress for ${topic.name}`,
+      summary: `Recorded progress for ${topic.name} on ${args.date}`,
       affectedEntityIds: [args.topicId, logId],
+      inverseCommands: [{ type: "progress.restore", topicId: args.topicId, logId, completedUnits: topic.completedUnits, status: topic.status }],
     });
     return logId;
   },
@@ -1166,6 +1173,7 @@ const importTopic = v.object({
   name: v.string(),
   unit: unitValidator,
   totalUnits: v.number(),
+    minutesPerUnit: v.optional(v.number()),
   completedUnits: v.number(),
   status: statusValidator,
   priority: priorityValidator,
@@ -1320,6 +1328,7 @@ async function insertPlans(ctx: MutationCtx, userId: Id<"users">, plans: ImportP
           name: topicInput.name,
           unit: topicInput.unit,
           totalUnits: topicInput.totalUnits,
+          minutesPerUnit: topicInput.minutesPerUnit,
           completedUnits: topicInput.completedUnits,
           status: topicInput.status,
           priority: topicInput.priority,
@@ -1441,3 +1450,65 @@ async function deleteTopicTree(ctx: MutationCtx, topic: Doc<"topics">) {
   }
   await ctx.db.delete(topic._id);
 }
+
+/** Human-readable, account-owned history. Recovery payloads never leave the server. */
+export const recentChanges = query({
+  args: { planId: v.id("plans") },
+  returns: v.array(v.object({
+    id: v.id("plannerAudit"), createdAt: v.number(), actor: v.string(), summary: v.string(),
+    canUndo: v.boolean(), undoReason: v.string(),
+  })),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const plan = await assertPlanOwner(ctx, args.planId, userId);
+    const rows = await ctx.db.query("plannerAudit").withIndex("by_plan_and_created_at", q => q.eq("planId", plan._id)).order("desc").take(50);
+    const preferences = await ctx.db.query("preferences").withIndex("by_owner", q => q.eq("ownerId", userId)).unique();
+    return await Promise.all(rows.map(async row => {
+      const undo = await ctx.db.query("plannerUndo").withIndex("by_audit", q => q.eq("auditId", row._id)).unique();
+      const grant = row.grantId ? await ctx.db.get(row.grantId) : null;
+      const client = grant ? await ctx.db.get(grant.clientId) : null;
+      const undoReason = !row.undoable ? "This change has no undo available."
+        : row.resultRevision !== (plan.revision ?? 0) ? "Only the latest change can be undone."
+        : !undo || undo.usedAt !== undefined || undo.expiresAt <= Date.now() ? "Undo has expired or was already used."
+        : undo.preferencesRevision !== undefined && undo.preferencesRevision !== (preferences?.revision ?? 0) ? "Calendar settings changed afterward."
+        : "";
+      return { id: row._id, createdAt: row.createdAt, actor: row.actorType === "user" ? "You" : client?.name ?? "Connected agent",
+        summary: row.summary, canUndo: undoReason === "", undoReason };
+    }));
+  },
+});
+
+export const undoChange = mutation({
+  args: { planId: v.id("plans"), auditId: v.id("plannerAudit"), expectedRevisions: v.optional(v.record(v.string(), v.number())) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const expectedRevision = args.expectedRevisions?.[args.planId];
+    if (expectedRevision === undefined) throw new Error("Review the latest semester before undoing a change.");
+    await undoAudit(ctx, { ownerId: userId, planId: args.planId, auditId: args.auditId, expectedRevision });
+    return null;
+  },
+});
+
+/** Correct an existing session while keeping topic progress and log totals consistent. */
+export const updateStudyLog = browserMutation({
+  args: { logId: v.id("studyLog"), date: v.string(), units: v.number(), minutes: v.optional(v.number()), note: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await requireUser(ctx);
+    const log = await ctx.db.get(args.logId);
+    if (!log || log.ownerId !== userId) throw new Error("Study session not found");
+    const { topic, course } = await assertTopicOwner(ctx, log.topicId, userId);
+    assertIsoDate(args.date, "Study date");
+    assertFiniteBoundedNumber(args.units, "Units", { min: -PLANNER_LIMITS.units, max: PLANNER_LIMITS.units });
+    if (args.minutes !== undefined) assertFiniteBoundedNumber(args.minutes, "Minutes", { min: 0, max: PLANNER_LIMITS.minutes });
+    if (args.note !== undefined) assertBoundedText(args.note, "Study note", PLANNER_LIMITS.logNoteCharacters);
+    const raw = topic.completedUnits + args.units - log.units;
+    const completedUnits = Math.max(0, topic.totalUnits > 0 ? Math.min(topic.totalUnits, raw) : raw);
+    assertProgress(completedUnits, topic.totalUnits);
+    await ctx.db.patch(topic._id, { completedUnits, status: topic.totalUnits > 0 && completedUnits >= topic.totalUnits ? "done" : completedUnits > 0 ? "active" : "planned", updatedAt: Date.now() });
+    await ctx.db.patch(log._id, { date: args.date, units: log.units + completedUnits - topic.completedUnits, minutes: args.minutes, note: args.note });
+    await recordBrowserMutation(ctx, { ownerId: userId, planId: course.planId, summary: `Corrected study session for ${topic.name} on ${args.date}`, affectedEntityIds: [topic._id, log._id] });
+    return null;
+  },
+});

@@ -6,6 +6,7 @@
  * topic sizes at all — none of this is computable from dates alone.
  */
 
+import { minutesPerUnit, effortLog, DEFAULT_DAILY_CAPACITY_MINUTES } from "./effort";
 import {
   addDays,
   compareDates,
@@ -52,7 +53,15 @@ export function progressOf(topics: readonly Topic[]): Progress {
 }
 
 export function courseProgress(course: Course): Progress {
-  return progressOf(course.topics);
+  const mixed = new Set(course.topics.filter(topic => topic.totalUnits > 0).map(topic => topic.unit)).size > 1;
+  return mixed ? effortProgress(course.topics) : progressOf(course.topics);
+}
+
+export function effortProgress(topics: readonly Topic[]): Progress {
+  return progressOf(topics.map(topic => ({ ...topic,
+    totalUnits: topic.totalUnits * minutesPerUnit(topic),
+    completedUnits: topic.completedUnits * minutesPerUnit(topic),
+  })));
 }
 
 export function topicProgress(topic: Topic): Progress {
@@ -118,6 +127,7 @@ export function velocityForTopics(
 }
 
 export type PaceAssessment = {
+  workloadUnit?: "minutes";
   remainingUnits: number;
   /** Available study days in `[today, deadline]`, inclusive. */
   studyDaysLeft: number;
@@ -273,12 +283,16 @@ export type CourseHealth = {
  */
 export function assessCourse(options: {
   course: Course;
+  dailyCapacityMinutes?: number;
   today: IsoDate;
   calendar: StudyCalendar;
   log: readonly StudyLogEntry[];
   dailyCapacityUnits?: number;
 }): CourseHealth {
   const { course, today, calendar, log, dailyCapacityUnits } = options;
+  const timeBudget = options.dailyCapacityMinutes !== undefined || dailyCapacityUnits === undefined;
+  const paceProgress = timeBudget ? effortProgress(course.topics) : progressOf(course.topics);
+  const paceLog = timeBudget ? effortLog(log, course.topics) : log;
   const progress = courseProgress(course);
   const exam = nextExam(course, today);
   const topicIds = new Set(course.topics.map((topic) => topic.id));
@@ -297,15 +311,15 @@ export function assessCourse(options: {
     exam,
     daysUntilExam: exam ? daysUntil(effectiveDeadline(exam), today) : null,
     pace: exam
-      ? assessPace({
-          remainingUnits: progress.remainingUnits,
+      ? { ...assessPace({
+          remainingUnits: paceProgress.remainingUnits,
           today,
           deadline: effectiveDeadline(exam),
           calendar,
-          actualVelocity: velocityForTopics(log, topicIds, today, calendar),
+          actualVelocity: velocityForTopics(paceLog, topicIds, today, calendar),
           hasObservedPace,
-          dailyCapacityUnits,
-        })
+          dailyCapacityUnits: timeBudget ? options.dailyCapacityMinutes ?? DEFAULT_DAILY_CAPACITY_MINUTES : dailyCapacityUnits,
+        }), ...(timeBudget ? { workloadUnit: "minutes" as const } : {}) }
       : null,
   };
 }

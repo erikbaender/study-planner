@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EMPTY_SNAPSHOT, FALLBACK_CAPACITY_UNITS, type Preferences } from "@/domain";
+import { EMPTY_SNAPSHOT, DEFAULT_DAILY_CAPACITY_MINUTES, type Preferences } from "@/domain";
 import { course as makeCourse, topic as makeTopic } from "@/test/factories";
 import type { PlanningPreview } from "./planning-summary";
 
@@ -59,7 +59,7 @@ describe("PlanningActions", () => {
       courses: [course],
       today: "2026-05-01",
       calendar: EMPTY_SNAPSHOT.preferences,
-      dailyCapacityUnits: FALLBACK_CAPACITY_UNITS,
+      dailyCapacityMinutes: DEFAULT_DAILY_CAPACITY_MINUTES,
     });
 
     const callsWhileOpen = createPlanningPreview.mock.calls.length;
@@ -100,7 +100,7 @@ describe("PlanningActions", () => {
     expect(repository.applySchedule).toHaveBeenCalledOnce();
     expect(repository.applySchedule).toHaveBeenCalledWith([topic.id], [block], {
       ...EMPTY_SNAPSHOT.preferences,
-      dailyCapacityUnits: FALLBACK_CAPACITY_UNITS,
+      dailyCapacityMinutes: DEFAULT_DAILY_CAPACITY_MINUTES,
     });
     expect(run).toHaveBeenCalledOnce();
     expect(run).toHaveBeenCalledWith(operation);

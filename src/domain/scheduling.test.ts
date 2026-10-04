@@ -128,9 +128,9 @@ describe("schedule", () => {
       dependencyIds: [prerequisite.id],
     });
 
-    const result = plan([
+    const result = schedule({ courses: [
       makeCourse({ topics: [prerequisite, dependent], exams: [makeExam({ startDate: "2026-06-01" })] }),
-    ]);
+    ], today: TODAY, calendar: { ...EVERY_DAY, studyDaysOfWeek: [...EVERY_DAY.studyDaysOfWeek] }, dailyCapacityMinutes: 120 });
 
     expect(result.blocks.find((block) => block.topicId === dependent.id)?.startDate).toBe("2026-05-21");
   });

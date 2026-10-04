@@ -1,6 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { plannerError } from "@/domain/errors";
+import { HistorySheet } from "@/features/history/history-sheet";
 import { CalendarSettingsSheet } from "@/features/planning/calendar-settings-sheet";
 
 /**
@@ -146,6 +148,7 @@ export function AppShell() {
    * no UI while making the server and hydration renders disagree.
    */
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [calendarSettingsOpen, setCalendarSettingsOpen] = useState(false);
   const [sampleDataOpen, setSampleDataOpen] = useState(false);
   const [editPlanOpen, setEditPlanOpen] = useState(false);
@@ -335,6 +338,7 @@ export function AppShell() {
           newCourse: () => workspace.setCreating("course"),
           loadSampleData: () => setSampleDataOpen(true),
           exportJson,
+          history: () => setHistoryOpen(true),
           calendarSettings: () => setCalendarSettingsOpen(true),
           connectedAgents: () => router.push("/connections"),
         },
@@ -360,6 +364,7 @@ export function AppShell() {
         onNewPlan={() => workspace.setCreating("plan")}
         onNewCourse={() => workspace.setCreating("course")}
         onConnectedAgents={() => router.push("/connections")}
+        onHistory={() => setHistoryOpen(true)}
         onCalendarSettings={() => setCalendarSettingsOpen(true)}
         onLoadSampleData={() => setSampleDataOpen(true)}
         onExport={exportJson}
@@ -374,7 +379,7 @@ export function AppShell() {
           role="alert"
           className="flex items-center gap-3 border-b border-separator bg-negative/10 px-4 py-2 text-body"
         >
-          <span className="text-negative">{error.message}</span>
+          <span className="text-negative">{plannerError(error).message}</span>
           {state.status !== "error" ? (
             <Button size="sm" variant="plain" className="ml-auto" onClick={clear}>
               Dismiss
@@ -552,6 +557,7 @@ export function AppShell() {
         onCreate={(input) => run(repository.createPlan(input).then(workspace.setPlan))}
       />
 
+      {plan ? <HistorySheet key={plan.id} open={historyOpen} onOpenChange={setHistoryOpen} plan={plan} /> : null}
       <CalendarSettingsSheet open={calendarSettingsOpen} onOpenChange={setCalendarSettingsOpen} preferences={snapshot.preferences} onSave={(preferences) => run(repository.savePreferences(preferences).then(() => setCalendarSettingsOpen(false)))} />
 
       <EditPlanSheet

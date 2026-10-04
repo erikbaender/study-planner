@@ -186,6 +186,7 @@ export const getPlan = query({
           name: v.string(),
           unit: unitValidator,
           totalUnits: v.number(),
+          minutesPerUnit: v.optional(v.number()),
           completedUnits: v.number(),
           status: topicStatusValidator,
           priority: v.union(v.literal("low"), v.literal("normal"), v.literal("high")),
@@ -207,6 +208,7 @@ export const getPlan = query({
     preferences: v.object({
       timezone: v.optional(v.string()),
       dailyCapacityUnits: v.optional(v.number()),
+      dailyCapacityMinutes: v.optional(v.number()),
       studyDaysOfWeek: v.array(v.number()),
       blackoutDates: v.array(v.string()),
       theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")),

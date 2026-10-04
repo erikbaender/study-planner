@@ -22,7 +22,9 @@ import { CalendarSync, Wand2 } from "lucide-react";
 import { usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   describeShortfall,
-  FALLBACK_CAPACITY_UNITS,
+  DEFAULT_DAILY_CAPACITY_MINUTES,
+  minutesPerUnit,
+  UNIT_LABELS,
   type Course,
   type IsoDate,
   type PlannerSnapshot,
@@ -111,13 +113,13 @@ function PlanSheet({
   const repository = useRepository();
   const run = usePlannerRun();
 
-  const stored = snapshot.preferences.dailyCapacityUnits;
-  const [capacity, setCapacity] = useState(stored ?? FALLBACK_CAPACITY_UNITS);
+  const stored = snapshot.preferences.dailyCapacityMinutes;
+  const [capacity, setCapacity] = useState(stored ?? DEFAULT_DAILY_CAPACITY_MINUTES);
 
   const [wasOpen, setWasOpen] = useState(open);
   if (wasOpen !== open) {
     setWasOpen(open);
-    setCapacity(stored ?? FALLBACK_CAPACITY_UNITS);
+    setCapacity(stored ?? DEFAULT_DAILY_CAPACITY_MINUTES);
   }
 
   // Closed sheets remain mounted so Radix can play their exit animation. Keep
@@ -130,7 +132,7 @@ function PlanSheet({
             courses,
             today,
             calendar: snapshot.preferences,
-            dailyCapacityUnits: capacity,
+            dailyCapacityMinutes: capacity,
           })
         : null,
     [capacity, courses, open, snapshot.preferences, today],
@@ -165,7 +167,7 @@ function PlanSheet({
         visiblePreview.preview.result.blocks,
         {
           ...snapshot.preferences,
-          dailyCapacityUnits: visibleCapacity,
+          dailyCapacityMinutes: visibleCapacity,
         },
       ),
     );
@@ -181,7 +183,7 @@ function PlanSheet({
       footer={
         <>
           <Button onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="accent" onClick={apply} disabled={!result || result.blocks.length === 0}>
+          <Button variant="accent" onClick={apply} disabled={!result}>
             Apply plan
           </Button>
         </>
@@ -210,13 +212,14 @@ function PlanSheet({
 
         <div className="flex items-end gap-3">
           <div className="flex flex-col gap-1">
-            <span className="text-callout font-medium text-secondary">Units per study day</span>
+            <span className="text-callout font-medium text-secondary">Minutes per study day</span>
             <Stepper
-              label="Units per study day"
+              label="Minutes per study day"
               value={visibleCapacity}
               onValueChange={setCapacity}
-              step={5}
-              min={1}
+              step={15}
+              min={0}
+              max={1440}
             />
           </div>
           <p className="pb-1.5 text-callout text-tertiary">
@@ -224,6 +227,14 @@ function PlanSheet({
           </p>
         </div>
 
+        <section aria-label="Time estimates" className="flex flex-col gap-1 text-callout text-secondary">
+          <p>Workload uses estimated study time; material counts stay on each topic. Adjust estimates in the topic inspector.</p>
+          <ul className="max-h-32 overflow-y-auto">
+            {courses.flatMap(course => course.topics).filter(topic => topic.totalUnits > 0).map(topic => (
+              <li key={topic.id}>{topic.name}: {minutesPerUnit(topic)} min/{UNIT_LABELS[topic.unit].singular}{topic.minutesPerUnit === undefined ? " (starting estimate)" : ""}</li>
+            ))}
+          </ul>
+        </section>
         <dl className="flex flex-wrap gap-x-8 gap-y-2">
           <div>
             <dt className="text-caption tracking-wide text-tertiary uppercase">Blocks</dt>

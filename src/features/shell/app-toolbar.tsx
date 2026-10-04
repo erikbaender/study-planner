@@ -21,6 +21,7 @@
 import { useRef, useState } from "react";
 import {
   Bot,
+  History,
   CalendarDays,
   Command,
   Download,
@@ -62,6 +63,7 @@ export function AppToolbar(props: {
     onNewPlan: () => void;
     onNewCourse: () => void;
     onLoadSampleData: () => void;
+    onHistory?: () => void;
     onCalendarSettings?: () => void;
     onConnectedAgents?: () => void;
     onExport: () => void;
@@ -155,6 +157,7 @@ export function AppToolbar(props: {
         label="More"
         align="end"
         items={[
+          { label: "Recent changes", icon: <History />, onSelect: props.onHistory ?? (() => {}), disabled: !props.canExport },
           { label: "Study calendar", icon: <CalendarDays />, onSelect: props.onCalendarSettings ?? (() => {}) },
           { label: "Load sample data", icon: <FlaskConical />, onSelect: props.onLoadSampleData },
           { type: "separator" },

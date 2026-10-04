@@ -57,12 +57,14 @@ const topicInputValidator = v.object({
   name: v.string(),
   unit: v.optional(unitValidator),
   totalUnits: v.optional(v.number()),
+    minutesPerUnit: v.optional(v.number()),
   priority: v.optional(priorityValidator),
   notes: v.optional(v.string()),
   color: v.string(),
 });
 const preferencesValidator = v.object({
   dailyCapacityUnits: v.optional(v.number()),
+    dailyCapacityMinutes: v.optional(v.number()),
   studyDaysOfWeek: v.optional(v.array(v.number())),
   blackoutDates: v.optional(v.array(v.string())),
   theme: v.optional(themeValidator),
@@ -118,6 +120,7 @@ export const plannerCommandValidator = v.union(
       name: v.optional(v.string()),
       unit: v.optional(unitValidator),
       totalUnits: v.optional(v.number()),
+    minutesPerUnit: v.optional(v.number()),
       completedUnits: v.optional(v.number()),
       status: v.optional(statusValidator),
       priority: v.optional(priorityValidator),
@@ -214,12 +217,14 @@ function validateExamInput(input: {
 function validateTopicInput(input: {
   name: string;
   totalUnits?: number;
+  minutesPerUnit?: number;
   notes?: string;
   color: string;
 }) {
   assertTrimmedBoundedText(input.name, "Topic name", PLANNER_LIMITS.nameCharacters);
   assertBoundedText(input.notes ?? "", "Topic notes", PLANNER_LIMITS.notesCharacters);
   assertProgress(0, input.totalUnits ?? 0);
+  if (input.minutesPerUnit !== undefined) assertFiniteBoundedNumber(input.minutesPerUnit, "Minutes per unit", { min: 0.01, max: 10080 });
   assertColor(input.color);
 }
 
@@ -257,6 +262,7 @@ function validateCommandShape(command: PlannerCommand) {
       if (command.patch.name !== undefined) assertTrimmedBoundedText(command.patch.name, "Topic name", PLANNER_LIMITS.nameCharacters);
       if (command.patch.notes !== undefined) assertBoundedText(command.patch.notes, "Topic notes", PLANNER_LIMITS.notesCharacters);
       if (command.patch.color !== undefined) assertColor(command.patch.color);
+      if (command.patch.minutesPerUnit !== undefined) assertFiniteBoundedNumber(command.patch.minutesPerUnit, "Minutes per unit", { min: 0.01, max: 10080 });
       if (command.patch.totalUnits !== undefined) {
         assertFiniteBoundedNumber(command.patch.totalUnits, "Total units", { min: 0, max: PLANNER_LIMITS.units });
       }
@@ -398,6 +404,7 @@ async function loadCommandPlan(ctx: CommandContext, ownerId: Id<"users">, planId
         name: topic.name,
         unit: topic.unit,
         totalUnits: topic.totalUnits,
+        minutesPerUnit: topic.minutesPerUnit,
         completedUnits: topic.completedUnits,
         status: topic.status,
         priority: topic.priority,
@@ -441,6 +448,7 @@ async function loadCommandPlan(ctx: CommandContext, ownerId: Id<"users">, planId
   const preferences: Preferences = row
     ? {
         dailyCapacityUnits: row.dailyCapacityUnits,
+        dailyCapacityMinutes: row.dailyCapacityMinutes,
         timezone: row.timezone,
         studyDaysOfWeek: row.studyDaysOfWeek.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6) as Preferences["studyDaysOfWeek"],
         blackoutDates: row.blackoutDates,
@@ -467,6 +475,7 @@ async function regenerateSchedule(
     today,
     calendar: { studyDaysOfWeek: state.preferences.studyDaysOfWeek, blackoutDates: state.preferences.blackoutDates },
     dailyCapacityUnits: state.preferences.dailyCapacityUnits,
+    dailyCapacityMinutes: state.preferences.dailyCapacityMinutes,
   });
   const topicIds = courses.flatMap((course) => course.topics.map((topic) => topic.id as Id<"topics">));
   const oldAuto: Array<Omit<Doc<"studyBlocks">, "_id" | "_creationTime">> = [];
@@ -650,6 +659,7 @@ async function evaluateCommands(
           name: command.input.name,
           unit: command.input.unit ?? "slides",
           totalUnits: command.input.totalUnits ?? 0,
+          minutesPerUnit: command.input.minutesPerUnit,
           completedUnits: 0,
           status: "planned",
           priority: command.input.priority ?? "normal",
@@ -679,7 +689,7 @@ async function evaluateCommands(
         inverseCommands.unshift({
           type: "topic.update",
           topicId: id,
-          patch: changedFields(before, command.patch),
+          patch: { ...changedFields(before, command.patch), ...("minutesPerUnit" in command.patch ? { minutesPerUnit: before.minutesPerUnit ?? null } : {}) },
         });
         affected.add(id);
         summaries.push(`Updated topic ${before.name}`);
@@ -770,7 +780,7 @@ async function evaluateCommands(
         generatedBlocks = regenerated.result.blocks;
         warnings.push(...regenerated.result.warnings.map(warning => warning.message));
         regenerated.topicIds.forEach((id) => affected.add(id));
-        warnings.push(...regenerated.result.shortfalls.map((shortfall) => `${shortfall.courseName}: ${shortfall.unscheduledUnits} units could not be scheduled before ${shortfall.deadline}`));
+        warnings.push(...regenerated.result.shortfalls.map((shortfall) => `${shortfall.courseName}: ${shortfall.unscheduledUnits} ${shortfall.workloadUnit ?? "units"} could not be scheduled before ${shortfall.deadline}`));
         inverseCommands.unshift({ type: "schedule.restore", topicIds: regenerated.topicIds, blocks: regenerated.oldAuto });
         summaries.push(`Regenerated ${regenerated.result.blocks.length} study blocks`);
         break;
@@ -781,7 +791,7 @@ async function evaluateCommands(
         assertPreferences(merged);
         if (before) await ctx.db.patch(before._id, { ...command.patch, revision: (before.revision ?? 0) + 1, updatedAt: now });
         else await ctx.db.insert("preferences", { ownerId: args.ownerId, ...DEFAULT_PREFERENCES, ...command.patch, revision: 1, updatedAt: now });
-        inverseCommands.unshift({ type: "preferences.restore", value: before ? { dailyCapacityUnits: before.dailyCapacityUnits, studyDaysOfWeek: before.studyDaysOfWeek, blackoutDates: before.blackoutDates, theme: before.theme, accentColor: before.accentColor, timezone: before.timezone } : null });
+        inverseCommands.unshift({ type: "preferences.restore", value: before ? { dailyCapacityUnits: before.dailyCapacityUnits, dailyCapacityMinutes: before.dailyCapacityMinutes, studyDaysOfWeek: before.studyDaysOfWeek, blackoutDates: before.blackoutDates, theme: before.theme, accentColor: before.accentColor, timezone: before.timezone } : null });
         summaries.push("Updated scheduling preferences");
         break;
       }
@@ -843,10 +853,12 @@ async function executeInverseCommands(ctx: MutationCtx, ownerId: Id<"users">, pl
         await deleteTopic(ctx, topic);
         break;
       }
-      case "topic.update":
+      case "topic.update": {
         await assertTopicInPlan(ctx, planId, command.topicId);
-        await ctx.db.patch(command.topicId, { ...command.patch, updatedAt: Date.now() });
+        const { minutesPerUnit, ...patch } = command.patch;
+        await ctx.db.patch(command.topicId, { ...patch, ...("minutesPerUnit" in command.patch ? { minutesPerUnit: minutesPerUnit ?? undefined } : {}), updatedAt: Date.now() });
         break;
+      }
       case "topic.reorder":
         for (const [order, id] of command.topicIds.entries()) {
           await assertTopicInPlan(ctx, planId, id);
@@ -993,7 +1005,7 @@ export async function storeIdempotentResult(
 
 export async function undoAudit(ctx: MutationCtx, args: {
   ownerId: Id<"users">;
-  grantId: Id<"mcpGrants">;
+  grantId?: Id<"mcpGrants">;
   planId: Id<"plans">;
   auditId: Id<"plannerAudit">;
   expectedRevision: number;
@@ -1014,7 +1026,7 @@ export async function undoAudit(ctx: MutationCtx, args: {
   }
   await executeInverseCommands(ctx, args.ownerId, args.planId, undo.inverseCommands);
   if (undo.inverseCommands.some(command => command.type === "preferences.restore")) {
-    await recordOtherPreferenceChanges(ctx, { ownerId: args.ownerId, planId: args.planId, actorType: "mcp", grantId: args.grantId });
+    await recordOtherPreferenceChanges(ctx, { ownerId: args.ownerId, planId: args.planId, actorType: args.grantId ? "mcp" : "user", grantId: args.grantId });
   }
   const resultRevision = current + 1;
   await ctx.db.patch(args.planId, { revision: resultRevision, updatedAt: Date.now() });
@@ -1022,7 +1034,7 @@ export async function undoAudit(ctx: MutationCtx, args: {
   const undoAuditId = await commitAudit(ctx, {
     ownerId: args.ownerId,
     planId: args.planId,
-    actorType: "mcp",
+    actorType: args.grantId ? "mcp" : "user",
     grantId: args.grantId,
     baseRevision: current,
     resultRevision,

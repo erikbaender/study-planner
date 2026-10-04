@@ -70,6 +70,8 @@ export type Topic = {
   unit: Unit;
   /** `0` means the topic's size is untracked; it is then excluded from pace maths. */
   totalUnits: number;
+  /** Estimated minutes per material unit; absent uses the disclosed unit default. */
+  minutesPerUnit?: number;
   completedUnits: number;
   status: TopicStatus;
   priority: Priority;
@@ -128,6 +130,8 @@ export type ThemePreference = "system" | "light" | "dark";
 export type Preferences = {
   /** Units per study day. Absent means "not yet told us", not zero. */
   dailyCapacityUnits?: number;
+  /** Common time budget; takes precedence over the legacy material-unit budget. */
+  dailyCapacityMinutes?: number;
   studyDaysOfWeek: Weekday[];
   /** Days off — holidays, travel. Excluded from scheduling. */
   blackoutDates: IsoDate[];

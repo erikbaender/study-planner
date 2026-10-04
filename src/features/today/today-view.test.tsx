@@ -49,7 +49,7 @@ function renderToday(
       courses={courses}
       health={healthOf(courses, studyLog)}
       studyLog={studyLog}
-      snapshot={{ ...EMPTY_SNAPSHOT, studyLog: [...studyLog] }}
+      snapshot={{ ...EMPTY_SNAPSHOT, plans: [{ id: "plan_1", name: "Test", notes: "", courses: [...courses] }], studyLog: [...studyLog] }}
       today={TODAY}
       selectedTopicId={null}
       onSelectTopic={vi.fn()}
@@ -79,7 +79,7 @@ describe("TodayView", () => {
         { id: "c", topicId: topic.id, date: "2026-04-30", units: 99 },
       ],
     );
-    expect(screen.getByText("20 units logged today")).toBeInTheDocument();
+    expect(screen.getByText("60 estimated minutes logged today")).toBeInTheDocument();
   });
 
   it("lists the next three exams, soonest first", () => {

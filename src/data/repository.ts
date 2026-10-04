@@ -49,6 +49,7 @@ export type TopicInput = {
   name: string;
   unit?: Unit;
   totalUnits?: number;
+  minutesPerUnit?: number;
   priority?: Priority;
   notes?: string;
   color: string;
@@ -58,6 +59,7 @@ export type TopicPatch = {
   name: string;
   unit: Unit;
   totalUnits: number;
+  minutesPerUnit?: number;
   completedUnits: number;
   status: TopicStatus;
   priority: Priority;
@@ -100,7 +102,11 @@ export type RepositoryState =
   | { status: "ready"; snapshot: PlannerSnapshot }
   | { status: "error"; error: Error };
 
+export type PlannerChange = { id: string; createdAt: number; actor: string; summary: string; canUndo: boolean; undoReason: string };
 export interface PlannerRepository {
+  subscribeHistory?(planId: string, listener: (changes: PlannerChange[] | Error) => void): () => void;
+  undoChange?(planId: string, auditId: string): Promise<void>;
+  updateStudyLog?(logId: string, input: Omit<StudyLogInput, "topicId">): Promise<void>;
   /** Bind writes to the revisions of the snapshot the caller actually saw. */
   atSnapshot?(snapshot: PlannerSnapshot): PlannerRepository;
   /**

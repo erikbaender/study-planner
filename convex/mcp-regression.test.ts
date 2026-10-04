@@ -217,3 +217,50 @@ describe("Command evaluator parity and recovery", () => {
     expect(await owner.query(api.planner.getPreferences, {})).toMatchObject({ timezone: "Europe/Berlin" });
   });
 });
+
+it("lets the account owner review and undo an agent edit with browser revision and actor safeguards", async () => {
+  const { t, owner, identity, created } = await setup();
+  const result = await t.mutation(api.mcpPlanner.applyChanges, { ...identity, planId: created.planId, expectedRevision: 1, idempotencyKey: "history-browser-edit", commands: [{ type: "plan.update", patch: { name: "Agent renamed" } }] });
+  const changes = await owner.query(api.planner.recentChanges, { planId: created.planId });
+  expect(changes.find(change => change.id === result.auditId)).toMatchObject({ actor: "Test MCP client", canUndo: true, summary: "Updated plan details" });
+  expect(changes.find(change => change.id === created.auditId)?.canUndo).toBe(false);
+  const outsiderId = await t.run(ctx => ctx.db.insert("users", { name: "Other" }));
+  const outsider = t.withIdentity({ subject: outsiderId });
+  await expect(outsider.query(api.planner.recentChanges, { planId: created.planId })).rejects.toThrow("Plan not found");
+  await expect(owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: result.auditId, expectedRevisions: { [created.planId]: 1 } })).rejects.toThrow("Revision conflict");
+  await owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: result.auditId, expectedRevisions: { [created.planId]: 2 } });
+  const tree = await owner.query(api.planner.listPlanTrees, {});
+  expect(tree[0].name).toBe("Original");
+  expect((await owner.query(api.planner.recentChanges, { planId: created.planId })).find(change => change.summary.startsWith("Undid"))?.actor).toBe("You");
+  await expect(owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: result.auditId, expectedRevisions: { [created.planId]: 3 } })).rejects.toThrow("already used");
+});
+
+it("corrects dated browser sessions atomically and rejects stale or foreign session edits", async () => {
+  const { t, owner, created } = await setup();
+  const topicId = created.createdIds.topic as never;
+  const logId = await owner.mutation(api.planner.logStudy, { topicId, date: "2026-09-04", units: 10, minutes: 30, note: "Yesterday", expectedRevisions: { [created.planId]: 1 } });
+  await owner.mutation(api.planner.updateStudyLog, { logId, date: "2026-09-03", units: 1000, minutes: 45, note: "Corrected", expectedRevisions: { [created.planId]: 2 } });
+  expect(await owner.query(api.planner.listStudyLog, {})).toMatchObject([{ date: "2026-09-03", units: 40, minutes: 45, note: "Corrected" }]);
+  await expect(owner.mutation(api.planner.updateStudyLog, { logId, date: "2026-09-03", units: 5, expectedRevisions: { [created.planId]: 2 } })).rejects.toThrow("Revision conflict");
+  await owner.mutation(api.planner.updateStudyLog, { logId, date: "2026-09-03", units: -1000, expectedRevisions: { [created.planId]: 3 } });
+  const logs = await owner.query(api.planner.listStudyLog, {});
+  const tree = await owner.query(api.planner.listPlanTrees, {});
+  expect(logs[0].units).toBe(0);
+  expect(tree[0].courses[0].topics[0].completedUnits).toBe(0);
+  const outsiderId = await t.run(ctx => ctx.db.insert("users", { name: "Other" }));
+  await expect(t.withIdentity({ subject: outsiderId }).mutation(api.planner.updateStudyLog, { logId, date: "2026-09-03", units: 5, expectedRevisions: {} })).rejects.toThrow("Study session not found");
+});
+
+it("round-trips topic throughput through MCP, schedules in minutes, and undoes a first estimate", async () => {
+  const { t, owner, identity, created } = await setup();
+  const topicId = created.createdIds.topic as never;
+  const result = await t.mutation(api.mcpPlanner.applyChanges, { ...identity, planId: created.planId, expectedRevision: 1, idempotencyKey: "time-estimate-schedule", commands: [{ type: "topic.update", topicId, patch: { minutesPerUnit: 6 } }, { type: "preferences.update", patch: { dailyCapacityMinutes: 120 } }, { type: "schedule.regenerate", today: "2026-09-07" }] });
+  const plan = await t.query(api.mcpPlanner.getPlan, { ...identity, planId: created.planId });
+  expect(plan.preferences.dailyCapacityMinutes).toBe(120);
+  expect(plan.plan.courses[0].topics[0]).toMatchObject({ minutesPerUnit: 6 });
+  expect(plan.plan.courses[0].topics[0].blocks).toHaveLength(2);
+  expect(plan.plan.courses[0].topics[0].blocks.every(block => block.plannedUnits === 20)).toBe(true);
+  await owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: result.auditId, expectedRevisions: { [created.planId]: 2 } });
+  const undone = await t.query(api.mcpPlanner.getPlan, { ...identity, planId: created.planId });
+  expect(undone.plan.courses[0].topics[0].minutesPerUnit).toBeUndefined();
+});

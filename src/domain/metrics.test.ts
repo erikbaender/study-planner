@@ -306,7 +306,7 @@ describe("assessCourse", () => {
     expect(health.progress.remainingUnits).toBe(140);
     expect(health.exam?.id).toBe("finals");
     expect(health.daysUntilExam).toBe(16);
-    expect(health.pace?.actualVelocity).toBe(20);
+    expect(health.pace?.actualVelocity).toBe(60);
   });
 
   it("counts only its own topics towards velocity", () => {

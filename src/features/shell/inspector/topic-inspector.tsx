@@ -11,7 +11,7 @@
 
 import { Crosshair, Plus, Trash2 } from "lucide-react";
 import { useRef, useState, type CSSProperties } from "react";
-import { usePlannerRun, useRepository } from "@/data/use-repository";
+import { usePlannerState, usePlannerRun, useRepository } from "@/data/use-repository";
 import {
   addDays,
   courseColorValue,
@@ -19,6 +19,7 @@ import {
   UNITS,
   UNIT_LABELS,
   PRIORITIES,
+  minutesPerUnit,
   type Course,
   type StudyBlock,
   type Topic,
@@ -41,6 +42,7 @@ import {
 import { CompletionCheckbox, triggerCompletionAnimation } from "@/features/topics/progress-cell";
 import { clampToLimits, limitsFor } from "@/features/timeline/blocks";
 import { sortCoursesAlphabetically } from "@/features/workspace/scope";
+import { StudySessionSheet } from "@/features/history/study-session-sheet";
 import { DraftText, NameSection, Section } from "./shared";
 
 /* ─── Topic ─────────────────────────────────────────────────────────────── */
@@ -62,6 +64,9 @@ export function TopicInspector({
 }) {
   const repository = useRepository();
   const run = usePlannerRun();
+  const state = usePlannerState();
+  const [session, setSession] = useState<"new" | string | null>(null);
+  const logs = state.status === "ready" ? state.snapshot.studyLog.filter(entry => entry.topicId === topic.id).sort((a, b) => b.date.localeCompare(a.date)) : [];
   const unitLabel = UNIT_LABELS[topic.unit].plural;
   const dependencyCandidates = course.topics.filter((candidate) => candidate.id !== topic.id);
   const [preview, setPreview] = useState<number | null>(null);
@@ -90,6 +95,7 @@ export function TopicInspector({
       name: string;
       unit: Unit;
       totalUnits: number;
+      minutesPerUnit: number;
       priority: Priority;
       notes: string;
       color: string;
@@ -100,6 +106,7 @@ export function TopicInspector({
         name: topic.name,
         unit: topic.unit,
         totalUnits: topic.totalUnits,
+        minutesPerUnit: topic.minutesPerUnit,
         completedUnits: topic.completedUnits,
         status: topic.status,
         priority: topic.priority,
@@ -125,7 +132,7 @@ export function TopicInspector({
         kind="Topic"
         entityId={topic.id}
         name={topic.name}
-        onCommit={(name) => name && patch({ name })}
+        onCommit={(name) => name ? patch({ name }) : undefined}
       />
 
       <Separator />
@@ -229,6 +236,21 @@ export function TopicInspector({
 
       <Separator />
 
+      <Section title="Study sessions" action={<IconButton size="sm" label="Log study session" icon={<Plus />} onClick={() => setSession("new")} />}>
+        {logs.length ? <ul className="flex max-h-40 flex-col gap-2 overflow-y-auto">{logs.slice(0, 20).map(entry => <li key={entry.id}>
+          <Button size="sm" variant="plain" onClick={() => setSession(entry.id)}>{entry.date} · {entry.units} {unitLabel}{entry.minutes === undefined ? "" : ` · ${entry.minutes} min`}</Button>
+          {entry.note ? <p className="break-words px-2 text-callout text-secondary">{entry.note}</p> : null}
+        </li>)}</ul> : <p className="text-callout text-tertiary">No sessions recorded. Log a date, duration, and note, or correct earlier progress.</p>}
+      </Section>
+      <Separator />
+      {session ? <StudySessionSheet key={session} topic={topic} today={today} entry={logs.find(entry => entry.id === session)} onClose={() => setSession(null)} /> : null}
+      <Section title="Time estimate">
+        <Stepper label={`Minutes per ${UNIT_LABELS[topic.unit].singular} in ${topic.name}`}
+          value={minutesPerUnit(topic)} min={0.01} max={10080} step={0.5}
+          onValueChange={(minutesPerUnit) => patch({ minutesPerUnit })} />
+        <p className="text-callout text-tertiary">{topic.minutesPerUnit === undefined ? "Starting estimate. " : "Your estimate. "}Estimated remaining time: {Math.ceil(Math.max(0, topic.totalUnits - topic.completedUnits) * minutesPerUnit(topic))} minutes. Reflow applies changes to the schedule.</p>
+      </Section>
+      <Separator />
       {/* Auto-planning owns generated workload; manual sessions can set theirs. */}
       <Section
         title="Scheduled"
@@ -445,7 +467,7 @@ function StudyBlockRow({
                   ? `Reserves ${block.plannedUnits} ${block.plannedUnits === 1 ? UNIT_LABELS[topic.unit].singular : UNIT_LABELS[topic.unit].plural}; the topic has no size, so this adds no topic units.`
                   : "No workload entered: reserves a full study day and adds no topic units."
                 : block.plannedUnits
-                  ? `Counts ${block.plannedUnits} ${block.plannedUnits === 1 ? UNIT_LABELS[topic.unit].singular : UNIT_LABELS[topic.unit].plural} toward this topic.`
+                  ? `Counts ${block.plannedUnits} ${block.plannedUnits === 1 ? UNIT_LABELS[topic.unit].singular : UNIT_LABELS[topic.unit].plural} toward this topic (${Math.ceil(block.plannedUnits * minutesPerUnit(topic))} estimated minutes).`
                   : "No workload entered: reserves a full study day and covers no topic units."}
             </p>
           </div>

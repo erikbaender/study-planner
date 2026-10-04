@@ -1,6 +1,6 @@
 export const MCP_SERVER_INSTRUCTIONS = `Study Planner manages account-owned semesters (plans). A plan contains courses; courses contain exams and ordered topics; topics contain dependencies and study blocks. IDs returned by tools are opaque. During planner.create or one planner.apply_changes batch, new entities use unique document-local refs so later commands can target them.
 
-Dates are calendar dates in YYYY-MM-DD in the account timezone returned by planner.get. Topic units may be slides, pages, cards, videos, hours, or items. totalUnits=0 means untracked. completedUnits cannot exceed a positive total. Marking a sized topic done requires completedUnits equal to totalUnits; update both fields together. preferences.update.patch is partial and preserves omitted fields. A daily capacity of zero disables automatic allocation. Progress deltas are clamped to topic completion bounds; logs and responses contain the effective delta. Dependencies must stay inside one course and cannot cycle. Priorities are low, normal, or high.
+Dates are calendar dates in YYYY-MM-DD in the account timezone returned by planner.get. Topic units may be slides, pages, cards, videos, hours, or items. Plan mixed materials with preferences.dailyCapacityMinutes and per-topic minutesPerUnit estimates. Time budgets take precedence over legacy dailyCapacityUnits. Defaults are 120 minutes/day and 3 min/slide, 5 min/page, 1 min/card, 10 min/video, 60 min/hour, 5 min/item; review these starting estimates with the student. totalUnits=0 means untracked. completedUnits cannot exceed a positive total. Marking a sized topic done requires completedUnits equal to totalUnits; update both fields together. preferences.update.patch is partial and preserves omitted fields. A daily capacity of zero disables automatic allocation. Progress deltas are clamped to topic completion bounds; logs and responses contain the effective delta. Dependencies must stay inside one course and cannot cycle. Priorities are low, normal, or high.
 
 Study blocks are manual or auto. A moved or resized auto block becomes manual. schedule.regenerate uses the deterministic scheduler, replaces only auto blocks in scope, preserves manual blocks, and returns explicit capacity/deadline shortfalls.
 
@@ -17,6 +17,10 @@ A plan is shown in the browser as a semester. It owns courses. Each course owns 
 ## Creation limits
 
 Atomic creation and apply_changes accept at most 100 commands. Count one command for every course, exam, topic, non-empty dependency set, block, and optional schedule regeneration. Seven courses with one exam and 13 topics each plus regeneration need 106 commands. For larger semesters, create an initial subset, read the returned planId/revision, then add batches of at most 100 commands with fresh idempotency keys and current revisions. Refs only exist within a batch; use returned createdIds in later batches. Generate the final schedule after adding all material.
+
+## Time budgets
+
+Use \`dailyCapacityMinutes\` (0–1440) for a common study-time budget and \`minutesPerUnit\` (0.01–10080) on topics to estimate throughput. Counts and progress entries retain their material units. Defaults: 120 minutes/day; slides 3, pages 5, cards 1, videos 10, hours 60, items 5 minutes/unit. Defaults are starting estimates, not measured duration. Explicit \`dailyCapacityUnits\` remains a legacy mode; do not use it for mixed materials. Shortfalls in time mode are minutes, and generated blocks retain material \`plannedUnits\`. Browser Reflow uses minutes.
 
 ## Dates and units
 
