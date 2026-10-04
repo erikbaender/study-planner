@@ -13,11 +13,17 @@ export function HistorySheet({ open, onOpenChange, plan }: {
   const repository = useRepository();
   const run = usePlannerRun();
   const [changes, setChanges] = useState<PlannerChange[] | Error | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setInterval(() => setRefreshTick(tick => tick + 1), 60_000);
+    return () => window.clearInterval(timer);
+  }, [open]);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!open) return;
-    return repository.subscribeHistory?.(plan.id, setChanges);
-  }, [open, plan.id, repository]);
+    return repository.subscribeHistory?.(plan.id, setChanges, Date.now());
+  }, [open, plan.id, repository, refreshTick]);
   return <Sheet open={open} onOpenChange={onOpenChange} title="Recent changes" footer={<Button onClick={() => onOpenChange(false)}>Close</Button>}
     description={`Changes to ${plan.name}. Only the latest eligible change can be undone, for up to 30 days.`}>
     {changes instanceof Error ? <p role="alert">{plannerError(changes).message}</p>

@@ -388,8 +388,8 @@ export function createConvexRepository(client: ConvexReactClient, revisions?: Re
 
   return {
     subscribe,
-    subscribeHistory(planId, listener) {
-      const watch = client.watchQuery(api.planner.recentChanges, { planId: asId<"plans">(planId) });
+    subscribeHistory(planId, listener, asOf = Date.now()) {
+      const watch = client.watchQuery(api.planner.recentChanges, { planId: asId<"plans">(planId), asOf });
       const read = () => {
         try { const value = watch.localQueryResult(); if (value) listener(value); }
         catch (cause) { listener(cause instanceof Error ? cause : new Error(String(cause))); }

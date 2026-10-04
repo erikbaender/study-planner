@@ -221,17 +221,17 @@ describe("Command evaluator parity and recovery", () => {
 it("lets the account owner review and undo an agent edit with browser revision and actor safeguards", async () => {
   const { t, owner, identity, created } = await setup();
   const result = await t.mutation(api.mcpPlanner.applyChanges, { ...identity, planId: created.planId, expectedRevision: 1, idempotencyKey: "history-browser-edit", commands: [{ type: "plan.update", patch: { name: "Agent renamed" } }] });
-  const changes = await owner.query(api.planner.recentChanges, { planId: created.planId });
+  const changes = await owner.query(api.planner.recentChanges, { planId: created.planId, asOf: Date.now() });
   expect(changes.find(change => change.id === result.auditId)).toMatchObject({ actor: "Test MCP client", canUndo: true, summary: "Updated plan details" });
   expect(changes.find(change => change.id === created.auditId)?.canUndo).toBe(false);
   const outsiderId = await t.run(ctx => ctx.db.insert("users", { name: "Other" }));
   const outsider = t.withIdentity({ subject: outsiderId });
-  await expect(outsider.query(api.planner.recentChanges, { planId: created.planId })).rejects.toThrow("Plan not found");
+  await expect(outsider.query(api.planner.recentChanges, { planId: created.planId, asOf: Date.now() })).rejects.toThrow("Plan not found");
   await expect(owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: result.auditId, expectedRevisions: { [created.planId]: 1 } })).rejects.toThrow("Revision conflict");
   await owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: result.auditId, expectedRevisions: { [created.planId]: 2 } });
   const tree = await owner.query(api.planner.listPlanTrees, {});
   expect(tree[0].name).toBe("Original");
-  expect((await owner.query(api.planner.recentChanges, { planId: created.planId })).find(change => change.summary.startsWith("Undid"))?.actor).toBe("You");
+  expect((await owner.query(api.planner.recentChanges, { planId: created.planId, asOf: Date.now() })).find(change => change.summary.startsWith("Undid"))?.actor).toBe("You");
   await expect(owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: result.auditId, expectedRevisions: { [created.planId]: 3 } })).rejects.toThrow("already used");
 });
 
@@ -263,4 +263,25 @@ it("round-trips topic throughput through MCP, schedules in minutes, and undoes a
   await owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: result.auditId, expectedRevisions: { [created.planId]: 2 } });
   const undone = await t.query(api.mcpPlanner.getPlan, { ...identity, planId: created.planId });
   expect(undone.plan.courses[0].topics[0].minutesPerUnit).toBeUndefined();
+});
+
+it("expires browser undo display, validates timezones, and preserves bulk throughput", async () => {
+  const { t, owner, created } = await setup();
+  const prefs = { studyDaysOfWeek: [1], blackoutDates: [], theme: "dark" as const, accentColor: "violet", dailyCapacityMinutes: 120 };
+  await expect(owner.mutation(api.planner.savePreferences, { ...prefs, timezone: "Invalid/Zone", expectedRevisions: { [created.planId]: 1 } })).rejects.toThrow("Timezone must be a valid IANA timezone");
+  const topicIds = await owner.mutation(api.planner.createTopics, { courseId: created.createdIds.course as never, color: "violet", topics: [{ name: "Reading", unit: "pages", totalUnits: 30, minutesPerUnit: 4 }], expectedRevisions: { [created.planId]: 1 } });
+  const tree = await owner.query(api.planner.listPlanTrees, {});
+  expect(tree[0].courses[0].topics.find(topic => topic._id === topicIds[0])?.minutesPerUnit).toBe(4);
+  const logId = await owner.mutation(api.planner.logStudy, { topicId: topicIds[0], date: "2026-09-01", units: 5, expectedRevisions: { [created.planId]: 2 } });
+  const before = await owner.query(api.planner.recentChanges, { planId: created.planId, asOf: Date.now() });
+  const latest = before.find(change => change.summary.includes("Recorded progress"))!;
+  expect(latest.canUndo).toBe(true);
+  const after = await owner.query(api.planner.recentChanges, { planId: created.planId, asOf: Date.now() + 31 * 86400000 });
+  expect(after.find(change => change.id === latest.id)?.canUndo).toBe(false);
+  await t.run(async ctx => {
+    const payload = await ctx.db.query("plannerUndo").withIndex("by_audit", q => q.eq("auditId", latest.id as never)).unique();
+    await ctx.db.patch(payload!._id, { expiresAt: Date.now() - 1 });
+  });
+  await expect(owner.mutation(api.planner.undoChange, { planId: created.planId, auditId: latest.id as never, expectedRevisions: { [created.planId]: 3 } })).rejects.toThrow("expired");
+  expect((await owner.query(api.planner.listStudyLog, {}))[0]._id).toBe(logId);
 });

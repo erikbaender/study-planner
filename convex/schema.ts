@@ -69,7 +69,7 @@ const inverseCommand = v.union(
       name: v.optional(v.string()),
       unit: v.optional(unit),
       totalUnits: v.optional(v.number()),
-    minutesPerUnit: v.optional(v.union(v.number(), v.null())),
+      minutesPerUnit: v.optional(v.union(v.number(), v.null())),
       completedUnits: v.optional(v.number()),
       status: v.optional(topicStatus),
       priority: v.optional(topicPriority),
@@ -117,7 +117,7 @@ const inverseCommand = v.union(
       v.null(),
       v.object({
         dailyCapacityUnits: v.optional(v.number()),
-    dailyCapacityMinutes: v.optional(v.number()),
+        dailyCapacityMinutes: v.optional(v.number()),
         studyDaysOfWeek: v.array(v.number()),
         blackoutDates: v.array(v.string()),
         theme,

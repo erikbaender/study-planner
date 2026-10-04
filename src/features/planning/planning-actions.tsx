@@ -286,7 +286,7 @@ function PlanSheet({
             {planningWarnings.length > 0 ? (
               <ul className="flex flex-col gap-1 text-body">
                 {planningWarnings.map((warning) => (
-                  <li key={`${warning.type}:${warning.topicId}`}>{warning.message}</li>
+                  <li key={`${warning.type}:${warning.topicId}:${warning.message}`}>{warning.message}</li>
                 ))}
               </ul>
             ) : null}

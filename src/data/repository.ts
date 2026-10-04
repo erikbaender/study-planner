@@ -104,7 +104,7 @@ export type RepositoryState =
 
 export type PlannerChange = { id: string; createdAt: number; actor: string; summary: string; canUndo: boolean; undoReason: string };
 export interface PlannerRepository {
-  subscribeHistory?(planId: string, listener: (changes: PlannerChange[] | Error) => void): () => void;
+  subscribeHistory?(planId: string, listener: (changes: PlannerChange[] | Error) => void, asOf?: number): () => void;
   undoChange?(planId: string, auditId: string): Promise<void>;
   updateStudyLog?(logId: string, input: Omit<StudyLogInput, "topicId">): Promise<void>;
   /** Bind writes to the revisions of the snapshot the caller actually saw. */
@@ -138,7 +138,7 @@ export interface PlannerRepository {
   /** Bulk path for the outline paste flow. */
   createTopics(
     courseId: EntityId,
-    topics: Array<{ name: string; unit: Unit; totalUnits: number }>,
+    topics: Array<{ name: string; unit: Unit; totalUnits: number; minutesPerUnit?: number }>,
     color: string,
   ): Promise<EntityId[]>;
   updateTopic(topicId: EntityId, patch: TopicPatch): Promise<void>;

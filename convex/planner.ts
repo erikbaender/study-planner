@@ -115,7 +115,7 @@ const topicDocumentFields = {
   section: v.optional(v.string()),
   unit: unitValidator,
   totalUnits: v.number(),
-    minutesPerUnit: v.optional(v.number()),
+  minutesPerUnit: v.optional(v.number()),
   completedUnits: v.number(),
   status: statusValidator,
   priority: priorityValidator,
@@ -155,7 +155,7 @@ const preferencesDocumentValidator = v.object({
   _creationTime: v.number(),
   ownerId: v.id("users"),
   dailyCapacityUnits: v.optional(v.number()),
-    dailyCapacityMinutes: v.optional(v.number()),
+  dailyCapacityMinutes: v.optional(v.number()),
   studyDaysOfWeek: v.array(v.number()),
   blackoutDates: v.array(v.string()),
   theme: v.union(v.literal("system"), v.literal("light"), v.literal("dark")),
@@ -663,7 +663,7 @@ export const createTopics = browserMutation({
         name: v.string(),
         unit: unitValidator,
         totalUnits: v.number(),
-    minutesPerUnit: v.optional(v.number()),
+        minutesPerUnit: v.optional(v.number()),
       }),
     ),
     color: courseColorValidator,
@@ -676,6 +676,7 @@ export const createTopics = browserMutation({
     for (const topic of args.topics) {
       assertTrimmedBoundedText(topic.name, "Topic name", PLANNER_LIMITS.nameCharacters);
       assertProgress(0, topic.totalUnits);
+      if (topic.minutesPerUnit !== undefined) assertFiniteBoundedNumber(topic.minutesPerUnit, "Minutes per unit", { min: 0.01, max: 10080 });
     }
     const existing = await ctx.db.query("topics").withIndex("by_course", (q) => q.eq("courseId", args.courseId)).collect();
     const now = Date.now();
@@ -688,6 +689,7 @@ export const createTopics = browserMutation({
           name: topic.name,
           unit: topic.unit,
           totalUnits: topic.totalUnits,
+          minutesPerUnit: topic.minutesPerUnit,
           completedUnits: 0,
           status: "planned",
           priority: "normal",
@@ -925,7 +927,7 @@ type GeneratedBlockInput = (typeof generatedBlockValidator)["type"];
 
 const preferenceFields = {
   dailyCapacityUnits: v.optional(v.number()),
-    dailyCapacityMinutes: v.optional(v.number()),
+  dailyCapacityMinutes: v.optional(v.number()),
   studyDaysOfWeek: v.array(v.number()),
   blackoutDates: v.array(v.string()),
   timezone: v.optional(v.string()),
@@ -1173,7 +1175,7 @@ const importTopic = v.object({
   name: v.string(),
   unit: unitValidator,
   totalUnits: v.number(),
-    minutesPerUnit: v.optional(v.number()),
+  minutesPerUnit: v.optional(v.number()),
   completedUnits: v.number(),
   status: statusValidator,
   priority: priorityValidator,
@@ -1453,7 +1455,7 @@ async function deleteTopicTree(ctx: MutationCtx, topic: Doc<"topics">) {
 
 /** Human-readable, account-owned history. Recovery payloads never leave the server. */
 export const recentChanges = query({
-  args: { planId: v.id("plans") },
+  args: { planId: v.id("plans"), asOf: v.number() },
   returns: v.array(v.object({
     id: v.id("plannerAudit"), createdAt: v.number(), actor: v.string(), summary: v.string(),
     canUndo: v.boolean(), undoReason: v.string(),
@@ -1469,7 +1471,7 @@ export const recentChanges = query({
       const client = grant ? await ctx.db.get(grant.clientId) : null;
       const undoReason = !row.undoable ? "This change has no undo available."
         : row.resultRevision !== (plan.revision ?? 0) ? "Only the latest change can be undone."
-        : !undo || undo.usedAt !== undefined || undo.expiresAt <= Date.now() ? "Undo has expired or was already used."
+        : !undo || undo.usedAt !== undefined || undo.expiresAt <= args.asOf ? "Undo has expired or was already used."
         : undo.preferencesRevision !== undefined && undo.preferencesRevision !== (preferences?.revision ?? 0) ? "Calendar settings changed afterward."
         : "";
       return { id: row._id, createdAt: row.createdAt, actor: row.actorType === "user" ? "You" : client?.name ?? "Connected agent",
