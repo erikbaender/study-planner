@@ -1,12 +1,12 @@
 "use client";
 
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient, useQuery } from "convex/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { ConvexPlannerAuthProvider } from "@/auth/convex-planner-auth";
 import { AccountSessionsProvider, AddAccountFlow, useAccountSessions } from "@/auth/account-sessions";
 import { usePlannerAuth } from "@/auth/use-planner-auth";
+import { ApplicationConvexAuthProvider } from "@/auth/application-convex-auth-provider";
 import { ConvexRepositoryProvider } from "@/data/convex-repository-provider";
 import { Button, Spinner, TextField } from "@/ui";
 import { api } from "../../convex/_generated/api";
@@ -35,9 +35,14 @@ export function ConfiguredConvexClientProvider({
 function MainConvexAuthProvider({ client, url, children }: { client: ConvexReactClient; url: string; children: ReactNode }) {
   const { activeSessionId, activeStorage } = useAccountSessions();
   return (
-    <ConvexAuthProvider key={activeSessionId} client={client} storage={activeStorage} storageNamespace={url}>
+    <ApplicationConvexAuthProvider
+      key={activeSessionId}
+      client={client}
+      storage={activeStorage}
+      namespace={url}
+    >
       {children}
-    </ConvexAuthProvider>
+    </ApplicationConvexAuthProvider>
   );
 }
 
